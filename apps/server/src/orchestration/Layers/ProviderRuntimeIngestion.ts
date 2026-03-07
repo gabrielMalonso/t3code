@@ -13,6 +13,8 @@ import {
 import { Cache, Cause, Duration, Effect, Layer, Option, Queue, Ref, Stream } from "effect";
 
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
+import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
+import { isGitRepository } from "../../git/isRepo.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import {
   ProviderRuntimeIngestionService,
@@ -506,6 +508,23 @@ const make = Effect.gen(function* () {
     timeToLive: BUFFERED_PROPOSED_PLAN_BY_ID_TTL,
     lookup: () => Effect.succeed({ text: "", createdAt: "" }),
   });
+
+  const isGitRepoForThread = Effect.fnUntraced(function* (threadId: ThreadId) {
+    const readModel = yield* orchestrationEngine.getReadModel();
+    const thread = readModel.threads.find((entry) => entry.id === threadId);
+    if (!thread) {
+      return false;
+    }
+    const workspaceCwd = resolveThreadWorkspaceCwd({
+      thread,
+      projects: readModel.projects,
+    });
+    if (!workspaceCwd) {
+      return false;
+    }
+    return isGitRepository(workspaceCwd);
+  });
+
 
   const rememberAssistantMessageId = (
     threadId: ThreadId,
@@ -1041,7 +1060,7 @@ const make = Effect.gen(function* () {
 
       if (event.type === "turn.diff.updated") {
         const turnId = toTurnId(event.turnId);
-        if (turnId) {
+        if (turnId && (yield* isGitRepoForThread(thread.id))) {
           const assistantMessageId = MessageId.makeUnsafe(
             `assistant:${event.itemId ?? event.turnId ?? event.eventId}`,
           );
