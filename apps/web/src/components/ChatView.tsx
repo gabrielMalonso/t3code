@@ -15,6 +15,7 @@ import {
   type ResolvedKeybindingsConfig,
   type ProviderApprovalDecision,
   type ServerProviderStatus,
+  type NativeApi,
   type ProviderKind,
   type ThreadId,
   type TurnId,
@@ -99,6 +100,7 @@ import {
   resolvePlanFollowUpSubmission,
   stripDisplayedPlanMarkdown,
 } from "../proposedPlan";
+import { PR_REVIEW_PROMPT, buildReviewThreadTitle } from "../reviewPrompt";
 import { truncateTitle } from "../truncateTitle";
 import {
   DEFAULT_INTERACTION_MODE,
@@ -106,6 +108,7 @@ import {
   DEFAULT_THREAD_TERMINAL_ID,
   MAX_THREAD_TERMINAL_COUNT,
   type ChatMessage,
+  type Project,
   type Thread,
   type TurnDiffFileChange,
   type TurnDiffSummary,
@@ -434,6 +437,140 @@ function buildTemporaryWorktreeBranchName(): string {
   // Keep the 8-hex suffix shape for backend temporary-branch detection.
   const token = randomUUID().slice(0, 8).toLowerCase();
   return `${WORKTREE_BRANCH_PREFIX}/${token}`;
+}
+
+interface StartThreadWithPromptOptions {
+  prompt: string;
+  threadTitle: string;
+  errorToastTitle: string;
+  errorToastFallbackDescription: string;
+  api: NativeApi;
+  activeThread: Thread;
+  activeProject: Project;
+  selectedProvider: ProviderKind;
+  selectedModel: ModelSlug | null;
+  selectedModelOptionsForDispatch: { codex: Record<string, unknown> } | undefined;
+  providerOptionsForDispatch?: Record<string, unknown>;
+  enableAssistantStreaming: boolean;
+  runtimeMode: RuntimeMode;
+  sendInFlightRef: React.MutableRefObject<boolean>;
+  beginSendPhase: (phase: Exclude<SendPhase, "idle">) => void;
+  resetSendPhase: () => void;
+  syncServerReadModel: (snapshot: Awaited<ReturnType<NativeApi["orchestration"]["getSnapshot"]>>) => void;
+  navigate: ReturnType<typeof useNavigate>;
+  planSidebarOpenOnNextThreadRef?: React.MutableRefObject<boolean>;
+}
+
+async function startThreadWithPrompt(opts: StartThreadWithPromptOptions): Promise<void> {
+  const {
+    prompt,
+    threadTitle,
+    errorToastTitle,
+    errorToastFallbackDescription,
+    api,
+    activeThread,
+    activeProject,
+    selectedProvider,
+    selectedModel,
+    selectedModelOptionsForDispatch,
+    providerOptionsForDispatch,
+    enableAssistantStreaming,
+    runtimeMode,
+    sendInFlightRef,
+    beginSendPhase,
+    resetSendPhase,
+    syncServerReadModel,
+    navigate,
+    planSidebarOpenOnNextThreadRef,
+  } = opts;
+
+  const createdAt = new Date().toISOString();
+  const nextThreadId = newThreadId();
+  const nextThreadModel: ModelSlug =
+    selectedModel ||
+    (activeThread.model as ModelSlug) ||
+    (activeProject.model as ModelSlug) ||
+    DEFAULT_MODEL_BY_PROVIDER.codex;
+
+  sendInFlightRef.current = true;
+  beginSendPhase("sending-turn");
+  const finish = () => {
+    sendInFlightRef.current = false;
+    resetSendPhase();
+  };
+
+  await api.orchestration
+    .dispatchCommand({
+      type: "thread.create",
+      commandId: newCommandId(),
+      threadId: nextThreadId,
+      projectId: activeProject.id,
+      title: threadTitle,
+      model: nextThreadModel,
+      runtimeMode,
+      interactionMode: "default",
+      branch: activeThread.branch,
+      worktreePath: activeThread.worktreePath,
+      createdAt,
+    })
+    .then(() =>
+      api.orchestration.dispatchCommand({
+        type: "thread.turn.start",
+        commandId: newCommandId(),
+        threadId: nextThreadId,
+        message: {
+          messageId: newMessageId(),
+          role: "user",
+          text: prompt,
+          attachments: [],
+        },
+        provider: selectedProvider,
+        model: selectedModel || undefined,
+        ...(selectedModelOptionsForDispatch
+          ? { modelOptions: selectedModelOptionsForDispatch }
+          : {}),
+        ...(providerOptionsForDispatch
+          ? { providerOptions: providerOptionsForDispatch }
+          : {}),
+        assistantDeliveryMode: enableAssistantStreaming ? "streaming" : "buffered",
+        runtimeMode,
+        interactionMode: "default",
+        createdAt,
+      }),
+    )
+    .then(() => api.orchestration.getSnapshot())
+    .then((snapshot) => {
+      syncServerReadModel(snapshot);
+      if (planSidebarOpenOnNextThreadRef) {
+        planSidebarOpenOnNextThreadRef.current = true;
+      }
+      return navigate({
+        to: "/$threadId",
+        params: { threadId: nextThreadId },
+      });
+    })
+    .catch(async (err) => {
+      await api.orchestration
+        .dispatchCommand({
+          type: "thread.delete",
+          commandId: newCommandId(),
+          threadId: nextThreadId,
+        })
+        .catch(() => undefined);
+      await api.orchestration
+        .getSnapshot()
+        .then((snapshot) => {
+          syncServerReadModel(snapshot);
+        })
+        .catch(() => undefined);
+      toastManager.add({
+        type: "error",
+        title: errorToastTitle,
+        description:
+          err instanceof Error ? err.message : errorToastFallbackDescription,
+      });
+    })
+    .then(finish, finish);
 }
 
 function cloneComposerImageForRetry(image: ComposerImageAttachment): ComposerImageAttachment {
@@ -3119,93 +3256,29 @@ export default function ChatView({ threadId }: ChatViewProps) {
       return;
     }
 
-    const createdAt = new Date().toISOString();
-    const nextThreadId = newThreadId();
     const planMarkdown = activeProposedPlan.planMarkdown;
-    const implementationPrompt = buildPlanImplementationPrompt(planMarkdown);
-    const nextThreadTitle = truncateTitle(buildPlanImplementationThreadTitle(planMarkdown));
-    const nextThreadModel: ModelSlug =
-      selectedModel ||
-      (activeThread.model as ModelSlug) ||
-      (activeProject.model as ModelSlug) ||
-      DEFAULT_MODEL_BY_PROVIDER.codex;
 
-    sendInFlightRef.current = true;
-    beginSendPhase("sending-turn");
-    const finish = () => {
-      sendInFlightRef.current = false;
-      resetSendPhase();
-    };
-
-    await api.orchestration
-      .dispatchCommand({
-        type: "thread.create",
-        commandId: newCommandId(),
-        threadId: nextThreadId,
-        projectId: activeProject.id,
-        title: nextThreadTitle,
-        model: nextThreadModel,
-        runtimeMode,
-        interactionMode: "default",
-        branch: activeThread.branch,
-        worktreePath: activeThread.worktreePath,
-        createdAt,
-      })
-      .then(() => {
-        return api.orchestration.dispatchCommand({
-          type: "thread.turn.start",
-          commandId: newCommandId(),
-          threadId: nextThreadId,
-          message: {
-            messageId: newMessageId(),
-            role: "user",
-            text: implementationPrompt,
-            attachments: [],
-          },
-          provider: selectedProvider,
-          model: selectedModel || undefined,
-          ...(selectedModelOptionsForDispatch
-            ? { modelOptions: selectedModelOptionsForDispatch }
-            : {}),
-          ...(providerOptionsForDispatch ? { providerOptions: providerOptionsForDispatch } : {}),
-          assistantDeliveryMode: settings.enableAssistantStreaming ? "streaming" : "buffered",
-          runtimeMode,
-          interactionMode: "default",
-          createdAt,
-        });
-      })
-      .then(() => api.orchestration.getSnapshot())
-      .then((snapshot) => {
-        syncServerReadModel(snapshot);
-        // Signal that the plan sidebar should open on the new thread.
-        planSidebarOpenOnNextThreadRef.current = true;
-        return navigate({
-          to: "/$threadId",
-          params: { threadId: nextThreadId },
-        });
-      })
-      .catch(async (err) => {
-        await api.orchestration
-          .dispatchCommand({
-            type: "thread.delete",
-            commandId: newCommandId(),
-            threadId: nextThreadId,
-          })
-          .catch(() => undefined);
-        await api.orchestration
-          .getSnapshot()
-          .then((snapshot) => {
-            syncServerReadModel(snapshot);
-          })
-          .catch(() => undefined);
-        toastManager.add({
-          type: "error",
-          title: "Could not start implementation thread",
-          description:
-            err instanceof Error ? err.message : "An error occurred while creating the new thread.",
-        });
-      })
-      .then(finish, finish);
+    await startThreadWithPrompt({
+      prompt: buildPlanImplementationPrompt(planMarkdown),
+      threadTitle: truncateTitle(buildPlanImplementationThreadTitle(planMarkdown)),
+      errorToastTitle: "Could not start implementation thread",
+      errorToastFallbackDescription: "An error occurred while creating the new thread.",
+      api,
+      activeThread,
+      activeProject,
+      selectedProvider,
+      selectedModel,
+      selectedModelOptionsForDispatch,
+      providerOptionsForDispatch,
+      enableAssistantStreaming: settings.enableAssistantStreaming,
+      runtimeMode,
+      sendInFlightRef,
+      beginSendPhase,
+      resetSendPhase,
+      syncServerReadModel,
+      navigate,
+      planSidebarOpenOnNextThreadRef,
+    });
   }, [
     activeProject,
     activeProposedPlan,
@@ -3220,6 +3293,56 @@ export default function ChatView({ threadId }: ChatViewProps) {
     selectedModel,
     selectedModelOptionsForDispatch,
     providerOptionsForDispatch,
+    selectedProvider,
+    settings.enableAssistantStreaming,
+    syncServerReadModel,
+  ]);
+
+  const onReviewPrInNewThread = useCallback(async () => {
+    const api = readNativeApi();
+    if (
+      !api ||
+      !activeThread ||
+      !activeProject ||
+      !isServerThread ||
+      isSendBusy ||
+      isConnecting ||
+      sendInFlightRef.current
+    ) {
+      return;
+    }
+
+    await startThreadWithPrompt({
+      prompt: PR_REVIEW_PROMPT,
+      threadTitle: truncateTitle(buildReviewThreadTitle()),
+      errorToastTitle: "Could not start review thread",
+      errorToastFallbackDescription: "An error occurred while creating the review thread.",
+      api,
+      activeThread,
+      activeProject,
+      selectedProvider,
+      selectedModel,
+      selectedModelOptionsForDispatch,
+      enableAssistantStreaming: settings.enableAssistantStreaming,
+      runtimeMode,
+      sendInFlightRef,
+      beginSendPhase,
+      resetSendPhase,
+      syncServerReadModel,
+      navigate,
+    });
+  }, [
+    activeProject,
+    activeThread,
+    beginSendPhase,
+    isConnecting,
+    isSendBusy,
+    isServerThread,
+    navigate,
+    resetSendPhase,
+    runtimeMode,
+    selectedModel,
+    selectedModelOptionsForDispatch,
     selectedProvider,
     settings.enableAssistantStreaming,
     syncServerReadModel,
@@ -3576,6 +3699,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           onUpdateProjectScript={updateProjectScript}
           onDeleteProjectScript={deleteProjectScript}
           onToggleDiff={onToggleDiff}
+          onRequestReview={() => void onReviewPrInNewThread()}
         />
       </header>
 
@@ -4275,6 +4399,7 @@ interface ChatHeaderProps {
   onUpdateProjectScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void>;
   onDeleteProjectScript: (scriptId: string) => Promise<void>;
   onToggleDiff: () => void;
+  onRequestReview?: () => void;
 }
 
 const ChatHeader = memo(function ChatHeader({
@@ -4295,6 +4420,7 @@ const ChatHeader = memo(function ChatHeader({
   onUpdateProjectScript,
   onDeleteProjectScript,
   onToggleDiff,
+  onRequestReview,
 }: ChatHeaderProps) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -4336,7 +4462,7 @@ const ChatHeader = memo(function ChatHeader({
             openInCwd={openInCwd}
           />
         )}
-        {activeProjectName && <GitActionsControl gitCwd={gitCwd} activeThreadId={activeThreadId} />}
+        {activeProjectName && <GitActionsControl gitCwd={gitCwd} activeThreadId={activeThreadId} onRequestReview={onRequestReview} />}
         <Tooltip>
           <TooltipTrigger
             render={
