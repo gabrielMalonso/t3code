@@ -978,13 +978,51 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     CONTEXT_MENU_CHANNEL,
     async (_event, items: ContextMenuItem[], position?: { x: number; y: number }) => {
-      const normalizedItems = items
-        .filter((item) => typeof item.id === "string" && typeof item.label === "string")
-        .map((item) => ({
-          id: item.id,
-          label: item.label,
-          destructive: item.destructive === true,
-        }));
+      function normalizeItems(raw: ContextMenuItem[]): ContextMenuItem[] {
+        return raw
+          .filter((item) => typeof item.id === "string" && typeof item.label === "string")
+          .map((item) => ({
+            id: item.id,
+            label: item.label,
+            destructive: item.destructive === true,
+            ...(item.children ? { children: normalizeItems(item.children as ContextMenuItem[]) } : {}),
+          }));
+      }
+
+      function buildMenuTemplate(
+        menuItems: ContextMenuItem[],
+        resolve: (id: string | null) => void,
+      ): MenuItemConstructorOptions[] {
+        const template: MenuItemConstructorOptions[] = [];
+        let hasInsertedDestructiveSeparator = false;
+        for (const item of menuItems) {
+          if (item.destructive && !hasInsertedDestructiveSeparator && template.length > 0) {
+            template.push({ type: "separator" });
+            hasInsertedDestructiveSeparator = true;
+          }
+          if (item.children && item.children.length > 0) {
+            template.push({
+              label: item.label,
+              submenu: buildMenuTemplate(item.children as ContextMenuItem[], resolve),
+            });
+          } else {
+            const itemOption: MenuItemConstructorOptions = {
+              label: item.label,
+              click: () => resolve(item.id),
+            };
+            if (item.destructive) {
+              const destructiveIcon = getDestructiveMenuIcon();
+              if (destructiveIcon) {
+                itemOption.icon = destructiveIcon;
+              }
+            }
+            template.push(itemOption);
+          }
+        }
+        return template;
+      }
+
+      const normalizedItems = normalizeItems(items);
       if (normalizedItems.length === 0) {
         return null;
       }
@@ -1005,27 +1043,7 @@ function registerIpcHandlers(): void {
       if (!window) return null;
 
       return new Promise<string | null>((resolve) => {
-        const template: MenuItemConstructorOptions[] = [];
-        let hasInsertedDestructiveSeparator = false;
-        for (const item of normalizedItems) {
-          if (item.destructive && !hasInsertedDestructiveSeparator && template.length > 0) {
-            template.push({ type: "separator" });
-            hasInsertedDestructiveSeparator = true;
-          }
-          const itemOption: MenuItemConstructorOptions = {
-            label: item.label,
-            click: () => resolve(item.id),
-          };
-          if (item.destructive) {
-            const destructiveIcon = getDestructiveMenuIcon();
-            if (destructiveIcon) {
-              itemOption.icon = destructiveIcon;
-            }
-          }
-          template.push(itemOption);
-        }
-
-        const menu = Menu.buildFromTemplate(template);
+        const menu = Menu.buildFromTemplate(buildMenuTemplate(normalizedItems, resolve));
         menu.popup({
           window,
           ...popupPosition,

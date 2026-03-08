@@ -229,6 +229,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           model: "gpt-5-codex",
           interactionMode: "default",
           runtimeMode: "full-access",
+          statusCategory: "in-progress",
           branch: null,
           worktreePath: null,
           latestTurn: {

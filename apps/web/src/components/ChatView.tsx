@@ -105,6 +105,11 @@ import {
   resolvePlanFollowUpSubmission,
 } from "../proposedPlan";
 import { PR_REVIEW_PROMPT, buildReviewThreadTitle } from "../reviewPrompt";
+import {
+  canRequestReviewThread,
+  shouldDeleteThreadAfterStartFailure,
+  type StartThreadWithPromptProgress,
+} from "../reviewThread";
 import { truncateTitle } from "../truncateTitle";
 import {
   DEFAULT_INTERACTION_MODE,
@@ -378,6 +383,7 @@ function buildLocalDraftThread(
     model: fallbackModel,
     runtimeMode: draftThread.runtimeMode,
     interactionMode: draftThread.interactionMode,
+    statusCategory: "in-progress",
     session: null,
     messages: [],
     error,
@@ -523,6 +529,7 @@ async function startThreadWithPrompt(opts: StartThreadWithPromptOptions): Promis
     (activeThread.model as ModelSlug) ||
     (activeProject.model as ModelSlug) ||
     DEFAULT_MODEL_BY_PROVIDER.codex;
+  let progress: StartThreadWithPromptProgress = "before-thread-create";
 
   sendInFlightRef.current = true;
   beginSendPhase("sending-turn");
@@ -541,9 +548,13 @@ async function startThreadWithPrompt(opts: StartThreadWithPromptOptions): Promis
       model: nextThreadModel,
       runtimeMode,
       interactionMode: "default",
+      statusCategory: "in-progress",
       branch: activeThread.branch,
       worktreePath: activeThread.worktreePath,
       createdAt,
+    })
+    .then(() => {
+      progress = "thread-created";
     })
     .then(() =>
       api.orchestration.dispatchCommand({
@@ -567,6 +578,9 @@ async function startThreadWithPrompt(opts: StartThreadWithPromptOptions): Promis
         createdAt,
       }),
     )
+    .then(() => {
+      progress = "turn-started";
+    })
     .then(() => api.orchestration.getSnapshot())
     .then((snapshot) => {
       syncServerReadModel(snapshot);
@@ -576,13 +590,15 @@ async function startThreadWithPrompt(opts: StartThreadWithPromptOptions): Promis
       });
     })
     .catch(async (err) => {
-      await api.orchestration
-        .dispatchCommand({
-          type: "thread.delete",
-          commandId: newCommandId(),
-          threadId: nextThreadId,
-        })
-        .catch(() => undefined);
+      if (shouldDeleteThreadAfterStartFailure(progress)) {
+        await api.orchestration
+          .dispatchCommand({
+            type: "thread.delete",
+            commandId: newCommandId(),
+            threadId: nextThreadId,
+          })
+          .catch(() => undefined);
+      }
       await api.orchestration
         .getSnapshot()
         .then((snapshot) => {
@@ -2839,6 +2855,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           model: threadCreateModel,
           runtimeMode,
           interactionMode,
+          statusCategory: "in-progress",
           branch: nextThreadBranch,
           worktreePath: nextThreadWorktreePath,
           createdAt: activeThread.createdAt,
@@ -3285,15 +3302,27 @@ export default function ChatView({ threadId }: ChatViewProps) {
     syncServerReadModel,
   ]);
 
+  const canReviewPrInNewThread = canRequestReviewThread({
+    hasActiveThread: activeThread !== undefined,
+    hasActiveProject: activeProject !== undefined,
+    isServerThread,
+    isSendBusy,
+    isConnecting,
+  });
+
   const onReviewPrInNewThread = useCallback(async () => {
     const api = readNativeApi();
     if (
       !api ||
       !activeThread ||
       !activeProject ||
-      !isServerThread ||
-      isSendBusy ||
-      isConnecting ||
+      !canRequestReviewThread({
+        hasActiveThread: true,
+        hasActiveProject: true,
+        isServerThread,
+        isSendBusy,
+        isConnecting,
+      }) ||
       sendInFlightRef.current
     ) {
       return;
@@ -3732,7 +3761,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
           onAddProjectScript={saveProjectScript}
           onUpdateProjectScript={updateProjectScript}
           onToggleDiff={onToggleDiff}
-          onRequestReview={() => void onReviewPrInNewThread()}
+          {...(canReviewPrInNewThread
+            ? { onRequestReview: () => void onReviewPrInNewThread() }
+            : {})}
         />
       </header>
 
@@ -4490,7 +4521,13 @@ const ChatHeader = memo(function ChatHeader({
             openInCwd={openInCwd}
           />
         )}
-        {activeProjectName && <GitActionsControl gitCwd={gitCwd} activeThreadId={activeThreadId} onRequestReview={onRequestReview} />}
+        {activeProjectName && (
+          <GitActionsControl
+            gitCwd={gitCwd}
+            activeThreadId={activeThreadId}
+            onRequestReview={onRequestReview}
+          />
+        )}
         <Tooltip>
           <TooltipTrigger
             render={

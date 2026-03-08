@@ -13,6 +13,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     model: "gpt-5-codex",
     runtimeMode: DEFAULT_RUNTIME_MODE,
     interactionMode: DEFAULT_INTERACTION_MODE,
+    statusCategory: "in-progress",
     session: null,
     messages: [],
     turnDiffSummaries: [],
@@ -41,6 +42,7 @@ function makeState(thread: Thread): AppState {
     ],
     threads: [thread],
     threadsHydrated: true,
+    sidebarViewMode: "project",
   };
 }
 
@@ -52,6 +54,7 @@ function makeReadModelThread(overrides: Partial<OrchestrationReadModel["threads"
     model: "gpt-5.3-codex",
     runtimeMode: DEFAULT_RUNTIME_MODE,
     interactionMode: DEFAULT_INTERACTION_MODE,
+    statusCategory: "in-progress",
     branch: null,
     worktreePath: null,
     latestTurn: null,
