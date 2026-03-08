@@ -17,10 +17,13 @@ import { type ChatMessage, type Project, type Thread } from "./types";
 
 // ── State ────────────────────────────────────────────────────────────
 
+export type SidebarViewMode = "project" | "status";
+
 export interface AppState {
   projects: Project[];
   threads: Thread[];
   threadsHydrated: boolean;
+  sidebarViewMode: SidebarViewMode;
 }
 
 const PERSISTED_STATE_KEY = "t3code:renderer-state:v8";
@@ -39,6 +42,7 @@ const initialState: AppState = {
   projects: [],
   threads: [],
   threadsHydrated: false,
+  sidebarViewMode: "project",
 };
 const persistedExpandedProjectCwds = new Set<string>();
 
@@ -49,14 +53,19 @@ function readPersistedState(): AppState {
   try {
     const raw = window.localStorage.getItem(PERSISTED_STATE_KEY);
     if (!raw) return initialState;
-    const parsed = JSON.parse(raw) as { expandedProjectCwds?: string[] };
+    const parsed = JSON.parse(raw) as {
+      expandedProjectCwds?: string[];
+      sidebarViewMode?: string;
+    };
     persistedExpandedProjectCwds.clear();
     for (const cwd of parsed.expandedProjectCwds ?? []) {
       if (typeof cwd === "string" && cwd.length > 0) {
         persistedExpandedProjectCwds.add(cwd);
       }
     }
-    return { ...initialState };
+    const sidebarViewMode: SidebarViewMode =
+      parsed.sidebarViewMode === "status" ? "status" : "project";
+    return { ...initialState, sidebarViewMode };
   } catch {
     return initialState;
   }
@@ -71,6 +80,7 @@ function persistState(state: AppState): void {
         expandedProjectCwds: state.projects
           .filter((project) => project.expanded)
           .map((project) => project.cwd),
+        sidebarViewMode: state.sidebarViewMode,
       }),
     );
     for (const legacyKey of LEGACY_PERSISTED_STATE_KEYS) {
@@ -275,6 +285,7 @@ export function syncServerReadModel(state: AppState, readModel: OrchestrationRea
         ),
         runtimeMode: thread.runtimeMode,
         interactionMode: thread.interactionMode,
+        statusCategory: thread.statusCategory ?? "in-progress",
         session: thread.session
           ? {
               provider: toLegacyProvider(thread.session.providerName),
@@ -423,6 +434,7 @@ interface AppStore extends AppState {
   setProjectExpanded: (projectId: Project["id"], expanded: boolean) => void;
   setError: (threadId: ThreadId, error: string | null) => void;
   setThreadBranch: (threadId: ThreadId, branch: string | null, worktreePath: string | null) => void;
+  setSidebarViewMode: (viewMode: SidebarViewMode) => void;
 }
 
 export const useStore = create<AppStore>((set) => ({
@@ -437,6 +449,8 @@ export const useStore = create<AppStore>((set) => ({
   setError: (threadId, error) => set((state) => setError(state, threadId, error)),
   setThreadBranch: (threadId, branch, worktreePath) =>
     set((state) => setThreadBranch(state, threadId, branch, worktreePath)),
+  setSidebarViewMode: (viewMode) =>
+    set((state) => (state.sidebarViewMode === viewMode ? state : { ...state, sidebarViewMode: viewMode })),
 }));
 
 // Persist on every state change

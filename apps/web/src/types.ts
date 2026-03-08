@@ -99,6 +99,7 @@ export interface Thread {
   model: string;
   runtimeMode: RuntimeMode;
   interactionMode: ProviderInteractionMode;
+  statusCategory: "in-progress" | "in-review" | "done" | "backlog" | "cancelled";
   session: ThreadSession | null;
   messages: ChatMessage[];
   proposedPlans: ProposedPlan[];

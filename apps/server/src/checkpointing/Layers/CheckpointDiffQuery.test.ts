@@ -45,6 +45,7 @@ function makeSnapshot(input: {
         title: "Thread",
         model: "gpt-5-codex",
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        statusCategory: "in-progress",
         runtimeMode: "full-access",
         branch: null,
         worktreePath: input.worktreePath,

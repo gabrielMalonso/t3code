@@ -207,6 +207,7 @@ function createSnapshotForTargetUser(options: {
         model: "gpt-5",
         interactionMode: "default",
         runtimeMode: "full-access",
+        statusCategory: "in-progress",
         branch: "main",
         worktreePath: null,
         latestTurn: null,
