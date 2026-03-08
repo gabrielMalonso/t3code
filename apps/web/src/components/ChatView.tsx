@@ -72,7 +72,9 @@ import {
   replaceTextRange,
 } from "../composer-logic";
 import {
+  deriveCommentaryEntries,
   derivePendingApprovals,
+  derivePendingFileChangeEntries,
   derivePendingUserInputs,
   derivePhase,
   deriveTimelineEntries,
@@ -1095,6 +1097,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
     () => deriveWorkLogEntries(threadActivities, activeLatestTurn?.turnId ?? undefined),
     [activeLatestTurn?.turnId, threadActivities],
   );
+  const commentaryEntries = useMemo(
+    () => deriveCommentaryEntries(threadActivities, activeLatestTurn?.turnId ?? undefined),
+    [activeLatestTurn?.turnId, threadActivities],
+  );
+  const pendingFileChangeEntries = useMemo(
+    () => derivePendingFileChangeEntries(threadActivities, activeLatestTurn?.turnId ?? undefined),
+    [activeLatestTurn?.turnId, threadActivities],
+  );
   const latestTurnHasToolActivity = useMemo(
     () => hasToolActivityForTurn(threadActivities, activeLatestTurn?.turnId),
     [activeLatestTurn?.turnId, threadActivities],
@@ -1300,8 +1310,20 @@ export default function ChatView({ threadId }: ChatViewProps) {
   }, [serverMessages, attachmentPreviewHandoffByMessageId, optimisticUserMessages]);
   const timelineEntries = useMemo(
     () =>
-      deriveTimelineEntries(timelineMessages, activeThread?.proposedPlans ?? [], workLogEntries),
-    [activeThread?.proposedPlans, timelineMessages, workLogEntries],
+      deriveTimelineEntries({
+        messages: timelineMessages,
+        proposedPlans: activeThread?.proposedPlans ?? [],
+        commentaryEntries,
+        pendingFileChangeEntries,
+        workEntries: workLogEntries,
+      }),
+    [
+      activeThread?.proposedPlans,
+      commentaryEntries,
+      pendingFileChangeEntries,
+      timelineMessages,
+      workLogEntries,
+    ],
   );
   const { turnDiffSummaries, inferredCheckpointTurnCountByTurnId } =
     useTurnDiffSummaries(activeThread);

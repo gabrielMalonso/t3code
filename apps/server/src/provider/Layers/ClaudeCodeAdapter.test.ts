@@ -237,7 +237,7 @@ describe("ClaudeCodeAdapterLive", () => {
     return Effect.gen(function* () {
       const adapter = yield* ClaudeCodeAdapter;
 
-      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 11).pipe(
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 12).pipe(
         Stream.runCollect,
         Effect.forkChild,
       );
@@ -258,6 +258,21 @@ describe("ClaudeCodeAdapterLive", () => {
       harness.query.emit({
         type: "stream_event",
         session_id: "sdk-session-1",
+        uuid: "stream-0",
+        parent_tool_use_id: null,
+        event: {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "text",
+            text: "",
+          },
+        },
+      } as unknown as SDKMessage);
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-1",
         uuid: "stream-1",
         parent_tool_use_id: null,
         event: {
@@ -267,6 +282,17 @@ describe("ClaudeCodeAdapterLive", () => {
             type: "text_delta",
             text: "Hi",
           },
+        },
+      } as unknown as SDKMessage);
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-1",
+        uuid: "stream-1b",
+        parent_tool_use_id: null,
+        event: {
+          type: "content_block_stop",
+          index: 0,
         },
       } as unknown as SDKMessage);
 
@@ -329,11 +355,12 @@ describe("ClaudeCodeAdapterLive", () => {
           "session.state.changed",
           "turn.started",
           "thread.started",
+          "item.started",
           "content.delta",
+          "item.completed",
           "item.started",
           "item.completed",
           "item.updated",
-          "item.completed",
           "turn.completed",
         ],
       );
@@ -344,17 +371,37 @@ describe("ClaudeCodeAdapterLive", () => {
         assert.equal(String(turnStarted.turnId), String(turn.turnId));
       }
 
-      const deltaEvent = runtimeEvents.find((event) => event.type === "content.delta");
+      const deltaEvent = runtimeEvents.find(
+        (event) => event.type === "content.delta" && event.payload.streamKind === "assistant_text",
+      );
       assert.equal(deltaEvent?.type, "content.delta");
       if (deltaEvent?.type === "content.delta") {
         assert.equal(deltaEvent.payload.delta, "Hi");
         assert.equal(String(deltaEvent.turnId), String(turn.turnId));
       }
 
-      const toolStarted = runtimeEvents.find((event) => event.type === "item.started");
+      const assistantStarted = runtimeEvents.find(
+        (event) => event.type === "item.started" && event.payload.itemType === "assistant_message",
+      );
+      assert.equal(assistantStarted?.type, "item.started");
+      if (assistantStarted?.type === "item.started") {
+        assert.equal(String(assistantStarted.turnId), String(turn.turnId));
+      }
+
+      const toolStarted = runtimeEvents.find(
+        (event) => event.type === "item.started" && event.payload.itemType === "command_execution",
+      );
       assert.equal(toolStarted?.type, "item.started");
       if (toolStarted?.type === "item.started") {
         assert.equal(toolStarted.payload.itemType, "command_execution");
+      }
+
+      const assistantCompleted = runtimeEvents.find(
+        (event) => event.type === "item.completed" && event.payload.itemType === "assistant_message",
+      );
+      assert.equal(assistantCompleted?.type, "item.completed");
+      if (assistantCompleted?.type === "item.completed" && deltaEvent?.type === "content.delta") {
+        assert.equal(String(assistantCompleted.itemId), String(deltaEvent.itemId));
       }
 
       const turnCompleted = runtimeEvents[runtimeEvents.length - 1];
@@ -376,7 +423,7 @@ describe("ClaudeCodeAdapterLive", () => {
       return Effect.gen(function* () {
         const adapter = yield* ClaudeCodeAdapter;
 
-        const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 9).pipe(
+        const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 8).pipe(
           Stream.runCollect,
           Effect.forkChild,
         );
@@ -439,7 +486,6 @@ describe("ClaudeCodeAdapterLive", () => {
             "session.state.changed",
             "turn.started",
             "thread.started",
-            "item.updated",
             "content.delta",
             "item.completed",
             "turn.completed",

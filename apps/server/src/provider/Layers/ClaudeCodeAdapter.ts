@@ -69,12 +69,19 @@ interface ClaudeResumeState {
 
 interface ClaudeTurnState {
   readonly turnId: TurnId;
-  readonly assistantItemId: string;
   readonly startedAt: string;
   readonly items: Array<unknown>;
-  readonly messageCompleted: boolean;
-  readonly emittedTextDelta: boolean;
-  readonly fallbackAssistantText: string;
+  readonly contentBlocks: Map<number, ClaudeContentBlockState>;
+}
+
+interface ClaudeContentBlockState {
+  readonly itemId: string;
+  readonly itemType: Extract<CanonicalItemType, "assistant_message" | "reasoning">;
+  readonly index: number;
+  started: boolean;
+  completed: boolean;
+  emittedDelta: boolean;
+  fallbackText: string;
 }
 
 interface PendingApproval {
@@ -378,8 +385,37 @@ function turnStatusFromResult(result: SDKResultMessage): ProviderRuntimeTurnStat
   return "failed";
 }
 
-function streamKindFromDeltaType(deltaType: string): "assistant_text" | "reasoning_text" {
-  return deltaType.includes("thinking") ? "reasoning_text" : "assistant_text";
+function contentBlockItemTypeFromBlockType(
+  blockType: string,
+): Extract<CanonicalItemType, "assistant_message" | "reasoning"> | null {
+  switch (blockType) {
+    case "text":
+      return "assistant_message";
+    case "thinking":
+      return "reasoning";
+    default:
+      return null;
+  }
+}
+
+function titleForContentBlock(
+  itemType: Extract<CanonicalItemType, "assistant_message" | "reasoning">,
+): string {
+  return itemType === "reasoning" ? "Reasoning" : "Assistant message";
+}
+
+function streamKindForContentBlock(
+  itemType: Extract<CanonicalItemType, "assistant_message" | "reasoning">,
+): "assistant_text" | "reasoning_text" {
+  return itemType === "reasoning" ? "reasoning_text" : "assistant_text";
+}
+
+function syntheticContentBlockItemId(
+  turnId: TurnId,
+  itemType: Extract<CanonicalItemType, "assistant_message" | "reasoning">,
+  index: number,
+): string {
+  return `claude:${turnId}:${itemType}:${index}`;
 }
 
 function providerThreadRef(
@@ -388,32 +424,43 @@ function providerThreadRef(
   return context.resumeSessionId ? { providerThreadId: context.resumeSessionId } : {};
 }
 
-function extractAssistantText(message: SDKMessage): string {
+function extractAssistantContentBlocks(message: SDKMessage): Array<{
+  index: number;
+  itemType: Extract<CanonicalItemType, "assistant_message" | "reasoning">;
+  fallbackText: string;
+  data: Record<string, unknown>;
+}> {
   if (message.type !== "assistant") {
-    return "";
+    return [];
   }
 
   const content = (message.message as { content?: unknown } | undefined)?.content;
   if (!Array.isArray(content)) {
-    return "";
+    return [];
   }
 
-  const fragments: string[] = [];
-  for (const block of content) {
+  return content.flatMap((block, index) => {
     if (!block || typeof block !== "object") {
-      continue;
+      return [];
     }
-    const candidate = block as { type?: unknown; text?: unknown };
-    if (
-      candidate.type === "text" &&
-      typeof candidate.text === "string" &&
-      candidate.text.length > 0
-    ) {
-      fragments.push(candidate.text);
+    const data = block as Record<string, unknown>;
+    const itemType =
+      typeof data.type === "string" ? contentBlockItemTypeFromBlockType(data.type) : null;
+    if (!itemType) {
+      return [];
     }
-  }
-
-  return fragments.join("");
+    const fallbackText =
+      itemType === "reasoning"
+        ? (typeof data.thinking === "string"
+            ? data.thinking
+            : typeof data.text === "string"
+              ? data.text
+              : "")
+        : typeof data.text === "string"
+          ? data.text
+          : "";
+    return [{ index, itemType, fallbackText, data }];
+  });
 }
 
 function toSessionError(
@@ -749,8 +796,12 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           return;
         }
 
-        if (!turnState.messageCompleted) {
-          if (!turnState.emittedTextDelta && turnState.fallbackAssistantText.length > 0) {
+        const orderedContentBlocks = [...turnState.contentBlocks.values()].toSorted(
+          (left, right) => left.index - right.index,
+        );
+
+        for (const blockState of orderedContentBlocks) {
+          if (!blockState.emittedDelta && blockState.fallbackText.length > 0) {
             const deltaStamp = yield* makeEventStamp();
             yield* offerRuntimeEvent({
               type: "content.delta",
@@ -759,37 +810,42 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               createdAt: deltaStamp.createdAt,
               threadId: context.session.threadId,
               turnId: turnState.turnId,
-              itemId: asRuntimeItemId(turnState.assistantItemId),
+              itemId: asRuntimeItemId(blockState.itemId),
               payload: {
-                streamKind: "assistant_text",
-                delta: turnState.fallbackAssistantText,
+                streamKind: streamKindForContentBlock(blockState.itemType),
+                delta: blockState.fallbackText,
               },
               providerRefs: {
                 ...providerThreadRef(context),
                 providerTurnId: String(turnState.turnId),
-                providerItemId: ProviderItemId.makeUnsafe(turnState.assistantItemId),
+                providerItemId: ProviderItemId.makeUnsafe(blockState.itemId),
               },
             });
           }
 
+          if (blockState.completed) {
+            continue;
+          }
+
+          blockState.completed = true;
           const stamp = yield* makeEventStamp();
           yield* offerRuntimeEvent({
             type: "item.completed",
             eventId: stamp.eventId,
             provider: PROVIDER,
             createdAt: stamp.createdAt,
-            itemId: asRuntimeItemId(turnState.assistantItemId),
+            itemId: asRuntimeItemId(blockState.itemId),
             threadId: context.session.threadId,
             turnId: turnState.turnId,
             payload: {
-              itemType: "assistant_message",
+              itemType: blockState.itemType,
               status: "completed",
-              title: "Assistant message",
+              title: titleForContentBlock(blockState.itemType),
             },
             providerRefs: {
               ...providerThreadRef(context),
               providerTurnId: turnState.turnId,
-              providerItemId: ProviderItemId.makeUnsafe(turnState.assistantItemId),
+              providerItemId: ProviderItemId.makeUnsafe(blockState.itemId),
             },
           });
         }
@@ -846,48 +902,121 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
 
         const { event } = message;
 
-        if (event.type === "content_block_delta") {
-          if (
-            event.delta.type === "text_delta" &&
-            event.delta.text.length > 0 &&
-            context.turnState
-          ) {
-            if (!context.turnState.emittedTextDelta) {
-              context.turnState = {
-                ...context.turnState,
-                emittedTextDelta: true,
-              };
-            }
-            const stamp = yield* makeEventStamp();
-            yield* offerRuntimeEvent({
-              type: "content.delta",
-              eventId: stamp.eventId,
-              provider: PROVIDER,
-              createdAt: stamp.createdAt,
-              threadId: context.session.threadId,
-              turnId: context.turnState.turnId,
-              itemId: asRuntimeItemId(context.turnState.assistantItemId),
-              payload: {
-                streamKind: streamKindFromDeltaType(event.delta.type),
-                delta: event.delta.text,
-              },
-              providerRefs: {
-                ...providerThreadRef(context),
-                providerTurnId: context.turnState.turnId,
-                providerItemId: ProviderItemId.makeUnsafe(context.turnState.assistantItemId),
-              },
-              raw: {
-                source: "claude.sdk.message",
-                method: "claude/stream_event/content_block_delta",
-                payload: message,
-              },
-            });
+        const ensureContentBlockState = (
+          index: number,
+          itemType: Extract<CanonicalItemType, "assistant_message" | "reasoning">,
+        ): ClaudeContentBlockState => {
+          const existing = context.turnState?.contentBlocks.get(index);
+          if (existing) {
+            return existing;
           }
+          const nextState: ClaudeContentBlockState = {
+            itemId: syntheticContentBlockItemId(context.turnState!.turnId, itemType, index),
+            itemType,
+            index,
+            started: false,
+            completed: false,
+            emittedDelta: false,
+            fallbackText: "",
+          };
+          context.turnState!.contentBlocks.set(index, nextState);
+          return nextState;
+        };
+
+        if (event.type === "content_block_delta") {
+          if (!context.turnState) {
+            return;
+          }
+
+          const itemType =
+            event.delta.type === "thinking_delta"
+              ? "reasoning"
+              : event.delta.type === "text_delta"
+                ? "assistant_message"
+                : null;
+          const deltaText =
+            event.delta.type === "thinking_delta"
+              ? (typeof event.delta.thinking === "string"
+                  ? event.delta.thinking
+                  : typeof event.delta.text === "string"
+                    ? event.delta.text
+                    : "")
+              : event.delta.type === "text_delta"
+                ? event.delta.text
+                : "";
+
+          if (!itemType || deltaText.length === 0) {
+            return;
+          }
+
+          const contentBlockState = ensureContentBlockState(event.index, itemType);
+          contentBlockState.emittedDelta = true;
+
+          const stamp = yield* makeEventStamp();
+          yield* offerRuntimeEvent({
+            type: "content.delta",
+            eventId: stamp.eventId,
+            provider: PROVIDER,
+            createdAt: stamp.createdAt,
+            threadId: context.session.threadId,
+            turnId: context.turnState.turnId,
+            itemId: asRuntimeItemId(contentBlockState.itemId),
+            payload: {
+              streamKind: streamKindForContentBlock(contentBlockState.itemType),
+              delta: deltaText,
+            },
+            providerRefs: {
+              ...providerThreadRef(context),
+              providerTurnId: context.turnState.turnId,
+              providerItemId: ProviderItemId.makeUnsafe(contentBlockState.itemId),
+            },
+            raw: {
+              source: "claude.sdk.message",
+              method: "claude/stream_event/content_block_delta",
+              payload: message,
+            },
+          });
           return;
         }
 
         if (event.type === "content_block_start") {
           const { index, content_block: block } = event;
+          const contentBlockItemType = contentBlockItemTypeFromBlockType(block.type);
+          if (contentBlockItemType && context.turnState) {
+            const contentBlockState = ensureContentBlockState(index, contentBlockItemType);
+            if (contentBlockState.started) {
+              return;
+            }
+            contentBlockState.started = true;
+
+            const stamp = yield* makeEventStamp();
+            yield* offerRuntimeEvent({
+              type: "item.started",
+              eventId: stamp.eventId,
+              provider: PROVIDER,
+              createdAt: stamp.createdAt,
+              threadId: context.session.threadId,
+              turnId: context.turnState.turnId,
+              itemId: asRuntimeItemId(contentBlockState.itemId),
+              payload: {
+                itemType: contentBlockState.itemType,
+                status: "inProgress",
+                title: titleForContentBlock(contentBlockState.itemType),
+              },
+              providerRefs: {
+                ...providerThreadRef(context),
+                providerTurnId: context.turnState.turnId,
+                providerItemId: ProviderItemId.makeUnsafe(contentBlockState.itemId),
+              },
+              raw: {
+                source: "claude.sdk.message",
+                method: "claude/stream_event/content_block_start",
+                payload: message,
+              },
+            });
+            return;
+          }
+
           if (
             block.type !== "tool_use" &&
             block.type !== "server_tool_use" &&
@@ -949,6 +1078,40 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
 
         if (event.type === "content_block_stop") {
           const { index } = event;
+          if (context.turnState) {
+            const contentBlockState = context.turnState.contentBlocks.get(index);
+            if (contentBlockState && !contentBlockState.completed) {
+              contentBlockState.completed = true;
+
+              const stamp = yield* makeEventStamp();
+              yield* offerRuntimeEvent({
+                type: "item.completed",
+                eventId: stamp.eventId,
+                provider: PROVIDER,
+                createdAt: stamp.createdAt,
+                threadId: context.session.threadId,
+                turnId: context.turnState.turnId,
+                itemId: asRuntimeItemId(contentBlockState.itemId),
+                payload: {
+                  itemType: contentBlockState.itemType,
+                  status: "completed",
+                  title: titleForContentBlock(contentBlockState.itemType),
+                },
+                providerRefs: {
+                  ...providerThreadRef(context),
+                  providerTurnId: String(context.turnState.turnId),
+                  providerItemId: ProviderItemId.makeUnsafe(contentBlockState.itemId),
+                },
+                raw: {
+                  source: "claude.sdk.message",
+                  method: "claude/stream_event/content_block_stop",
+                  payload: message,
+                },
+              });
+              return;
+            }
+          }
+
           const tool = context.inFlightTools.get(index);
           if (!tool) {
             return;
@@ -995,43 +1158,63 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
 
         if (context.turnState) {
           context.turnState.items.push(message.message);
-          const fallbackAssistantText = extractAssistantText(message);
-          if (
-            fallbackAssistantText.length > 0 &&
-            fallbackAssistantText !== context.turnState.fallbackAssistantText
-          ) {
-            context.turnState = {
-              ...context.turnState,
-              fallbackAssistantText,
-            };
-          }
+          const assistantContentBlocks = extractAssistantContentBlocks(message);
+          for (const contentBlock of assistantContentBlocks) {
+            const existingState = context.turnState.contentBlocks.get(contentBlock.index);
+            const contentBlockState =
+              existingState ??
+              ({
+                itemId: syntheticContentBlockItemId(
+                  context.turnState.turnId,
+                  contentBlock.itemType,
+                  contentBlock.index,
+                ),
+                itemType: contentBlock.itemType,
+                index: contentBlock.index,
+                started: false,
+                completed: false,
+                emittedDelta: false,
+                fallbackText: "",
+              } satisfies ClaudeContentBlockState);
 
-          const stamp = yield* makeEventStamp();
-          yield* offerRuntimeEvent({
-            type: "item.updated",
-            eventId: stamp.eventId,
-            provider: PROVIDER,
-            createdAt: stamp.createdAt,
-            threadId: context.session.threadId,
-            turnId: context.turnState.turnId,
-            itemId: asRuntimeItemId(context.turnState.assistantItemId),
-            payload: {
-              itemType: "assistant_message",
-              status: "inProgress",
-              title: "Assistant message",
-              data: message.message,
-            },
-            providerRefs: {
-              ...providerThreadRef(context),
-              providerTurnId: context.turnState.turnId,
-              providerItemId: ProviderItemId.makeUnsafe(context.turnState.assistantItemId),
-            },
-            raw: {
-              source: "claude.sdk.message",
-              method: "claude/assistant",
-              payload: message,
-            },
-          });
+            if (!existingState) {
+              context.turnState.contentBlocks.set(contentBlock.index, contentBlockState);
+            }
+
+            if (
+              contentBlock.fallbackText.length > 0 &&
+              contentBlock.fallbackText !== contentBlockState.fallbackText
+            ) {
+              contentBlockState.fallbackText = contentBlock.fallbackText;
+            }
+
+            const stamp = yield* makeEventStamp();
+            yield* offerRuntimeEvent({
+              type: "item.updated",
+              eventId: stamp.eventId,
+              provider: PROVIDER,
+              createdAt: stamp.createdAt,
+              threadId: context.session.threadId,
+              turnId: context.turnState.turnId,
+              itemId: asRuntimeItemId(contentBlockState.itemId),
+              payload: {
+                itemType: contentBlockState.itemType,
+                status: contentBlockState.completed ? "completed" : "inProgress",
+                title: titleForContentBlock(contentBlockState.itemType),
+                data: contentBlock.data,
+              },
+              providerRefs: {
+                ...providerThreadRef(context),
+                providerTurnId: context.turnState.turnId,
+                providerItemId: ProviderItemId.makeUnsafe(contentBlockState.itemId),
+              },
+              raw: {
+                source: "claude.sdk.message",
+                method: "claude/assistant",
+                payload: message,
+              },
+            });
+          }
         }
 
         context.lastAssistantUuid = message.uuid;
@@ -1763,12 +1946,9 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
         const turnId = TurnId.makeUnsafe(yield* Random.nextUUIDv4);
         const turnState: ClaudeTurnState = {
           turnId,
-          assistantItemId: yield* Random.nextUUIDv4,
           startedAt: yield* nowIso,
           items: [],
-          messageCompleted: false,
-          emittedTextDelta: false,
-          fallbackAssistantText: "",
+          contentBlocks: new Map(),
         };
 
         const updatedAt = yield* nowIso;
