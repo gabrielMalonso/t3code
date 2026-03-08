@@ -214,6 +214,7 @@ import {
   type DraftThreadEnvMode,
   type DraftThreadState,
   type PersistedComposerImageAttachment,
+  DEFAULT_ENV_MODE,
   useComposerDraftStore,
   useComposerThreadDraft,
 } from "../composerDraftStore";
@@ -2268,8 +2269,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const envMode: DraftThreadEnvMode = activeWorktreePath
     ? "worktree"
     : isLocalDraftThread
-      ? (draftThread?.envMode ?? "local")
-      : "local";
+      ? (draftThread?.envMode ?? DEFAULT_ENV_MODE)
+      : DEFAULT_ENV_MODE;
 
   useEffect(() => {
     if (phase !== "running") return;
