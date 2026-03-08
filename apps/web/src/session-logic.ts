@@ -28,6 +28,13 @@ export const PROVIDER_OPTIONS: Array<{
   { value: "cursor", label: "Cursor", available: false },
 ];
 
+export interface EditDiffData {
+  filePath: string;
+  oldString: string;
+  newString: string;
+  truncated?: boolean;
+}
+
 export interface WorkLogEntry {
   id: string;
   createdAt: string;
@@ -37,6 +44,8 @@ export interface WorkLogEntry {
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
   itemType?: string;
+  toolName?: string;
+  editDiff?: EditDiffData;
 }
 
 export interface ThinkingEntry {
@@ -476,12 +485,34 @@ export function deriveWorkLogEntries(
         return null;
       }
       const command = extractToolCommand(payload);
+      const toolName =
+        payload && typeof payload.toolName === "string" && payload.toolName.length > 0
+          ? payload.toolName
+          : undefined;
+      const rawEditDiff =
+        payload && typeof payload.editDiff === "object" && payload.editDiff !== null
+          ? (payload.editDiff as Record<string, unknown>)
+          : null;
+      const editDiff: EditDiffData | undefined =
+        rawEditDiff &&
+        typeof rawEditDiff.filePath === "string" &&
+        typeof rawEditDiff.oldString === "string" &&
+        typeof rawEditDiff.newString === "string"
+          ? {
+              filePath: rawEditDiff.filePath,
+              oldString: rawEditDiff.oldString,
+              newString: rawEditDiff.newString,
+              ...(rawEditDiff.truncated === true ? { truncated: true } : {}),
+            }
+          : undefined;
       const entry: WorkLogEntry = {
         id: activity.id,
         createdAt: activity.createdAt,
         label: activity.summary,
         tone: activity.tone === "approval" ? "info" : activity.tone,
         ...(itemType ? { itemType } : {}),
+        ...(toolName ? { toolName } : {}),
+        ...(editDiff ? { editDiff } : {}),
       };
       if (payload && typeof payload.detail === "string" && payload.detail.length > 0) {
         entry.detail = payload.detail;

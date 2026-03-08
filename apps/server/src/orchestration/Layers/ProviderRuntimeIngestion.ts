@@ -459,16 +459,20 @@ function runtimeEventToActivities(
       if (!isToolLifecycleItemType(event.payload.itemType)) {
         return [];
       }
+      const completedData =
+        event.payload.data && typeof event.payload.data === "object" ? (event.payload.data as Record<string, unknown>) : null;
       return [
         {
           id: event.eventId,
           createdAt: event.createdAt,
           tone: "tool",
           kind: "tool.completed",
-          summary: `${event.payload.title ?? "Tool"} complete`,
+          summary: event.payload.title ?? "Tool complete",
           payload: {
             itemType: event.payload.itemType,
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
+            ...(completedData?.toolName ? { toolName: completedData.toolName } : {}),
+            ...(completedData?.editDiff !== undefined ? { editDiff: completedData.editDiff } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
@@ -486,7 +490,7 @@ function runtimeEventToActivities(
           createdAt: event.createdAt,
           tone: "tool",
           kind: "tool.started",
-          summary: `${event.payload.title ?? "Tool"} started`,
+          summary: event.payload.title ?? "Tool started",
           payload: {
             itemType: event.payload.itemType,
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),

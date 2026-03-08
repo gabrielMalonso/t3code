@@ -91,12 +91,20 @@ interface PendingApproval {
   readonly decision: Deferred.Deferred<ProviderApprovalDecision>;
 }
 
+interface EditDiff {
+  readonly filePath: string;
+  readonly oldString: string;
+  readonly newString: string;
+  readonly truncated?: boolean;
+}
+
 interface ToolInFlight {
   readonly itemId: string;
   readonly itemType: CanonicalItemType;
   readonly toolName: string;
   readonly title: string;
-  readonly detail?: string;
+  readonly detail?: string | undefined;
+  readonly editDiff?: EditDiff | undefined;
 }
 
 interface ClaudeSessionContext {
@@ -331,6 +339,90 @@ function titleForTool(itemType: CanonicalItemType): string {
     default:
       return "Item";
   }
+}
+
+function extractFilePath(input: Record<string, unknown>): string | undefined {
+  for (const key of ["file_path", "path", "filePath"] as const) {
+    const value = input[key];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return undefined;
+}
+
+function shortenPath(filePath: string): string {
+  const parts = filePath.replace(/\\/g, "/").split("/");
+  if (parts.length <= 2) return filePath;
+  return parts.slice(-2).join("/");
+}
+
+function computeEditStats(input: Record<string, unknown>): string | null {
+  const oldStr = typeof input.old_string === "string" ? input.old_string : "";
+  const newStr = typeof input.new_string === "string" ? input.new_string : "";
+  if (oldStr.length === 0 && newStr.length === 0) return null;
+  const removed = oldStr === "" ? 0 : oldStr.split("\n").length;
+  const added = newStr === "" ? 0 : newStr.split("\n").length;
+  return `+${added} -${removed}`;
+}
+
+function richTitleForTool(
+  toolName: string,
+  itemType: CanonicalItemType,
+  input: Record<string, unknown>,
+): string {
+  const filePath = extractFilePath(input);
+  const shortPath = filePath ? shortenPath(filePath) : undefined;
+  const normalized = toolName.toLowerCase();
+
+  if (normalized.includes("edit") || normalized.includes("patch") || normalized.includes("replace")) {
+    if (!shortPath) return toolName;
+    const stats = computeEditStats(input);
+    return stats ? `Edit ${shortPath} ${stats}` : `Edit ${shortPath}`;
+  }
+  if (normalized === "read" || normalized.includes("read")) {
+    return shortPath ? `Read ${shortPath}` : toolName;
+  }
+  if (normalized.includes("write") || normalized.includes("create")) {
+    return shortPath ? `Write ${shortPath}` : toolName;
+  }
+  if (itemType === "command_execution") {
+    const cmd =
+      typeof input.command === "string" ? input.command : typeof input.cmd === "string" ? input.cmd : null;
+    return cmd ? `Bash: ${cmd.trim().slice(0, 80)}` : toolName;
+  }
+  if (normalized.includes("glob")) {
+    const pattern = typeof input.pattern === "string" ? input.pattern : null;
+    return pattern ? `Glob ${pattern.slice(0, 60)}` : toolName;
+  }
+  if (normalized.includes("grep")) {
+    const pattern = typeof input.pattern === "string" ? input.pattern : null;
+    return pattern ? `Grep ${pattern.slice(0, 60)}` : toolName;
+  }
+  if (itemType === "mcp_tool_call") {
+    return `MCP: ${toolName}`;
+  }
+  return toolName;
+}
+
+const EDIT_DIFF_MAX_CHARS = 4000;
+
+function isEditTool(toolName: string): boolean {
+  const n = toolName.toLowerCase();
+  return n.includes("edit") || n.includes("patch") || n.includes("replace");
+}
+
+function buildEditDiff(input: Record<string, unknown>): EditDiff | undefined {
+  const filePath = extractFilePath(input);
+  if (!filePath) return undefined;
+  const rawOld = typeof input.old_string === "string" ? input.old_string : "";
+  const rawNew = typeof input.new_string === "string" ? input.new_string : "";
+  if (rawOld.length === 0 && rawNew.length === 0) return undefined;
+  const truncated = rawOld.length > EDIT_DIFF_MAX_CHARS || rawNew.length > EDIT_DIFF_MAX_CHARS;
+  return {
+    filePath: shortenPath(filePath),
+    oldString: rawOld.slice(0, EDIT_DIFF_MAX_CHARS),
+    newString: rawNew.slice(0, EDIT_DIFF_MAX_CHARS),
+    ...(truncated ? { truncated: true } : {}),
+  };
 }
 
 function buildUserMessage(input: ProviderSendTurnInput): SDKUserMessage {
@@ -1035,12 +1127,14 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           const itemId = block.id;
           const detail = summarizeToolRequest(toolName, toolInput);
 
+          const editDiff = isEditTool(toolName) ? buildEditDiff(toolInput) : undefined;
           const tool: ToolInFlight = {
             itemId,
             itemType,
             toolName,
-            title: titleForTool(itemType),
+            title: richTitleForTool(toolName, itemType, toolInput),
             detail,
+            editDiff,
           };
           context.inFlightTools.set(index, tool);
 
@@ -1137,6 +1231,10 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               status: "completed",
               title: tool.title,
               ...(tool.detail ? { detail: tool.detail } : {}),
+              data: {
+                toolName: tool.toolName,
+                ...(tool.editDiff ? { editDiff: tool.editDiff } : {}),
+              },
             },
             providerRefs: {
               ...providerThreadRef(context),

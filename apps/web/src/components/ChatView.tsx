@@ -5237,6 +5237,8 @@ type TimelineActivityRowEntry = {
   detail?: string;
   command?: string;
   changedFiles?: ReadonlyArray<string>;
+  toolName?: string;
+  editDiff?: { filePath: string; oldString: string; newString: string; truncated?: boolean };
 };
 type TimelineCommentaryEntry = Extract<TimelineEntry, { kind: "commentary" }>["entry"];
 type TimelineFileChangePreviewEntry = Extract<
@@ -5331,6 +5333,13 @@ const MessagesTimeline = memo(function MessagesTimeline({
     setExpandedThinkingBlocks((current) => ({
       ...current,
       [blockId]: !current[blockId],
+    }));
+  }, []);
+  const [expandedEditDiffs, setExpandedEditDiffs] = useState<Record<string, boolean>>({});
+  const onToggleEditDiff = useCallback((entryId: string) => {
+    setExpandedEditDiffs((current) => ({
+      ...current,
+      [entryId]: !current[entryId],
     }));
   }, []);
   const isClaudeProvider = provider === "claudeCode";
@@ -5639,20 +5648,66 @@ const MessagesTimeline = memo(function MessagesTimeline({
             return (
               <div className="space-y-0.5 px-1">
                 {groupedEntries.map((workEntry) => {
-                  const inlineLabel = workEntry.command
-                    ? `${workEntry.label}: ${workEntry.command}`
-                    : workEntry.changedFiles && workEntry.changedFiles.length > 0
-                      ? `${workEntry.label}: ${workEntry.changedFiles.slice(0, 3).map((f) => f.split("/").pop()).join(", ")}${workEntry.changedFiles.length > 3 ? ` +${workEntry.changedFiles.length - 3}` : ""}`
-                      : workEntry.label;
+                  const hasEditDiff = !!workEntry.editDiff;
+                  const isDiffExpanded = expandedEditDiffs[workEntry.id] ?? false;
+                  // Rich labels: the label already contains descriptive info (e.g. "Edit src/file.ts +2 -1")
+                  // Only fall back to appending command/changedFiles if label looks generic
+                  const labelLooksRich = /^(Edit|Read|Write|Bash|Glob|Grep|MCP)\b/.test(workEntry.label);
+                  const inlineLabel = labelLooksRich
+                    ? workEntry.label
+                    : workEntry.command
+                      ? `${workEntry.label}: ${workEntry.command}`
+                      : workEntry.changedFiles && workEntry.changedFiles.length > 0
+                        ? `${workEntry.label}: ${workEntry.changedFiles.slice(0, 3).map((f) => f.split("/").pop()).join(", ")}${workEntry.changedFiles.length > 3 ? ` +${workEntry.changedFiles.length - 3}` : ""}`
+                        : workEntry.label;
                   return (
-                    <div key={`work-row:${workEntry.id}`} className="flex items-start gap-2 py-0.5">
-                      <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/30" />
-                      <p
-                        className={`min-w-0 truncate text-[11px] leading-relaxed ${workToneClass(workEntry.tone)}`}
-                        title={inlineLabel}
+                    <div key={`work-row:${workEntry.id}`}>
+                      <div
+                        className={`flex items-start gap-2 py-0.5 ${hasEditDiff ? "cursor-pointer" : ""}`}
+                        onClick={hasEditDiff ? () => onToggleEditDiff(workEntry.id) : undefined}
+                        role={hasEditDiff ? "button" : undefined}
+                        tabIndex={hasEditDiff ? 0 : undefined}
+                        onKeyDown={
+                          hasEditDiff
+                            ? (e) => {
+                                if (e.key === "Enter" || e.key === " ") onToggleEditDiff(workEntry.id);
+                              }
+                            : undefined
+                        }
                       >
-                        {inlineLabel}
-                      </p>
+                        {hasEditDiff ? (
+                          <span className="mt-[3px] shrink-0 text-[10px] text-muted-foreground/40">
+                            {isDiffExpanded ? "▾" : "▸"}
+                          </span>
+                        ) : (
+                          <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/30" />
+                        )}
+                        <p
+                          className={`min-w-0 truncate text-[11px] leading-relaxed ${workToneClass(workEntry.tone)}`}
+                          title={inlineLabel}
+                        >
+                          {inlineLabel}
+                        </p>
+                      </div>
+                      {hasEditDiff && isDiffExpanded && workEntry.editDiff && (
+                        <div className="ml-4 mt-0.5 mb-1 overflow-x-auto rounded border border-border/50 bg-card/30 px-2 py-1.5 font-mono text-[10px] leading-relaxed">
+                          {workEntry.editDiff.oldString.length > 0 &&
+                            workEntry.editDiff.oldString.split("\n").map((line, i) => (
+                              <div key={`old-${i}`} className="text-red-400/70 whitespace-pre">
+                                {"- "}{line}
+                              </div>
+                            ))}
+                          {workEntry.editDiff.newString.length > 0 &&
+                            workEntry.editDiff.newString.split("\n").map((line, i) => (
+                              <div key={`new-${i}`} className="text-green-400/70 whitespace-pre">
+                                {"+ "}{line}
+                              </div>
+                            ))}
+                          {workEntry.editDiff.truncated && (
+                            <div className="mt-1 text-muted-foreground/50 italic">Diff truncated</div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
