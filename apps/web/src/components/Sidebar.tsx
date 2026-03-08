@@ -495,13 +495,13 @@ export default function Sidebar() {
       const thread = threads.find((t) => t.id === threadId);
       if (!thread) return;
 
-      const statusItems = (
+      const statusChildren = (
         [
-          { id: "status:in-progress", label: "Move to \u2192 In Progress" },
-          { id: "status:in-review", label: "Move to \u2192 In Review" },
-          { id: "status:done", label: "Move to \u2192 Done" },
-          { id: "status:backlog", label: "Move to \u2192 Backlog" },
-          { id: "status:cancelled", label: "Move to \u2192 Cancelled" },
+          { id: "status:done", label: "Done" },
+          { id: "status:in-review", label: "In Review" },
+          { id: "status:in-progress", label: "In Progress" },
+          { id: "status:backlog", label: "Backlog" },
+          { id: "status:cancelled", label: "Cancelled" },
         ] as const
       ).filter((item) => item.id !== `status:${thread.statusCategory}`);
 
@@ -510,7 +510,7 @@ export default function Sidebar() {
           { id: "rename", label: "Rename thread" },
           { id: "mark-unread", label: "Mark unread" },
           { id: "copy-thread-id", label: "Copy Thread ID" },
-          ...statusItems,
+          { id: "move-to", label: "Move to", children: statusChildren },
           { id: "delete", label: "Delete", destructive: true },
         ],
         position,

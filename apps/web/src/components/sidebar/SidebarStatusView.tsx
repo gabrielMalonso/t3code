@@ -22,9 +22,9 @@ interface StatusCategoryConfig {
 }
 
 const STATUS_CATEGORIES: StatusCategoryConfig[] = [
-  { key: "in-progress", label: "In Progress", dotClass: "bg-sky-500 dark:bg-sky-400" },
-  { key: "in-review", label: "In Review", dotClass: "bg-amber-500 dark:bg-amber-400" },
   { key: "done", label: "Done", dotClass: "bg-emerald-500 dark:bg-emerald-400" },
+  { key: "in-review", label: "In Review", dotClass: "bg-amber-500 dark:bg-amber-400" },
+  { key: "in-progress", label: "In Progress", dotClass: "bg-sky-500 dark:bg-sky-400" },
   { key: "backlog", label: "Backlog", dotClass: "bg-zinc-400 dark:bg-zinc-500" },
   { key: "cancelled", label: "Cancelled", dotClass: "bg-rose-500 dark:bg-rose-400" },
 ];
@@ -111,7 +111,6 @@ export function SidebarStatusView({
     <SidebarMenu>
       {STATUS_CATEGORIES.map((category) => {
         const categoryThreads = threadsByCategory.get(category.key) ?? [];
-        if (categoryThreads.length === 0) return null;
         const isOpen = !collapsed.has(category.key);
 
         return (
