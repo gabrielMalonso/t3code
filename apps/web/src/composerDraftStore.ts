@@ -16,6 +16,7 @@ import { createJSONStorage, persist, type StateStorage } from "zustand/middlewar
 
 export const COMPOSER_DRAFT_STORAGE_KEY = "t3code:composer-drafts:v1";
 export type DraftThreadEnvMode = "local" | "worktree";
+export const DEFAULT_ENV_MODE: DraftThreadEnvMode = "worktree";
 
 const COMPOSER_PERSIST_DEBOUNCE_MS = 300;
 
@@ -297,7 +298,7 @@ function normalizeDraftThreadEnvMode(
   if (value === "local" || value === "worktree") {
     return value;
   }
-  return fallbackWorktreePath ? "worktree" : "local";
+  return fallbackWorktreePath ? "worktree" : DEFAULT_ENV_MODE;
 }
 
 function normalizePersistedComposerDraftState(value: unknown): PersistedComposerDraftStoreState {
@@ -374,7 +375,7 @@ function normalizePersistedComposerDraftState(value: unknown): PersistedComposer
             interactionMode: DEFAULT_INTERACTION_MODE,
             branch: null,
             worktreePath: null,
-            envMode: "local",
+            envMode: DEFAULT_ENV_MODE,
           };
         } else if (draftThreadsByThreadId[threadId as ThreadId]?.projectId !== projectId) {
           draftThreadsByThreadId[threadId as ThreadId] = {
@@ -613,7 +614,7 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
             worktreePath: nextWorktreePath,
             envMode:
               options?.envMode ??
-              (nextWorktreePath ? "worktree" : (existingThread?.envMode ?? "local")),
+              (nextWorktreePath ? "worktree" : (existingThread?.envMode ?? DEFAULT_ENV_MODE)),
           };
           const hasSameProjectMapping = previousThreadIdForProject === threadId;
           const hasSameDraftThread =
@@ -683,7 +684,7 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
             branch: options.branch === undefined ? existing.branch : (options.branch ?? null),
             worktreePath: nextWorktreePath,
             envMode:
-              options.envMode ?? (nextWorktreePath ? "worktree" : (existing.envMode ?? "local")),
+              options.envMode ?? (nextWorktreePath ? "worktree" : (existing.envMode ?? DEFAULT_ENV_MODE)),
           };
           const isUnchanged =
             nextDraftThread.projectId === existing.projectId &&
