@@ -334,10 +334,19 @@ function buildUserMessage(input: ProviderSendTurnInput): SDKUserMessage {
   }
 
   for (const attachment of input.attachments ?? []) {
-    if (attachment.type === "image") {
-      fragments.push(
-        `Attached image: ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes).`,
-      );
+    switch (attachment.type) {
+      case "image": {
+        fragments.push(
+          `Attached image: ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes).`,
+        );
+        break;
+      }
+      case "file": {
+        fragments.push(
+          `Attached file: ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes).`,
+        );
+        break;
+      }
     }
   }
 
