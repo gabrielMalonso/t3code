@@ -78,6 +78,7 @@ import {
   derivePendingUserInputs,
   derivePhase,
   deriveTimelineEntries,
+  deriveThinkingEntries,
   deriveActiveWorkStartedAt,
   deriveActivePlanState,
   findLatestProposedPlan,
@@ -1101,6 +1102,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
     () => deriveCommentaryEntries(threadActivities, activeLatestTurn?.turnId ?? undefined),
     [activeLatestTurn?.turnId, threadActivities],
   );
+  const thinkingEntries = useMemo(
+    () => deriveThinkingEntries(threadActivities, activeLatestTurn?.turnId ?? undefined),
+    [activeLatestTurn?.turnId, threadActivities],
+  );
   const pendingFileChangeEntries = useMemo(
     () => derivePendingFileChangeEntries(threadActivities, activeLatestTurn?.turnId ?? undefined),
     [activeLatestTurn?.turnId, threadActivities],
@@ -1316,11 +1321,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
         commentaryEntries,
         pendingFileChangeEntries,
         workEntries: workLogEntries,
+        thinkingEntries,
       }),
     [
       activeThread?.proposedPlans,
       commentaryEntries,
       pendingFileChangeEntries,
+      thinkingEntries,
       timelineMessages,
       workLogEntries,
     ],
@@ -3832,6 +3839,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           markdownCwd={gitCwd ?? undefined}
           resolvedTheme={resolvedTheme}
           workspaceRoot={activeProject?.cwd ?? undefined}
+          provider={activeProvider}
         />
       </div>
 
@@ -5215,6 +5223,7 @@ interface MessagesTimelineProps {
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
   workspaceRoot: string | undefined;
+  provider: ProviderKind;
 }
 
 type TimelineEntry = ReturnType<typeof deriveTimelineEntries>[number];
@@ -5234,6 +5243,7 @@ type TimelineFileChangePreviewEntry = Extract<
   TimelineEntry,
   { kind: "file-change-preview" }
 >["entry"];
+type TimelineThinkingEntry = Extract<TimelineEntry, { kind: "thinking" }>["entry"];
 type TimelineRow =
   | {
       kind: "work";
@@ -5265,6 +5275,19 @@ type TimelineRow =
       id: string;
       createdAt: string;
       proposedPlan: TimelineProposedPlan;
+    }
+  | {
+      kind: "thinking";
+      id: string;
+      createdAt: string;
+      entry: TimelineThinkingEntry;
+    }
+  | {
+      kind: "collapsed-turn-activity";
+      id: string;
+      createdAt: string;
+      collapsedRows: TimelineRow[];
+      summary: string;
     }
   | { kind: "working"; id: string; createdAt: string | null };
 
@@ -5299,9 +5322,18 @@ const MessagesTimeline = memo(function MessagesTimeline({
   markdownCwd,
   resolvedTheme,
   workspaceRoot,
+  provider,
 }: MessagesTimelineProps) {
   const timelineRootRef = useRef<HTMLDivElement | null>(null);
   const [timelineWidthPx, setTimelineWidthPx] = useState<number | null>(null);
+  const [expandedThinkingBlocks, setExpandedThinkingBlocks] = useState<Record<string, boolean>>({});
+  const onToggleThinkingBlock = useCallback((blockId: string) => {
+    setExpandedThinkingBlocks((current) => ({
+      ...current,
+      [blockId]: !current[blockId],
+    }));
+  }, []);
+  const isClaudeProvider = provider === "claudeCode";
 
   useLayoutEffect(() => {
     const timelineRoot = timelineRootRef.current;
@@ -5337,6 +5369,16 @@ const MessagesTimeline = memo(function MessagesTimeline({
         continue;
       }
 
+      if (timelineEntry.kind === "thinking") {
+        nextRows.push({
+          kind: "thinking",
+          id: timelineEntry.id,
+          createdAt: timelineEntry.createdAt,
+          entry: timelineEntry.entry,
+        });
+        continue;
+      }
+
       const firstGroupedEntry = toTimelineActivityRowEntry(timelineEntry);
       if (firstGroupedEntry) {
         const groupedEntries = [firstGroupedEntry];
@@ -5345,9 +5387,20 @@ const MessagesTimeline = memo(function MessagesTimeline({
           const nextEntry = timelineEntries[cursor];
           if (!nextEntry) break;
           const groupedEntry = toTimelineActivityRowEntry(nextEntry);
-          if (!groupedEntry) break;
-          groupedEntries.push(groupedEntry);
-          cursor += 1;
+          if (groupedEntry) {
+            groupedEntries.push(groupedEntry);
+            cursor += 1;
+            continue;
+          }
+          // For Claude: absorb commentary between work entries to avoid fragmenting groups
+          if (isClaudeProvider && nextEntry.kind === "commentary") {
+            const afterCommentary = timelineEntries[cursor + 1];
+            if (afterCommentary && toTimelineActivityRowEntry(afterCommentary)) {
+              cursor += 1;
+              continue;
+            }
+          }
+          break;
         }
         nextRows.push({
           kind: "work",
@@ -5409,8 +5462,54 @@ const MessagesTimeline = memo(function MessagesTimeline({
       });
     }
 
+    // For Claude: collapse work+thinking rows into a single summary row after turn settles
+    if (isClaudeProvider && !activeTurnInProgress && nextRows.length > 0) {
+      const collapsableKinds = new Set<string>(["work", "thinking", "commentary"]);
+      const result: TimelineRow[] = [];
+      let pendingCollapsable: TimelineRow[] = [];
+
+      const flushCollapsable = () => {
+        if (pendingCollapsable.length === 0) return;
+        if (pendingCollapsable.length <= 2) {
+          result.push(...pendingCollapsable);
+        } else {
+          const workCount = pendingCollapsable.reduce(
+            (count, row) =>
+              count + (row.kind === "work" ? row.groupedEntries.length : 0),
+            0,
+          );
+          const thinkingCount = pendingCollapsable.filter(
+            (row) => row.kind === "thinking",
+          ).length;
+          const parts: string[] = [];
+          if (workCount > 0) parts.push(`${workCount} tool call${workCount === 1 ? "" : "s"}`);
+          if (thinkingCount > 0) parts.push(`${thinkingCount} thinking block${thinkingCount === 1 ? "" : "s"}`);
+          const summary = parts.join(", ") || "Activity";
+          result.push({
+            kind: "collapsed-turn-activity",
+            id: `collapsed:${pendingCollapsable[0]!.id}`,
+            createdAt: pendingCollapsable[0]!.createdAt ?? "",
+            collapsedRows: pendingCollapsable,
+            summary,
+          });
+        }
+        pendingCollapsable = [];
+      };
+
+      for (const row of nextRows) {
+        if (collapsableKinds.has(row.kind)) {
+          pendingCollapsable.push(row);
+        } else {
+          flushCollapsable();
+          result.push(row);
+        }
+      }
+      flushCollapsable();
+      return result;
+    }
+
     return nextRows;
-  }, [timelineEntries, completionDividerBeforeEntryId, isWorking, activeTurnStartedAt]);
+  }, [timelineEntries, completionDividerBeforeEntryId, isWorking, activeTurnStartedAt, isClaudeProvider, activeTurnInProgress]);
 
   const firstUnvirtualizedRowIndex = useMemo(() => {
     const firstTailRowIndex = Math.max(rows.length - ALWAYS_UNVIRTUALIZED_TAIL_ROWS, 0);
@@ -5463,10 +5562,15 @@ const MessagesTimeline = memo(function MessagesTimeline({
     estimateSize: (index: number) => {
       const row = rows[index];
       if (!row) return 96;
-      if (row.kind === "work") return 112;
+      if (row.kind === "work") {
+        if (isClaudeProvider) return 4 + Math.min(row.groupedEntries.length, 10) * 24;
+        return 112;
+      }
       if (row.kind === "commentary") return 56;
       if (row.kind === "file-change-preview") return 72;
       if (row.kind === "proposed-plan") return estimateTimelineProposedPlanHeight(row.proposedPlan);
+      if (row.kind === "thinking") return 32;
+      if (row.kind === "collapsed-turn-activity") return 36;
       if (row.kind === "working") return 40;
       return estimateTimelineMessageHeight(row.message, { timelineWidthPx });
     },
@@ -5529,6 +5633,34 @@ const MessagesTimeline = memo(function MessagesTimeline({
         (() => {
           const groupId = row.id;
           const groupedEntries = row.groupedEntries;
+
+          if (isClaudeProvider) {
+            // Claude: flat activity lines (no card wrapper)
+            return (
+              <div className="space-y-0.5 px-1">
+                {groupedEntries.map((workEntry) => {
+                  const inlineLabel = workEntry.command
+                    ? `${workEntry.label}: ${workEntry.command}`
+                    : workEntry.changedFiles && workEntry.changedFiles.length > 0
+                      ? `${workEntry.label}: ${workEntry.changedFiles.slice(0, 3).map((f) => f.split("/").pop()).join(", ")}${workEntry.changedFiles.length > 3 ? ` +${workEntry.changedFiles.length - 3}` : ""}`
+                      : workEntry.label;
+                  return (
+                    <div key={`work-row:${workEntry.id}`} className="flex items-start gap-2 py-0.5">
+                      <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/30" />
+                      <p
+                        className={`min-w-0 truncate text-[11px] leading-relaxed ${workToneClass(workEntry.tone)}`}
+                        title={inlineLabel}
+                      >
+                        {inlineLabel}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          }
+
+          // Codex: card-based rendering (unchanged)
           const isExpanded = expandedWorkGroups[groupId] ?? false;
           const hasOverflow = groupedEntries.length > MAX_VISIBLE_WORK_LOG_ENTRIES;
           const visibleEntries =
@@ -5605,6 +5737,77 @@ const MessagesTimeline = memo(function MessagesTimeline({
                   </div>
                 ))}
               </div>
+            </div>
+          );
+        })()}
+
+      {row.kind === "thinking" &&
+        (() => {
+          const blockId = row.id;
+          const isThinkingExpanded = expandedThinkingBlocks[blockId] ?? false;
+          const previewText =
+            row.entry.fullText.length > 80
+              ? `${row.entry.fullText.slice(0, 80)}…`
+              : row.entry.fullText;
+
+          return (
+            <div className="px-1">
+              <button
+                type="button"
+                className="flex w-full items-start gap-2 py-0.5 text-left"
+                onClick={() => onToggleThinkingBlock(blockId)}
+              >
+                <span className="mt-[3px] shrink-0 text-[11px] text-muted-foreground/50">
+                  {isThinkingExpanded ? "⊖" : "⊕"}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="text-[11px] font-medium text-muted-foreground/60">
+                    Thinking
+                  </span>
+                  {!isThinkingExpanded && (
+                    <span className="ml-2 text-[11px] text-muted-foreground/40">
+                      {previewText}
+                    </span>
+                  )}
+                </span>
+              </button>
+              {isThinkingExpanded && (
+                <div className="ml-4 mt-1 rounded-md border border-border/50 bg-card/30 px-3 py-2">
+                  <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-muted-foreground/70">
+                    {row.entry.fullText}
+                  </pre>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+      {row.kind === "collapsed-turn-activity" &&
+        (() => {
+          const groupId = row.id;
+          const isExpanded = expandedWorkGroups[groupId] ?? false;
+
+          return (
+            <div className="px-1">
+              <button
+                type="button"
+                className="flex items-center gap-2 py-0.5 text-left"
+                onClick={() => onToggleWorkGroup(groupId)}
+              >
+                <span className="text-[11px] text-muted-foreground/50">
+                  {isExpanded ? "▾" : "▸"}
+                </span>
+                <span className="text-[11px] text-muted-foreground/50">
+                  {row.summary}
+                </span>
+              </button>
+              {isExpanded && (
+                <div className="mt-1 ml-1">
+                  {row.collapsedRows.map((innerRow) => (
+                    <div key={innerRow.id}>{renderRowContent(innerRow)}</div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })()}

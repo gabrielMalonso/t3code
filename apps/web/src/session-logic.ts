@@ -36,6 +36,15 @@ export interface WorkLogEntry {
   command?: string;
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
+  itemType?: string;
+}
+
+export interface ThinkingEntry {
+  id: string;
+  createdAt: string;
+  turnId: TurnId | null;
+  summary: string;
+  fullText: string;
 }
 
 export interface CommentaryEntry {
@@ -117,6 +126,12 @@ export type TimelineEntry =
       kind: "work";
       createdAt: string;
       entry: WorkLogEntry;
+    }
+  | {
+      id: string;
+      kind: "thinking";
+      createdAt: string;
+      entry: ThinkingEntry;
     };
 
 export function formatTimestamp(isoDate: string): string {
@@ -466,6 +481,7 @@ export function deriveWorkLogEntries(
         createdAt: activity.createdAt,
         label: activity.summary,
         tone: activity.tone === "approval" ? "info" : activity.tone,
+        ...(itemType ? { itemType } : {}),
       };
       if (payload && typeof payload.detail === "string" && payload.detail.length > 0) {
         entry.detail = payload.detail;
@@ -504,6 +520,33 @@ export function deriveCommentaryEntries(
         turnId: activity.turnId,
         label: activity.summary,
         detail,
+      };
+    });
+}
+
+export function deriveThinkingEntries(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+  latestTurnId: TurnId | undefined,
+): ThinkingEntry[] {
+  const ordered = [...activities].toSorted(compareActivitiesByOrder);
+  return ordered
+    .filter((activity) => (latestTurnId ? activity.turnId === latestTurnId : true))
+    .filter((activity) => activity.kind === "reasoning.completed" && activity.tone === "thinking")
+    .map((activity) => {
+      const payload =
+        activity.payload && typeof activity.payload === "object"
+          ? (activity.payload as Record<string, unknown>)
+          : null;
+      const fullText =
+        payload && typeof payload.detail === "string" && payload.detail.length > 0
+          ? payload.detail
+          : activity.summary;
+      return {
+        id: activity.id,
+        createdAt: activity.createdAt,
+        turnId: activity.turnId,
+        summary: activity.summary,
+        fullText,
       };
     });
 }
@@ -698,12 +741,14 @@ export function deriveTimelineEntries({
   commentaryEntries,
   pendingFileChangeEntries,
   workEntries,
+  thinkingEntries = [],
 }: {
   messages: ChatMessage[];
   proposedPlans: ProposedPlan[];
   commentaryEntries: CommentaryEntry[];
   pendingFileChangeEntries: PendingFileChangeEntry[];
   workEntries: WorkLogEntry[];
+  thinkingEntries?: ThinkingEntry[];
 }): TimelineEntry[] {
   const messageRows: TimelineEntry[] = messages.map((message) => ({
     id: message.id,
@@ -735,7 +780,13 @@ export function deriveTimelineEntries({
     createdAt: entry.createdAt,
     entry,
   }));
-  return [...messageRows, ...proposedPlanRows, ...commentaryRows, ...fileChangeRows, ...workRows].toSorted((a, b) =>
+  const thinkingRows: TimelineEntry[] = thinkingEntries.map((entry) => ({
+    id: entry.id,
+    kind: "thinking",
+    createdAt: entry.createdAt,
+    entry,
+  }));
+  return [...messageRows, ...proposedPlanRows, ...commentaryRows, ...fileChangeRows, ...workRows, ...thinkingRows].toSorted((a, b) =>
     a.createdAt.localeCompare(b.createdAt),
   );
 }

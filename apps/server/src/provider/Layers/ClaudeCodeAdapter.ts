@@ -951,6 +951,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
 
           const contentBlockState = ensureContentBlockState(event.index, itemType);
           contentBlockState.emittedDelta = true;
+          contentBlockState.fallbackText += deltaText;
 
           const stamp = yield* makeEventStamp();
           yield* offerRuntimeEvent({
@@ -1096,6 +1097,10 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
                   itemType: contentBlockState.itemType,
                   status: "completed",
                   title: titleForContentBlock(contentBlockState.itemType),
+                  ...(contentBlockState.itemType === "reasoning" &&
+                  contentBlockState.fallbackText.length > 0
+                    ? { detail: contentBlockState.fallbackText }
+                    : {}),
                 },
                 providerRefs: {
                   ...providerThreadRef(context),
