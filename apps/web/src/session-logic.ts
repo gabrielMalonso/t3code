@@ -515,7 +515,7 @@ export function derivePendingFileChangeEntries(
   const ordered = [...activities].toSorted(compareActivitiesByOrder);
   const entries = ordered
     .filter((activity) => (latestTurnId ? activity.turnId === latestTurnId : true))
-    .map((activity) => {
+    .map<PendingFileChangeEntry | null>((activity) => {
       const payload =
         activity.payload && typeof activity.payload === "object"
           ? (activity.payload as Record<string, unknown>)
@@ -533,15 +533,18 @@ export function derivePendingFileChangeEntries(
         payload && typeof payload.detail === "string" && payload.detail.length > 0
           ? payload.detail
           : undefined;
-      return {
+      const entry: PendingFileChangeEntry = {
         id: activity.id,
         createdAt: activity.createdAt,
         turnId: activity.turnId,
         label: activity.summary,
-        ...(detail ? { detail } : {}),
         changedFiles,
         status: activity.kind === "tool.completed" ? "completed" : "inProgress",
-      } satisfies PendingFileChangeEntry;
+      };
+      if (detail) {
+        entry.detail = detail;
+      }
+      return entry;
     })
     .filter((entry): entry is PendingFileChangeEntry => entry !== null);
   return entries.filter((entry, index) => {

@@ -694,8 +694,8 @@ describe("derivePendingFileChangeEntries", () => {
 
 describe("deriveTimelineEntries", () => {
   it("includes proposed plans alongside messages and work entries in chronological order", () => {
-    const entries = deriveTimelineEntries(
-      [
+    const entries = deriveTimelineEntries({
+      messages: [
         {
           id: MessageId.makeUnsafe("message-1"),
           role: "assistant",
@@ -704,7 +704,7 @@ describe("deriveTimelineEntries", () => {
           streaming: false,
         },
       ],
-      [
+      proposedPlans: [
         {
           id: "plan:thread-1:turn:turn-1",
           turnId: TurnId.makeUnsafe("turn-1"),
@@ -713,7 +713,9 @@ describe("deriveTimelineEntries", () => {
           updatedAt: "2026-02-23T00:00:02.000Z",
         },
       ],
-      [
+      commentaryEntries: [],
+      pendingFileChangeEntries: [],
+      workEntries: [
         {
           id: "work-1",
           createdAt: "2026-02-23T00:00:03.000Z",
@@ -721,7 +723,7 @@ describe("deriveTimelineEntries", () => {
           tone: "tool",
         },
       ],
-    );
+    });
 
     expect(entries.map((entry) => entry.kind)).toEqual(["message", "proposed-plan", "work"]);
     expect(entries[1]).toMatchObject({

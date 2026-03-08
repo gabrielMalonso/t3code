@@ -5221,12 +5221,20 @@ type TimelineEntry = ReturnType<typeof deriveTimelineEntries>[number];
 type TimelineMessage = Extract<TimelineEntry, { kind: "message" }>["message"];
 type TimelineProposedPlan = Extract<TimelineEntry, { kind: "proposed-plan" }>["proposedPlan"];
 type TimelineWorkEntry = Extract<TimelineEntry, { kind: "work" }>["entry"];
+type TimelineActivityRowEntry = {
+  id: string;
+  label: string;
+  tone: TimelineWorkEntry["tone"];
+  detail?: string;
+  command?: string;
+  changedFiles?: ReadonlyArray<string>;
+};
 type TimelineRow =
   | {
       kind: "work";
       id: string;
       createdAt: string;
-      groupedEntries: TimelineWorkEntry[];
+      groupedEntries: TimelineActivityRowEntry[];
     }
   | {
       kind: "message";
@@ -5246,6 +5254,38 @@ type TimelineRow =
 function estimateTimelineProposedPlanHeight(proposedPlan: TimelineProposedPlan): number {
   const estimatedLines = Math.max(1, Math.ceil(proposedPlan.planMarkdown.length / 72));
   return 120 + Math.min(estimatedLines * 22, 880);
+}
+
+function toTimelineActivityRowEntry(entry: TimelineEntry): TimelineActivityRowEntry | null {
+  switch (entry.kind) {
+    case "work":
+      return entry.entry;
+    case "commentary": {
+      const activityEntry: TimelineActivityRowEntry = {
+        id: entry.entry.id,
+        label: entry.entry.label,
+        tone: "thinking",
+      };
+      if (entry.entry.detail) {
+        activityEntry.detail = entry.entry.detail;
+      }
+      return activityEntry;
+    }
+    case "file-change-preview": {
+      const activityEntry: TimelineActivityRowEntry = {
+        id: entry.entry.id,
+        label: entry.entry.label,
+        changedFiles: entry.entry.changedFiles,
+        tone: entry.entry.status === "completed" ? "tool" : "info",
+      };
+      if (entry.entry.detail) {
+        activityEntry.detail = entry.entry.detail;
+      }
+      return activityEntry;
+    }
+    default:
+      return null;
+  }
 }
 
 const MessagesTimeline = memo(function MessagesTimeline({
@@ -5307,13 +5347,16 @@ const MessagesTimeline = memo(function MessagesTimeline({
         continue;
       }
 
-      if (timelineEntry.kind === "work") {
-        const groupedEntries = [timelineEntry.entry];
+      const firstGroupedEntry = toTimelineActivityRowEntry(timelineEntry);
+      if (firstGroupedEntry) {
+        const groupedEntries = [firstGroupedEntry];
         let cursor = index + 1;
         while (cursor < timelineEntries.length) {
           const nextEntry = timelineEntries[cursor];
-          if (!nextEntry || nextEntry.kind !== "work") break;
-          groupedEntries.push(nextEntry.entry);
+          if (!nextEntry) break;
+          const groupedEntry = toTimelineActivityRowEntry(nextEntry);
+          if (!groupedEntry) break;
+          groupedEntries.push(groupedEntry);
           cursor += 1;
         }
         nextRows.push({
@@ -5333,6 +5376,9 @@ const MessagesTimeline = memo(function MessagesTimeline({
           createdAt: timelineEntry.createdAt,
           proposedPlan: timelineEntry.proposedPlan,
         });
+        continue;
+      }
+      if (timelineEntry.kind !== "message") {
         continue;
       }
 
