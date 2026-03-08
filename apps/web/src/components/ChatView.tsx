@@ -5229,12 +5229,29 @@ type TimelineActivityRowEntry = {
   command?: string;
   changedFiles?: ReadonlyArray<string>;
 };
+type TimelineCommentaryEntry = Extract<TimelineEntry, { kind: "commentary" }>["entry"];
+type TimelineFileChangePreviewEntry = Extract<
+  TimelineEntry,
+  { kind: "file-change-preview" }
+>["entry"];
 type TimelineRow =
   | {
       kind: "work";
       id: string;
       createdAt: string;
       groupedEntries: TimelineActivityRowEntry[];
+    }
+  | {
+      kind: "commentary";
+      id: string;
+      createdAt: string;
+      entry: TimelineCommentaryEntry;
+    }
+  | {
+      kind: "file-change-preview";
+      id: string;
+      createdAt: string;
+      entry: TimelineFileChangePreviewEntry;
     }
   | {
       kind: "message";
@@ -5257,35 +5274,8 @@ function estimateTimelineProposedPlanHeight(proposedPlan: TimelineProposedPlan):
 }
 
 function toTimelineActivityRowEntry(entry: TimelineEntry): TimelineActivityRowEntry | null {
-  switch (entry.kind) {
-    case "work":
-      return entry.entry;
-    case "commentary": {
-      const activityEntry: TimelineActivityRowEntry = {
-        id: entry.entry.id,
-        label: entry.entry.label,
-        tone: "thinking",
-      };
-      if (entry.entry.detail) {
-        activityEntry.detail = entry.entry.detail;
-      }
-      return activityEntry;
-    }
-    case "file-change-preview": {
-      const activityEntry: TimelineActivityRowEntry = {
-        id: entry.entry.id,
-        label: entry.entry.label,
-        changedFiles: entry.entry.changedFiles,
-        tone: entry.entry.status === "completed" ? "tool" : "info",
-      };
-      if (entry.entry.detail) {
-        activityEntry.detail = entry.entry.detail;
-      }
-      return activityEntry;
-    }
-    default:
-      return null;
-  }
+  if (entry.kind === "work") return entry.entry;
+  return null;
 }
 
 const MessagesTimeline = memo(function MessagesTimeline({
@@ -5369,6 +5359,24 @@ const MessagesTimeline = memo(function MessagesTimeline({
         continue;
       }
 
+      if (timelineEntry.kind === "commentary") {
+        nextRows.push({
+          kind: "commentary",
+          id: timelineEntry.id,
+          createdAt: timelineEntry.createdAt,
+          entry: timelineEntry.entry,
+        });
+        continue;
+      }
+      if (timelineEntry.kind === "file-change-preview") {
+        nextRows.push({
+          kind: "file-change-preview",
+          id: timelineEntry.id,
+          createdAt: timelineEntry.createdAt,
+          entry: timelineEntry.entry,
+        });
+        continue;
+      }
       if (timelineEntry.kind === "proposed-plan") {
         nextRows.push({
           kind: "proposed-plan",
@@ -5456,6 +5464,8 @@ const MessagesTimeline = memo(function MessagesTimeline({
       const row = rows[index];
       if (!row) return 96;
       if (row.kind === "work") return 112;
+      if (row.kind === "commentary") return 56;
+      if (row.kind === "file-change-preview") return 72;
       if (row.kind === "proposed-plan") return estimateTimelineProposedPlanHeight(row.proposedPlan);
       if (row.kind === "working") return 40;
       return estimateTimelineMessageHeight(row.message, { timelineWidthPx });
@@ -5598,6 +5608,39 @@ const MessagesTimeline = memo(function MessagesTimeline({
             </div>
           );
         })()}
+
+      {row.kind === "commentary" && (
+        <div className="flex items-start gap-2 px-1">
+          <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/25 animate-pulse" />
+          <p className="text-[12px] leading-relaxed text-muted-foreground/60 italic">
+            {row.entry.detail}
+          </p>
+        </div>
+      )}
+
+      {row.kind === "file-change-preview" && (
+        <div className="rounded-lg border border-border/60 bg-card/30 px-3 py-2">
+          <p className="mb-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground/55">
+            {row.entry.status === "completed" ? "Files changed" : "Files being changed"}
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {row.entry.changedFiles.slice(0, 8).map((filePath) => (
+              <span
+                key={`${row.entry.id}:${filePath}`}
+                className="rounded-md border border-border/60 bg-background/50 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/80"
+                title={filePath}
+              >
+                {filePath.split("/").pop()}
+              </span>
+            ))}
+            {row.entry.changedFiles.length > 8 && (
+              <span className="px-1 py-0.5 text-[10px] text-muted-foreground/50">
+                +{row.entry.changedFiles.length - 8} more
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {row.kind === "message" &&
         row.message.role === "user" &&

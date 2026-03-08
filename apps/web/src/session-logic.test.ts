@@ -346,7 +346,7 @@ describe("deriveWorkLogEntries", () => {
     expect(entries.map((entry) => entry.id)).toEqual(["tool-complete"]);
   });
 
-  it("omits task start and completion lifecycle entries", () => {
+  it("omits task lifecycle entries (start, progress, completion) from work log", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
         id: "task-start",
@@ -372,7 +372,7 @@ describe("deriveWorkLogEntries", () => {
     ];
 
     const entries = deriveWorkLogEntries(activities, undefined);
-    expect(entries.map((entry) => entry.id)).toEqual(["task-progress"]);
+    expect(entries.map((entry) => entry.id)).toEqual([]);
   });
 
   it("filters by turn id when provided", () => {
@@ -455,7 +455,7 @@ describe("deriveWorkLogEntries", () => {
     expect(entry?.command).toBe("bun run lint");
   });
 
-  it("extracts changed file paths for file-change tool activities", () => {
+  it("omits file-change activities from work log (promoted to file-change-preview)", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
         id: "file-tool",
@@ -475,11 +475,8 @@ describe("deriveWorkLogEntries", () => {
       }),
     ];
 
-    const [entry] = deriveWorkLogEntries(activities, undefined);
-    expect(entry?.changedFiles).toEqual([
-      "apps/web/src/components/ChatView.tsx",
-      "apps/web/src/session-logic.ts",
-    ]);
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries).toEqual([]);
   });
 });
 
@@ -732,6 +729,55 @@ describe("deriveTimelineEntries", () => {
         planMarkdown: "# Ship it",
       },
     });
+  });
+
+  it("interleaves commentary and file-change-preview entries in chronological order", () => {
+    const entries = deriveTimelineEntries({
+      messages: [
+        {
+          id: MessageId.makeUnsafe("message-1"),
+          role: "assistant",
+          text: "On it",
+          createdAt: "2026-02-23T00:00:01.000Z",
+          streaming: false,
+        },
+      ],
+      proposedPlans: [],
+      commentaryEntries: [
+        {
+          id: "commentary-1",
+          createdAt: "2026-02-23T00:00:02.000Z",
+          turnId: TurnId.makeUnsafe("turn-1"),
+          label: "Reasoning update",
+          detail: "Reading the settings file",
+        },
+      ],
+      pendingFileChangeEntries: [
+        {
+          id: "file-change-1",
+          createdAt: "2026-02-23T00:00:03.000Z",
+          turnId: TurnId.makeUnsafe("turn-1"),
+          label: "File change",
+          changedFiles: ["src/Settings.tsx"],
+          status: "inProgress",
+        },
+      ],
+      workEntries: [
+        {
+          id: "work-1",
+          createdAt: "2026-02-23T00:00:04.000Z",
+          label: "Command run",
+          tone: "tool",
+        },
+      ],
+    });
+
+    expect(entries.map((entry) => entry.kind)).toEqual([
+      "message",
+      "commentary",
+      "file-change-preview",
+      "work",
+    ]);
   });
 });
 
