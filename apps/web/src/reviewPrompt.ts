@@ -96,7 +96,7 @@ If you don't have access to the mcp__conductor__GetWorkspaceDiff tool, use the f
 
 \`\`\`bash
 # Get the merge base between this branch and the target
-MERGE_BASE=$(git merge-base origin/develop HEAD)
+MERGE_BASE=$(git merge-base origin/main HEAD)
 
 # Get the committed diff against the merge base
 git diff $MERGE_BASE HEAD
