@@ -37,6 +37,7 @@ import {
   resolveCursorModelFromSelection,
   resolveModelSlugForProvider,
 } from "@t3tools/shared/model";
+import { isAllowedFileExtension, isAllowedFileMimeType } from "@t3tools/shared/fileTypes";
 import {
   memo,
   useCallback,
@@ -222,6 +223,7 @@ import {
   type ComposerImageAttachment,
   type DraftThreadEnvMode,
   type DraftThreadState,
+  type PersistedComposerFileAttachment,
   type PersistedComposerImageAttachment,
   useComposerDraftStore,
   useComposerThreadDraft,
@@ -278,28 +280,7 @@ function formatFileSize(bytes: number): string {
 }
 
 function isAllowedFileAttachment(file: File): boolean {
-  const mime = file.type.toLowerCase();
-  if (mime.startsWith("text/")) return true;
-  const allowedMimes = new Set([
-    "application/json", "application/javascript", "application/typescript",
-    "application/xml", "application/yaml", "application/x-yaml",
-    "application/toml", "application/x-sh", "application/x-shellscript",
-  ]);
-  if (allowedMimes.has(mime)) return true;
-  const name = file.name.toLowerCase();
-  const dotIndex = name.lastIndexOf(".");
-  if (dotIndex <= 0) return false;
-  const ext = name.slice(dotIndex);
-  const allowedExts = new Set([
-    ".md", ".txt", ".json", ".ts", ".tsx", ".js", ".jsx", ".py", ".rb", ".rs",
-    ".go", ".java", ".c", ".cpp", ".h", ".hpp", ".cs", ".sh", ".bash",
-    ".yaml", ".yml", ".toml", ".xml", ".html", ".css", ".scss", ".sql",
-    ".graphql", ".log", ".csv", ".diff", ".patch", ".env", ".gitignore",
-    ".dockerfile", ".swift", ".kt", ".lua", ".r", ".m", ".mm", ".zig",
-    ".v", ".nim", ".ex", ".exs", ".erl", ".hs", ".ml", ".proto", ".tf",
-    ".ini", ".cfg", ".conf", ".properties",
-  ]);
-  return allowedExts.has(ext);
+  return isAllowedFileMimeType(file.type) || isAllowedFileExtension(file.name);
 }
 const EMPTY_ACTIVITIES: OrchestrationThreadActivity[] = [];
 const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
@@ -800,6 +781,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
   );
   const syncComposerDraftPersistedAttachments = useComposerDraftStore(
     (store) => store.syncPersistedAttachments,
+  );
+  const syncComposerDraftPersistedFileAttachments = useComposerDraftStore(
+    (store) => store.syncPersistedFileAttachments,
   );
   const clearComposerDraftContent = useComposerDraftStore((store) => store.clearComposerContent);
   const clearDraftThread = useComposerDraftStore((store) => store.clearDraftThread);
@@ -2209,46 +2193,77 @@ export default function ChatView({ threadId }: ChatViewProps) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      if (composerImages.length === 0) {
+      if (composerImages.length === 0 && composerFiles.length === 0) {
         clearComposerDraftPersistedAttachments(threadId);
         return;
       }
-      const getPersistedAttachmentsForThread = () =>
-        useComposerDraftStore.getState().draftsByThreadId[threadId]?.persistedAttachments ?? [];
+      const getPersistedDraftForThread = () =>
+        useComposerDraftStore.getState().draftsByThreadId[threadId];
       try {
-        const currentPersistedAttachments = getPersistedAttachmentsForThread();
-        const existingPersistedById = new Map(
-          currentPersistedAttachments.map((attachment) => [attachment.id, attachment]),
+        const currentDraft = getPersistedDraftForThread();
+        const existingPersistedImagesById = new Map(
+          (currentDraft?.persistedAttachments ?? []).map((attachment) => [attachment.id, attachment]),
         );
-        const stagedAttachmentById = new Map<string, PersistedComposerImageAttachment>();
+        const existingPersistedFilesById = new Map(
+          (currentDraft?.persistedFileAttachments ?? []).map((attachment) => [
+            attachment.id,
+            attachment,
+          ]),
+        );
+        const stagedImageAttachmentById = new Map<string, PersistedComposerImageAttachment>();
+        const stagedFileAttachmentById = new Map<string, PersistedComposerFileAttachment>();
         await Promise.all(
-          composerImages.map(async (image) => {
-            try {
-              const dataUrl = await readFileAsDataUrl(image.file);
-              stagedAttachmentById.set(image.id, {
-                id: image.id,
-                name: image.name,
-                mimeType: image.mimeType,
-                sizeBytes: image.sizeBytes,
-                dataUrl,
-              });
-            } catch {
-              const existingPersisted = existingPersistedById.get(image.id);
-              if (existingPersisted) {
-                stagedAttachmentById.set(image.id, existingPersisted);
+          [
+            ...composerImages.map(async (image) => {
+              try {
+                const dataUrl = await readFileAsDataUrl(image.file);
+                stagedImageAttachmentById.set(image.id, {
+                  id: image.id,
+                  name: image.name,
+                  mimeType: image.mimeType,
+                  sizeBytes: image.sizeBytes,
+                  dataUrl,
+                });
+              } catch {
+                const existingPersisted = existingPersistedImagesById.get(image.id);
+                if (existingPersisted) {
+                  stagedImageAttachmentById.set(image.id, existingPersisted);
+                }
               }
-            }
-          }),
+            }),
+            ...composerFiles.map(async (file) => {
+              try {
+                const dataUrl = await readFileAsDataUrl(file.file);
+                stagedFileAttachmentById.set(file.id, {
+                  id: file.id,
+                  name: file.name,
+                  mimeType: file.mimeType,
+                  sizeBytes: file.sizeBytes,
+                  dataUrl,
+                });
+              } catch {
+                const existingPersisted = existingPersistedFilesById.get(file.id);
+                if (existingPersisted) {
+                  stagedFileAttachmentById.set(file.id, existingPersisted);
+                }
+              }
+            }),
+          ],
         );
-        const serialized = Array.from(stagedAttachmentById.values());
+        const serializedImages = Array.from(stagedImageAttachmentById.values());
+        const serializedFiles = Array.from(stagedFileAttachmentById.values());
         if (cancelled) {
           return;
         }
-        // Stage attachments in persisted draft state first so persist middleware can write them.
-        syncComposerDraftPersistedAttachments(threadId, serialized);
+        syncComposerDraftPersistedAttachments(threadId, serializedImages);
+        syncComposerDraftPersistedFileAttachments(threadId, serializedFiles);
       } catch {
         const currentImageIds = new Set(composerImages.map((image) => image.id));
-        const fallbackPersistedAttachments = getPersistedAttachmentsForThread();
+        const currentFileIds = new Set(composerFiles.map((file) => file.id));
+        const fallbackPersistedAttachments =
+          getPersistedDraftForThread()?.persistedAttachments ?? [];
+        const fallbackPersistedFiles =
+          getPersistedDraftForThread()?.persistedFileAttachments ?? [];
         const fallbackPersistedIds = fallbackPersistedAttachments
           .map((attachment) => attachment.id)
           .filter((id) => currentImageIds.has(id));
@@ -2256,10 +2271,18 @@ export default function ChatView({ threadId }: ChatViewProps) {
         const fallbackAttachments = fallbackPersistedAttachments.filter((attachment) =>
           fallbackPersistedIdSet.has(attachment.id),
         );
+        const fallbackPersistedFileIds = fallbackPersistedFiles
+          .map((attachment) => attachment.id)
+          .filter((id) => currentFileIds.has(id));
+        const fallbackPersistedFileIdSet = new Set(fallbackPersistedFileIds);
+        const fallbackFileAttachments = fallbackPersistedFiles.filter((attachment) =>
+          fallbackPersistedFileIdSet.has(attachment.id),
+        );
         if (cancelled) {
           return;
         }
         syncComposerDraftPersistedAttachments(threadId, fallbackAttachments);
+        syncComposerDraftPersistedFileAttachments(threadId, fallbackFileAttachments);
       }
     })();
     return () => {
@@ -2267,8 +2290,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
     };
   }, [
     clearComposerDraftPersistedAttachments,
+    composerFiles,
     composerImages,
     syncComposerDraftPersistedAttachments,
+    syncComposerDraftPersistedFileAttachments,
     threadId,
   ]);
 

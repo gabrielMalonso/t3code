@@ -81,22 +81,34 @@ export function isAllowedFileMimeType(mimeType: string): boolean {
   return ALLOWED_FILE_MIME_EXACT.has(lower);
 }
 
-export function isAllowedFileExtension(fileName: string): boolean {
+function resolveAllowedFileExtensionToken(fileName: string): string | null {
   const name = fileName.trim().toLowerCase();
+  if (name.length === 0) {
+    return null;
+  }
+  if (SAFE_TEXT_FILE_EXTENSIONS.has(name)) {
+    return name;
+  }
   const dotIndex = name.lastIndexOf(".");
-  if (dotIndex <= 0) return false;
-  const ext = name.slice(dotIndex);
-  return SAFE_TEXT_FILE_EXTENSIONS.has(ext);
+  if (dotIndex >= 0) {
+    const ext = name.slice(dotIndex);
+    if (SAFE_TEXT_FILE_EXTENSIONS.has(ext)) {
+      return ext;
+    }
+  }
+  const specialNameToken = `.${name}`;
+  return SAFE_TEXT_FILE_EXTENSIONS.has(specialNameToken) ? specialNameToken : null;
+}
+
+export function isAllowedFileExtension(fileName: string): boolean {
+  return resolveAllowedFileExtensionToken(fileName) !== null;
 }
 
 export function inferFileExtension(input: { mimeType: string; fileName?: string }): string {
   const fileName = input.fileName?.trim() ?? "";
   if (fileName.length > 0) {
-    const dotIndex = fileName.lastIndexOf(".");
-    if (dotIndex > 0) {
-      const ext = fileName.slice(dotIndex).toLowerCase();
-      if (SAFE_TEXT_FILE_EXTENSIONS.has(ext)) return ext;
-    }
+    const ext = resolveAllowedFileExtensionToken(fileName);
+    if (ext) return ext;
   }
 
   const mime = input.mimeType.toLowerCase();
