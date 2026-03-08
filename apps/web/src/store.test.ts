@@ -1,4 +1,4 @@
-import { ProjectId, ThreadId, TurnId, type OrchestrationReadModel } from "@t3tools/contracts";
+import { MessageId, ProjectId, ThreadId, TurnId, type OrchestrationReadModel } from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 
 import { markThreadUnread, syncServerReadModel, type AppState } from "./store";
@@ -185,5 +185,60 @@ describe("store read model sync", () => {
 
     expect(next.threads[0]?.model).toBe("composer-1.5");
     expect(next.threads[0]?.session?.provider).toBe("cursor");
+  });
+
+  it("preserves file attachments when syncing the server read model", () => {
+    const initialState = makeState(makeThread());
+    const readModel = makeReadModel(
+      makeReadModelThread({
+        messages: [
+          {
+            id: MessageId.makeUnsafe("message-1"),
+            role: "user",
+            text: "see attachments",
+            attachments: [
+              {
+                type: "image",
+                id: "attachment-image-1",
+                name: "diagram.png",
+                mimeType: "image/png",
+                sizeBytes: 12,
+              },
+              {
+                type: "file",
+                id: "attachment-file-1",
+                name: "notes.md",
+                mimeType: "text/markdown",
+                sizeBytes: 24,
+              },
+            ],
+            turnId: null,
+            streaming: false,
+            createdAt: "2026-02-27T00:00:00.000Z",
+            updatedAt: "2026-02-27T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+
+    const next = syncServerReadModel(initialState, readModel);
+
+    expect(next.threads[0]?.messages[0]?.attachments).toEqual([
+      {
+        type: "image",
+        id: "attachment-image-1",
+        name: "diagram.png",
+        mimeType: "image/png",
+        sizeBytes: 12,
+        previewUrl: "/attachments/attachment-image-1",
+      },
+      {
+        type: "file",
+        id: "attachment-file-1",
+        name: "notes.md",
+        mimeType: "text/markdown",
+        sizeBytes: 24,
+      },
+    ]);
   });
 });

@@ -23,6 +23,10 @@
     "./Net": {
       "types": "./src/Net.ts",
       "import": "./src/Net.ts"
+    },
+    "./fileTypes": {
+      "types": "./src/fileTypes.ts",
+      "import": "./src/fileTypes.ts"
     }
   },
   "scripts": {

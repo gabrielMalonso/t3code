@@ -334,10 +334,19 @@ function buildUserMessage(input: ProviderSendTurnInput): SDKUserMessage {
   }
 
   for (const attachment of input.attachments ?? []) {
-    if (attachment.type === "image") {
-      fragments.push(
-        `Attached image: ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes).`,
-      );
+    switch (attachment.type) {
+      case "image": {
+        fragments.push(
+          `Attached image: ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes).`,
+        );
+        break;
+      }
+      case "file": {
+        fragments.push(
+          `Attached file: ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes).`,
+        );
+        break;
+      }
     }
   }
 
@@ -554,6 +563,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               provider: PROVIDER,
               createdAt: observedAt,
               method: sdkNativeMethod(message),
+              threadId: context.session.threadId,
               ...(typeof message.session_id === "string"
                 ? { providerThreadId: message.session_id }
                 : {}),
@@ -562,7 +572,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               payload: message,
             },
           },
-          null,
+          context.session.threadId,
         );
       });
 
@@ -600,9 +610,10 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
       Effect.gen(function* () {
         const threadId = context.session.threadId;
         if (!threadId) return;
+        const previousResumeState = readClaudeResumeState(context.session.resumeCursor);
 
         const resumeCursor = {
-          threadId,
+          ...(previousResumeState?.threadId ? { threadId: previousResumeState.threadId } : {}),
           ...(context.resumeSessionId ? { resume: context.resumeSessionId } : {}),
           ...(context.lastAssistantUuid ? { resumeSessionAt: context.lastAssistantUuid } : {}),
           turnCount: context.turns.length,
@@ -1513,9 +1524,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
                   },
                 },
                 providerRefs: {
-                  ...(context.session.threadId
-                    ? { providerThreadId: context.session.threadId }
-                    : {}),
+                  ...providerThreadRef(context),
                   ...(context.turnState
                     ? { providerTurnId: String(context.turnState.turnId) }
                     : {}),
@@ -1564,9 +1573,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
                   decision,
                 },
                 providerRefs: {
-                  ...(context.session.threadId
-                    ? { providerThreadId: context.session.threadId }
-                    : {}),
+                  ...providerThreadRef(context),
                   ...(context.turnState
                     ? { providerTurnId: String(context.turnState.turnId) }
                     : {}),
@@ -1654,9 +1661,8 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           runtimeMode: input.runtimeMode,
           ...(input.cwd ? { cwd: input.cwd } : {}),
           ...(input.model ? { model: input.model } : {}),
-          ...(threadId ? { threadId } : {}),
           resumeCursor: {
-            ...(threadId ? { threadId } : {}),
+            ...(resumeState?.threadId ? { threadId: resumeState.threadId } : {}),
             ...(resumeState?.resume ? { resume: resumeState.resume } : {}),
             ...(resumeState?.resumeSessionAt
               ? { resumeSessionAt: resumeState.resumeSessionAt }

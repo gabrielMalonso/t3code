@@ -1322,8 +1322,12 @@ const makeCodexAdapter = (options?: CodexAdapterLiveOptions) =>
 
     const sendTurn: CodexAdapterShape["sendTurn"] = (input) =>
       Effect.gen(function* () {
+        const allAttachments = input.attachments ?? [];
+        const imageAttachments = allAttachments.filter((a) => a.type === "image");
+        const fileAttachments = allAttachments.filter((a) => a.type === "file");
+
         const codexAttachments = yield* Effect.forEach(
-          input.attachments ?? [],
+          imageAttachments,
           (attachment) =>
             Effect.gen(function* () {
               const attachmentPath = resolveAttachmentPath({
@@ -1350,11 +1354,45 @@ const makeCodexAdapter = (options?: CodexAdapterLiveOptions) =>
           { concurrency: 1 },
         );
 
+        // Inject file attachment contents into the input text
+        const fileContentFragments = yield* Effect.forEach(
+          fileAttachments,
+          (attachment) =>
+            Effect.gen(function* () {
+              const attachmentPath = resolveAttachmentPath({
+                stateDir: serverConfig.stateDir,
+                attachment,
+              });
+              if (!attachmentPath) {
+                return yield* toRequestError(
+                  input.threadId,
+                  "turn/start",
+                  new Error(`Invalid file attachment id '${attachment.id}'.`),
+                );
+              }
+              const bytes = yield* fileSystem
+                .readFile(attachmentPath)
+                .pipe(
+                  Effect.mapError((cause) => toRequestError(input.threadId, "turn/start", cause)),
+                );
+              const content = Buffer.from(bytes).toString("utf-8");
+              return `<attached-file name="${attachment.name}">\n${content}\n</attached-file>`;
+            }),
+          { concurrency: 1 },
+        );
+
+        const augmentedInput = fileContentFragments.length > 0
+          ? [
+              ...fileContentFragments,
+              ...(input.input !== undefined ? [input.input] : []),
+            ].join("\n\n")
+          : input.input;
+
         return yield* Effect.tryPromise({
           try: () => {
             const managerInput = {
               threadId: input.threadId,
-              ...(input.input !== undefined ? { input: input.input } : {}),
+              ...(augmentedInput !== undefined ? { input: augmentedInput } : {}),
               ...(input.model !== undefined ? { model: input.model } : {}),
               ...(input.serviceTier !== undefined ? { serviceTier: input.serviceTier } : {}),
               ...(input.modelOptions?.codex?.reasoningEffort !== undefined

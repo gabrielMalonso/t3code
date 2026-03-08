@@ -225,6 +225,30 @@ function attachmentPreviewRoutePath(attachmentId: string): string {
   return `/attachments/${encodeURIComponent(attachmentId)}`;
 }
 
+function normalizeChatAttachment(
+  attachment: NonNullable<OrchestrationReadModel["threads"][number]["messages"][number]["attachments"]>[number],
+) {
+  switch (attachment.type) {
+    case "image":
+      return {
+        type: "image" as const,
+        id: attachment.id,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        previewUrl: toAttachmentPreviewUrl(attachmentPreviewRoutePath(attachment.id)),
+      };
+    case "file":
+      return {
+        type: "file" as const,
+        id: attachment.id,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+      };
+  }
+}
+
 // ── Pure state transition functions ────────────────────────────────────
 
 export function syncServerReadModel(state: AppState, readModel: OrchestrationReadModel): AppState {
@@ -263,14 +287,7 @@ export function syncServerReadModel(state: AppState, readModel: OrchestrationRea
             }
           : null,
         messages: thread.messages.map((message) => {
-          const attachments = message.attachments?.map((attachment) => ({
-            type: "image" as const,
-            id: attachment.id,
-            name: attachment.name,
-            mimeType: attachment.mimeType,
-            sizeBytes: attachment.sizeBytes,
-            previewUrl: toAttachmentPreviewUrl(attachmentPreviewRoutePath(attachment.id)),
-          }));
+          const attachments = message.attachments?.map(normalizeChatAttachment);
           const normalizedMessage: ChatMessage = {
             id: message.id,
             role: message.role,
