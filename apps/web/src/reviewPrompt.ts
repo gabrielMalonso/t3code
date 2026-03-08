@@ -9,7 +9,7 @@ export const PR_REVIEW_PROMPT = `## Code Review Instructions
 
 3. In parallel with step 2, launch a sonnet agent to view the changes, using mcp__conductor__GetWorkspaceDiff, and return a summary of the changes
 
-4. Launch 4 agents in parallel to independently review the changes using mcp__conductor__GetWorkspaceDiff. Each agent should return the list of issues, where each issue includes a description and the reason it was flagged (e.g. "CLAUDE.md adherence", "bug"). The agents should do the following:
+4. Launch 5 agents in parallel to independently review the changes using mcp__conductor__GetWorkspaceDiff. Each agent should return the list of issues, where each issue includes a description and the reason it was flagged (e.g. "CLAUDE.md adherence", "bug", "i18n"). The agents should do the following:
 
     Agents 1 + 2: CLAUDE.md or AGENTS.md compliance sonnet agents
     Audit changes for CLAUDE.md or AGENTS.md compliance in parallel. Note: When evaluating CLAUDE.md or AGENTS.md compliance for a file, you should only consider CLAUDE.md or AGENTS.md files that share a file path with the file or parents.
@@ -20,10 +20,20 @@ export const PR_REVIEW_PROMPT = `## Code Review Instructions
     Agent 4: Opus bug agent
     Look for problems that exist in the introduced code. This could be security issues, incorrect logic, etc. Only look for issues that fall within the changed code.
 
+    Agent 5: Sonnet i18n agent
+    Scan the introduced code for internationalization (i18n) issues. Look for:
+    - Hardcoded user-facing strings (labels, messages, tooltips, placeholders, error messages, toast titles/descriptions) that should use the project's i18n/translation system instead
+    - New UI text that is not wrapped in translation functions (e.g. t(), formatMessage(), or whatever i18n pattern the project uses)
+    - String concatenation for user-facing text that would break in other languages (word order differs across locales)
+    - Hardcoded date/number/currency formatting that should use locale-aware formatting (Intl.DateTimeFormat, Intl.NumberFormat, etc.)
+    - New files or components that introduce user-facing text without importing or using the project's i18n utilities
+    First, check if the project uses an i18n system (look for i18n config files, translation files, or common i18n libraries like react-intl, next-intl, i18next, react-i18next, vue-i18n, etc.). If the project has an i18n system, flag any new user-facing strings that bypass it. If the project does NOT have an i18n system, skip this review axis entirely and return no issues.
+
     **CRITICAL: We only want HIGH SIGNAL issues.** This means:
 
     - Objective bugs that will cause incorrect behavior at runtime
     - Clear, unambiguous CLAUDE.md violations where you can quote the exact rule being broken
+    - Concrete i18n violations where a user-facing string clearly bypasses the project's existing i18n system
 
     We do NOT want:
 
@@ -36,7 +46,7 @@ export const PR_REVIEW_PROMPT = `## Code Review Instructions
 
     In addition to the above, each subagent should be told the PR title and description. This will help provide context regarding the author's intent.
 
-5. For each issue found in the previous step, launch parallel subagents to validate the issue. These subagents should get the PR title and description along with a description of the issue. The agent's job is to review the issue to validate that the stated issue is truly an issue with high confidence. For example, if an issue such as "variable is not defined" was flagged, the subagent's job would be to validate that is actually true in the code. Another example would be CLAUDE.md issues. The agent should validate that the CLAUDE.md rule that was violated is scoped for this file and is actually violated. Use Opus subagents for bugs and logic issues, and sonnet agents for CLAUDE.md violations.
+5. For each issue found in the previous step, launch parallel subagents to validate the issue. These subagents should get the PR title and description along with a description of the issue. The agent's job is to review the issue to validate that the stated issue is truly an issue with high confidence. For example, if an issue such as "variable is not defined" was flagged, the subagent's job would be to validate that is actually true in the code. Another example would be CLAUDE.md issues. The agent should validate that the CLAUDE.md rule that was violated is scoped for this file and is actually violated. For i18n issues, the agent should verify that the flagged string is truly user-facing and that the project's i18n system is indeed not being used for it. Use Opus subagents for bugs and logic issues, and sonnet agents for CLAUDE.md and i18n violations.
 
 6. Filter out any issues that were not validated in step 5. This step will give us our list of high signal issues for our review.
 
