@@ -1236,19 +1236,21 @@ describe("WebSocket Server", () => {
       return event.type === "thread.session-set";
     });
 
-    emitRuntimeEvent({
-      type: "content.delta",
-      eventId: asEventId("evt-ws-runtime-message-delta"),
-      provider: "codex",
-      threadId: asThreadId("thread-1"),
-      createdAt: new Date().toISOString(),
-      turnId: asTurnId("turn-1"),
-      itemId: asProviderItemId("item-1"),
-      payload: {
-        streamKind: "assistant_text",
-        delta: "hello from runtime",
-      },
-    } as unknown as ProviderRuntimeEvent);
+    emitRuntimeEvent(
+      {
+        type: "content.delta",
+        eventId: asEventId("evt-ws-runtime-message-delta"),
+        provider: "codex",
+        threadId: asThreadId("thread-1"),
+        createdAt: new Date().toISOString(),
+        turnId: asTurnId("turn-1"),
+        itemId: asProviderItemId("item-1"),
+        payload: {
+          streamKind: "assistant_text",
+          delta: "hello from runtime",
+        },
+      } as unknown as ProviderRuntimeEvent,
+    );
 
     const domainPush = await waitForPush(ws, ORCHESTRATION_WS_CHANNELS.domainEvent, (push) => {
       const event = push.data as { type?: string; payload?: { messageId?: string; text?: string } };
@@ -1331,9 +1333,7 @@ describe("WebSocket Server", () => {
     };
     terminalManager.emitEvent(manualEvent);
 
-    const push = (await waitForMessage(ws)) as WsPush;
-    expect(push.type).toBe("push");
-    expect(push.channel).toBe(WS_CHANNELS.terminalEvent);
+    const push = await waitForPush(ws, WS_CHANNELS.terminalEvent);
     expect((push.data as TerminalEvent).type).toBe("output");
   });
 
@@ -1568,9 +1568,7 @@ describe("WebSocket Server", () => {
     });
 
     expect(response.result).toBeUndefined();
-    expect(response.error?.message).toContain(
-      "Workspace file path must stay within the project root.",
-    );
+    expect(response.error?.message).toContain("Workspace file path must stay within the project root.");
     expect(fs.existsSync(path.join(workspace, "..", "escape.md"))).toBe(false);
   });
 

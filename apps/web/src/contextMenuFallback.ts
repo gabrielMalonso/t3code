@@ -1,12 +1,5 @@
 import type { ContextMenuItem } from "@t3tools/contracts";
 
-const ITEM_CLASS =
-  "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-popover-foreground hover:bg-accent cursor-default";
-const DESTRUCTIVE_ITEM_CLASS =
-  "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-destructive hover:bg-accent cursor-default";
-const SUBMENU_CLASS =
-  "absolute top-0 min-w-[140px] rounded-md border border-border bg-popover py-1 shadow-xl";
-
 /**
  * Imperative DOM-based context menu for non-Electron environments.
  * Shows a positioned dropdown and returns a promise that resolves
@@ -47,55 +40,15 @@ export function showContextMenuFallback<T extends string>(
     document.addEventListener("keydown", onKeyDown);
 
     for (const item of items) {
-      if (item.children && item.children.length > 0) {
-        const wrapper = document.createElement("div");
-        wrapper.style.position = "relative";
-
-        const trigger = document.createElement("button");
-        trigger.type = "button";
-        trigger.className = ITEM_CLASS;
-        trigger.innerHTML = `<span style="flex:1">${item.label}</span><span style="color:var(--muted-foreground);font-size:10px">\u25B8</span>`;
-
-        const submenu = document.createElement("div");
-        submenu.className = SUBMENU_CLASS;
-        submenu.style.display = "none";
-        submenu.style.left = "100%";
-
-        for (const child of item.children) {
-          const childBtn = document.createElement("button");
-          childBtn.type = "button";
-          childBtn.textContent = child.label;
-          childBtn.className = ITEM_CLASS;
-          childBtn.addEventListener("click", () => cleanup(child.id));
-          submenu.appendChild(childBtn);
-        }
-
-        wrapper.addEventListener("mouseenter", () => {
-          submenu.style.display = "block";
-          requestAnimationFrame(() => {
-            const rect = submenu.getBoundingClientRect();
-            if (rect.right > window.innerWidth) {
-              submenu.style.left = "";
-              submenu.style.right = "100%";
-            }
-          });
-        });
-        wrapper.addEventListener("mouseleave", () => {
-          submenu.style.display = "none";
-        });
-
-        wrapper.appendChild(trigger);
-        wrapper.appendChild(submenu);
-        menu.appendChild(wrapper);
-      } else {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.textContent = item.label;
-        const isDestructiveAction = item.destructive === true || item.id === "delete";
-        btn.className = isDestructiveAction ? DESTRUCTIVE_ITEM_CLASS : ITEM_CLASS;
-        btn.addEventListener("click", () => cleanup(item.id));
-        menu.appendChild(btn);
-      }
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = item.label;
+      const isDestructiveAction = item.destructive === true || item.id === "delete";
+      btn.className = isDestructiveAction
+        ? "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-destructive hover:bg-accent cursor-default"
+        : "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-popover-foreground hover:bg-accent cursor-default";
+      btn.addEventListener("click", () => cleanup(item.id));
+      menu.appendChild(btn);
     }
 
     document.body.appendChild(overlay);

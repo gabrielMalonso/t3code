@@ -182,33 +182,6 @@ validationLayer("CodexAdapterLive validation", (it) => {
       });
     }),
   );
-
-  it.effect("maps codex model options before starting a session", () =>
-    Effect.gen(function* () {
-      validationManager.startSessionImpl.mockClear();
-      const adapter = yield* CodexAdapter;
-
-      yield* adapter.startSession({
-        provider: "codex",
-        threadId: asThreadId("thread-1"),
-        model: "gpt-5.3-codex",
-        modelOptions: {
-          codex: {
-            fastMode: true,
-          },
-        },
-        runtimeMode: "full-access",
-      });
-
-      assert.deepStrictEqual(validationManager.startSessionImpl.mock.calls[0]?.[0], {
-        provider: "codex",
-        threadId: asThreadId("thread-1"),
-        model: "gpt-5.3-codex",
-        serviceTier: "fast",
-        runtimeMode: "full-access",
-      });
-    }),
-  );
 });
 
 const sessionErrorManager = new FakeCodexManager();

@@ -78,8 +78,9 @@ interface AttachmentSideEffects {
 }
 
 const materializeAttachmentsForProjection = Effect.fn(
-  (input: { readonly attachments: ReadonlyArray<ChatAttachment> }) =>
-    Effect.succeed(input.attachments.length === 0 ? [] : input.attachments),
+  (input: {
+    readonly attachments: ReadonlyArray<ChatAttachment>;
+  }) => Effect.succeed(input.attachments.length === 0 ? [] : input.attachments),
 );
 
 function extractActivityRequestId(payload: unknown): ApprovalRequestId | null {
@@ -335,6 +336,7 @@ const runAttachmentSideEffects = Effect.fn(function* (sideEffects: AttachmentSid
     },
     { concurrency: 1 },
   );
+
 });
 
 const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
@@ -423,7 +425,6 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             model: event.payload.model,
             runtimeMode: event.payload.runtimeMode,
             interactionMode: event.payload.interactionMode,
-            statusCategory: event.payload.statusCategory,
             branch: event.payload.branch,
             worktreePath: event.payload.worktreePath,
             latestTurnId: null,
@@ -444,9 +445,6 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             ...existingRow.value,
             ...(event.payload.title !== undefined ? { title: event.payload.title } : {}),
             ...(event.payload.model !== undefined ? { model: event.payload.model } : {}),
-            ...(event.payload.statusCategory !== undefined
-              ? { statusCategory: event.payload.statusCategory }
-              : {}),
             ...(event.payload.branch !== undefined ? { branch: event.payload.branch } : {}),
             ...(event.payload.worktreePath !== undefined
               ? { worktreePath: event.payload.worktreePath }

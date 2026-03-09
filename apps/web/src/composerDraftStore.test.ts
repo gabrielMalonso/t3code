@@ -1,14 +1,7 @@
 import { ProjectId, ThreadId } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  type ComposerFileAttachment,
-  type ComposerImageAttachment,
-  normalizePersistedComposerDraftState,
-  partializeComposerDraftStoreState,
-  toHydratedThreadDraft,
-  useComposerDraftStore,
-} from "./composerDraftStore";
+import { type ComposerImageAttachment, useComposerDraftStore } from "./composerDraftStore";
 
 function makeImage(input: {
   id: string;
@@ -33,26 +26,6 @@ function makeImage(input: {
     mimeType,
     sizeBytes: file.size,
     previewUrl: input.previewUrl,
-    file,
-  };
-}
-
-function makeFile(input: {
-  id: string;
-  name?: string;
-  mimeType?: string;
-  contents?: string;
-}): ComposerFileAttachment {
-  const name = input.name ?? "notes.md";
-  const mimeType = input.mimeType ?? "text/markdown";
-  const contents = input.contents ?? "# Notes";
-  const file = new File([contents], name, { type: mimeType });
-  return {
-    type: "file",
-    id: input.id,
-    name,
-    mimeType,
-    sizeBytes: file.size,
     file,
   };
 }
@@ -275,9 +248,9 @@ describe("composerDraftStore project draft thread mapping", () => {
     store.clearProjectDraftThreadId(projectId);
 
     expect(useComposerDraftStore.getState().getDraftThreadByProjectId(projectId)).toBeNull();
-    expect(
-      useComposerDraftStore.getState().getDraftThreadByProjectId(otherProjectId)?.threadId,
-    ).toBe(threadId);
+    expect(useComposerDraftStore.getState().getDraftThreadByProjectId(otherProjectId)?.threadId).toBe(
+      threadId,
+    );
     expect(useComposerDraftStore.getState().draftsByThreadId[threadId]?.prompt).toBe("keep me");
   });
 
@@ -360,98 +333,6 @@ describe("composerDraftStore project draft thread mapping", () => {
   });
 });
 
-describe("composerDraftStore file attachment persistence", () => {
-  const threadId = ThreadId.makeUnsafe("thread-file-persist");
-
-  beforeEach(() => {
-    useComposerDraftStore.setState({
-      draftsByThreadId: {},
-      draftThreadsByThreadId: {},
-      projectDraftThreadIdByProjectId: {},
-    });
-  });
-
-  it("includes persisted file attachments in the serialized draft state", () => {
-    const store = useComposerDraftStore.getState();
-    const file = makeFile({
-      id: "file-1",
-      name: ".env",
-      mimeType: "text/plain",
-      contents: "OPENAI_API_KEY=test",
-    });
-    store.addFile(threadId, file);
-    store.syncPersistedFileAttachments(threadId, [
-      {
-        id: file.id,
-        name: file.name,
-        mimeType: file.mimeType,
-        sizeBytes: file.sizeBytes,
-        dataUrl: "data:text/plain;base64,T1BFTkFJX0FQSV9LRVk9dGVzdA==",
-      },
-    ]);
-
-    const partialized = partializeComposerDraftStoreState(useComposerDraftStore.getState());
-
-    expect(partialized.draftsByThreadId[threadId]).toEqual({
-      prompt: "",
-      attachments: [],
-      fileAttachments: [
-        {
-          id: "file-1",
-          name: ".env",
-          mimeType: "text/plain",
-          sizeBytes: file.sizeBytes,
-          dataUrl: "data:text/plain;base64,T1BFTkFJX0FQSV9LRVk9dGVzdA==",
-        },
-      ],
-    });
-  });
-
-  it("rehydrates persisted file attachments from normalized persisted state", async () => {
-    const normalized = normalizePersistedComposerDraftState({
-      draftsByThreadId: {
-        [threadId]: {
-          prompt: "",
-          attachments: [],
-          fileAttachments: [
-            {
-              id: "file-1",
-              name: ".env",
-              mimeType: "text/plain",
-              sizeBytes: 20,
-              dataUrl: "data:text/plain;base64,T1BFTkFJX0FQSV9LRVk9dGVzdA==",
-            },
-          ],
-        },
-      },
-      draftThreadsByThreadId: {},
-      projectDraftThreadIdByProjectId: {},
-    });
-
-    const persistedDraft = normalized.draftsByThreadId[threadId];
-    const hydratedDraft = persistedDraft ? toHydratedThreadDraft(persistedDraft) : null;
-
-    expect(hydratedDraft?.persistedFileAttachments).toEqual([
-      {
-        id: "file-1",
-        name: ".env",
-        mimeType: "text/plain",
-        sizeBytes: 20,
-        dataUrl: "data:text/plain;base64,T1BFTkFJX0FQSV9LRVk9dGVzdA==",
-      },
-    ]);
-    expect(hydratedDraft?.files).toHaveLength(1);
-    expect(hydratedDraft?.files[0]).toMatchObject({
-      type: "file",
-      id: "file-1",
-      name: ".env",
-      mimeType: "text/plain",
-      sizeBytes: 20,
-    });
-    await expect(hydratedDraft?.files[0]?.file.text()).resolves.toBe("OPENAI_API_KEY=test");
-  });
-});
-
 describe("composerDraftStore codex fast mode", () => {
   const threadId = ThreadId.makeUnsafe("thread-service-tier");
 
@@ -495,9 +376,7 @@ describe("composerDraftStore setModel", () => {
 
     store.setModel(threadId, "gpt-5.3-codex");
 
-    expect(useComposerDraftStore.getState().draftsByThreadId[threadId]?.model).toBe(
-      "gpt-5.3-codex",
-    );
+    expect(useComposerDraftStore.getState().draftsByThreadId[threadId]?.model).toBe("gpt-5.3-codex");
   });
 });
 
@@ -515,17 +394,15 @@ describe("composerDraftStore setProvider", () => {
   it("persists provider-only selection even when prompt/model are empty", () => {
     const store = useComposerDraftStore.getState();
 
-    store.setProvider(threadId, "claudeCode");
+    store.setProvider(threadId, "codex");
 
-    expect(useComposerDraftStore.getState().draftsByThreadId[threadId]?.provider).toBe(
-      "claudeCode",
-    );
+    expect(useComposerDraftStore.getState().draftsByThreadId[threadId]?.provider).toBe("codex");
   });
 
   it("removes empty provider-only draft when provider is reset", () => {
     const store = useComposerDraftStore.getState();
 
-    store.setProvider(threadId, "claudeCode");
+    store.setProvider(threadId, "codex");
     store.setProvider(threadId, null);
 
     expect(useComposerDraftStore.getState().draftsByThreadId[threadId]).toBeUndefined();

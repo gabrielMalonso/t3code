@@ -1,4 +1,10 @@
-import { MessageId, ProjectId, ThreadId, TurnId, type OrchestrationReadModel } from "@t3tools/contracts";
+import {
+  DEFAULT_MODEL_BY_PROVIDER,
+  ProjectId,
+  ThreadId,
+  TurnId,
+  type OrchestrationReadModel,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 
 import { markThreadUnread, syncServerReadModel, type AppState } from "./store";
@@ -13,7 +19,6 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     model: "gpt-5-codex",
     runtimeMode: DEFAULT_RUNTIME_MODE,
     interactionMode: DEFAULT_INTERACTION_MODE,
-    statusCategory: "in-progress",
     session: null,
     messages: [],
     turnDiffSummaries: [],
@@ -42,7 +47,6 @@ function makeState(thread: Thread): AppState {
     ],
     threads: [thread],
     threadsHydrated: true,
-    sidebarViewMode: "project",
   };
 }
 
@@ -54,7 +58,6 @@ function makeReadModelThread(overrides: Partial<OrchestrationReadModel["threads"
     model: "gpt-5.3-codex",
     runtimeMode: DEFAULT_RUNTIME_MODE,
     interactionMode: DEFAULT_INTERACTION_MODE,
-    statusCategory: "in-progress",
     branch: null,
     worktreePath: null,
     latestTurn: null,
@@ -132,7 +135,7 @@ describe("store pure functions", () => {
 });
 
 describe("store read model sync", () => {
-  it("preserves claude model slugs without an active session", () => {
+  it("falls back to the codex default for unsupported provider models without an active session", () => {
     const initialState = makeState(makeThread());
     const readModel = makeReadModel(
       makeReadModelThread({
@@ -142,106 +145,6 @@ describe("store read model sync", () => {
 
     const next = syncServerReadModel(initialState, readModel);
 
-    expect(next.threads[0]?.model).toBe("claude-opus-4-6");
-  });
-
-  it("resolves claude aliases when session provider is claudeCode", () => {
-    const initialState = makeState(makeThread());
-    const readModel = makeReadModel(
-      makeReadModelThread({
-        model: "sonnet",
-        session: {
-          threadId: ThreadId.makeUnsafe("thread-1"),
-          status: "ready",
-          providerName: "claudeCode",
-          runtimeMode: "approval-required",
-          activeTurnId: null,
-          lastError: null,
-          updatedAt: "2026-02-27T00:00:00.000Z",
-        },
-      }),
-    );
-
-    const next = syncServerReadModel(initialState, readModel);
-
-    expect(next.threads[0]?.model).toBe("claude-sonnet-4-6");
-  });
-
-  it("resolves cursor aliases when session provider is cursor", () => {
-    const initialState = makeState(makeThread());
-    const readModel = makeReadModel(
-      makeReadModelThread({
-        model: "composer",
-        session: {
-          threadId: ThreadId.makeUnsafe("thread-1"),
-          status: "ready",
-          providerName: "cursor",
-          runtimeMode: "approval-required",
-          activeTurnId: null,
-          lastError: null,
-          updatedAt: "2026-02-27T00:00:00.000Z",
-        },
-      }),
-    );
-
-    const next = syncServerReadModel(initialState, readModel);
-
-    expect(next.threads[0]?.model).toBe("composer-1.5");
-    expect(next.threads[0]?.session?.provider).toBe("cursor");
-  });
-
-  it("preserves file attachments when syncing the server read model", () => {
-    const initialState = makeState(makeThread());
-    const readModel = makeReadModel(
-      makeReadModelThread({
-        messages: [
-          {
-            id: MessageId.makeUnsafe("message-1"),
-            role: "user",
-            text: "see attachments",
-            attachments: [
-              {
-                type: "image",
-                id: "attachment-image-1",
-                name: "diagram.png",
-                mimeType: "image/png",
-                sizeBytes: 12,
-              },
-              {
-                type: "file",
-                id: "attachment-file-1",
-                name: "notes.md",
-                mimeType: "text/markdown",
-                sizeBytes: 24,
-              },
-            ],
-            turnId: null,
-            streaming: false,
-            createdAt: "2026-02-27T00:00:00.000Z",
-            updatedAt: "2026-02-27T00:00:00.000Z",
-          },
-        ],
-      }),
-    );
-
-    const next = syncServerReadModel(initialState, readModel);
-
-    expect(next.threads[0]?.messages[0]?.attachments).toEqual([
-      {
-        type: "image",
-        id: "attachment-image-1",
-        name: "diagram.png",
-        mimeType: "image/png",
-        sizeBytes: 12,
-        previewUrl: "/attachments/attachment-image-1",
-      },
-      {
-        type: "file",
-        id: "attachment-file-1",
-        name: "notes.md",
-        mimeType: "text/markdown",
-        sizeBytes: 24,
-      },
-    ]);
+    expect(next.threads[0]?.model).toBe(DEFAULT_MODEL_BY_PROVIDER.codex);
   });
 });

@@ -159,7 +159,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           model: command.model,
           runtimeMode: command.runtimeMode,
           interactionMode: command.interactionMode,
-          statusCategory: command.statusCategory,
           branch: command.branch,
           worktreePath: command.worktreePath,
           createdAt: command.createdAt,
@@ -209,9 +208,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           threadId: command.threadId,
           ...(command.title !== undefined ? { title: command.title } : {}),
           ...(command.model !== undefined ? { model: command.model } : {}),
-          ...(command.statusCategory !== undefined
-            ? { statusCategory: command.statusCategory }
-            : {}),
           ...(command.branch !== undefined ? { branch: command.branch } : {}),
           ...(command.worktreePath !== undefined ? { worktreePath: command.worktreePath } : {}),
           updatedAt: occurredAt,
@@ -305,8 +301,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           messageId: command.message.messageId,
           ...(command.provider !== undefined ? { provider: command.provider } : {}),
           ...(command.model !== undefined ? { model: command.model } : {}),
-          ...(command.serviceTier !== undefined ? { serviceTier: command.serviceTier } : {}),
           ...(command.modelOptions !== undefined ? { modelOptions: command.modelOptions } : {}),
+          ...(command.providerOptions !== undefined ? { providerOptions: command.providerOptions } : {}),
           assistantDeliveryMode: command.assistantDeliveryMode ?? DEFAULT_ASSISTANT_DELIVERY_MODE,
           runtimeMode:
             readModel.threads.find((entry) => entry.id === command.threadId)?.runtimeMode ??

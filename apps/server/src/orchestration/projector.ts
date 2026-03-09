@@ -255,7 +255,6 @@ export function projectEvent(
             model: payload.model,
             runtimeMode: payload.runtimeMode,
             interactionMode: payload.interactionMode,
-            statusCategory: payload.statusCategory,
             branch: payload.branch,
             worktreePath: payload.worktreePath,
             latestTurn: null,
@@ -297,9 +296,6 @@ export function projectEvent(
           threads: updateThread(nextBase.threads, payload.threadId, {
             ...(payload.title !== undefined ? { title: payload.title } : {}),
             ...(payload.model !== undefined ? { model: payload.model } : {}),
-            ...(payload.statusCategory !== undefined
-              ? { statusCategory: payload.statusCategory }
-              : {}),
             ...(payload.branch !== undefined ? { branch: payload.branch } : {}),
             ...(payload.worktreePath !== undefined ? { worktreePath: payload.worktreePath } : {}),
             updatedAt: payload.updatedAt,
@@ -308,7 +304,12 @@ export function projectEvent(
       );
 
     case "thread.runtime-mode-set":
-      return decodeForEvent(ThreadRuntimeModeSetPayload, event.payload, event.type, "payload").pipe(
+      return decodeForEvent(
+        ThreadRuntimeModeSetPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
         Effect.map((payload) => ({
           ...nextBase,
           threads: updateThread(nextBase.threads, payload.threadId, {

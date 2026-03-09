@@ -17,17 +17,15 @@ import { type ChatMessage, type Project, type Thread } from "./types";
 
 // ── State ────────────────────────────────────────────────────────────
 
-export type SidebarViewMode = "project" | "status";
-
 export interface AppState {
   projects: Project[];
   threads: Thread[];
   threadsHydrated: boolean;
-  sidebarViewMode: SidebarViewMode;
 }
 
 const PERSISTED_STATE_KEY = "t3code:renderer-state:v8";
 const LEGACY_PERSISTED_STATE_KEYS = [
+  "t3code:renderer-state:v7",
   "t3code:renderer-state:v6",
   "t3code:renderer-state:v5",
   "t3code:renderer-state:v4",
@@ -42,7 +40,6 @@ const initialState: AppState = {
   projects: [],
   threads: [],
   threadsHydrated: false,
-  sidebarViewMode: "project",
 };
 const persistedExpandedProjectCwds = new Set<string>();
 
@@ -53,19 +50,14 @@ function readPersistedState(): AppState {
   try {
     const raw = window.localStorage.getItem(PERSISTED_STATE_KEY);
     if (!raw) return initialState;
-    const parsed = JSON.parse(raw) as {
-      expandedProjectCwds?: string[];
-      sidebarViewMode?: string;
-    };
+    const parsed = JSON.parse(raw) as { expandedProjectCwds?: string[] };
     persistedExpandedProjectCwds.clear();
     for (const cwd of parsed.expandedProjectCwds ?? []) {
       if (typeof cwd === "string" && cwd.length > 0) {
         persistedExpandedProjectCwds.add(cwd);
       }
     }
-    const sidebarViewMode: SidebarViewMode =
-      parsed.sidebarViewMode === "status" ? "status" : "project";
-    return { ...initialState, sidebarViewMode };
+    return { ...initialState };
   } catch {
     return initialState;
   }
@@ -80,7 +72,6 @@ function persistState(state: AppState): void {
         expandedProjectCwds: state.projects
           .filter((project) => project.expanded)
           .map((project) => project.cwd),
-        sidebarViewMode: state.sidebarViewMode,
       }),
     );
     for (const legacyKey of LEGACY_PERSISTED_STATE_KEYS) {
@@ -153,54 +144,26 @@ function toLegacySessionStatus(
 }
 
 function toLegacyProvider(providerName: string | null): ProviderKind {
-  if (providerName === "codex" || providerName === "claudeCode" || providerName === "cursor") {
+  if (providerName === "codex") {
     return providerName;
   }
   return "codex";
 }
 
 const CODEX_MODEL_SLUGS = new Set<string>(getModelOptions("codex").map((option) => option.slug));
-const CLAUDE_MODEL_SLUGS = new Set<string>(
-  getModelOptions("claudeCode").map((option) => option.slug),
-);
-const CURSOR_MODEL_SLUGS = new Set<string>(getModelOptions("cursor").map((option) => option.slug));
-const CURSOR_DISTINCT_MODEL_SLUGS = new Set(
-  [...CURSOR_MODEL_SLUGS].filter(
-    (slug) => !CODEX_MODEL_SLUGS.has(slug) && !CLAUDE_MODEL_SLUGS.has(slug),
-  ),
-);
 
 function inferProviderForThreadModel(input: {
   readonly model: string;
   readonly sessionProviderName: string | null;
 }): ProviderKind {
-  if (
-    input.sessionProviderName === "codex" ||
-    input.sessionProviderName === "claudeCode" ||
-    input.sessionProviderName === "cursor"
-  ) {
+  if (input.sessionProviderName === "codex") {
     return input.sessionProviderName;
-  }
-  const normalizedCursor = normalizeModelSlug(input.model, "cursor");
-  if (normalizedCursor && CURSOR_DISTINCT_MODEL_SLUGS.has(normalizedCursor)) {
-    return "cursor";
-  }
-  const normalizedClaude = normalizeModelSlug(input.model, "claudeCode");
-  if (normalizedClaude && CLAUDE_MODEL_SLUGS.has(normalizedClaude)) {
-    return "claudeCode";
   }
   const normalizedCodex = normalizeModelSlug(input.model, "codex");
   if (normalizedCodex && CODEX_MODEL_SLUGS.has(normalizedCodex)) {
     return "codex";
   }
-  if (
-    input.model.trim().startsWith("composer-") ||
-    input.model.trim().startsWith("gemini-") ||
-    input.model.trim().endsWith("-thinking")
-  ) {
-    return "cursor";
-  }
-  return input.model.trim().startsWith("claude-") ? "claudeCode" : "codex";
+  return "codex";
 }
 
 function resolveWsHttpOrigin(): string {
@@ -235,30 +198,6 @@ function attachmentPreviewRoutePath(attachmentId: string): string {
   return `/attachments/${encodeURIComponent(attachmentId)}`;
 }
 
-function normalizeChatAttachment(
-  attachment: NonNullable<OrchestrationReadModel["threads"][number]["messages"][number]["attachments"]>[number],
-) {
-  switch (attachment.type) {
-    case "image":
-      return {
-        type: "image" as const,
-        id: attachment.id,
-        name: attachment.name,
-        mimeType: attachment.mimeType,
-        sizeBytes: attachment.sizeBytes,
-        previewUrl: toAttachmentPreviewUrl(attachmentPreviewRoutePath(attachment.id)),
-      };
-    case "file":
-      return {
-        type: "file" as const,
-        id: attachment.id,
-        name: attachment.name,
-        mimeType: attachment.mimeType,
-        sizeBytes: attachment.sizeBytes,
-      };
-  }
-}
-
 // ── Pure state transition functions ────────────────────────────────────
 
 export function syncServerReadModel(state: AppState, readModel: OrchestrationReadModel): AppState {
@@ -285,7 +224,6 @@ export function syncServerReadModel(state: AppState, readModel: OrchestrationRea
         ),
         runtimeMode: thread.runtimeMode,
         interactionMode: thread.interactionMode,
-        statusCategory: thread.statusCategory ?? "in-progress",
         session: thread.session
           ? {
               provider: toLegacyProvider(thread.session.providerName),
@@ -298,7 +236,14 @@ export function syncServerReadModel(state: AppState, readModel: OrchestrationRea
             }
           : null,
         messages: thread.messages.map((message) => {
-          const attachments = message.attachments?.map(normalizeChatAttachment);
+          const attachments = message.attachments?.map((attachment) => ({
+            type: "image" as const,
+            id: attachment.id,
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+            sizeBytes: attachment.sizeBytes,
+            previewUrl: toAttachmentPreviewUrl(attachmentPreviewRoutePath(attachment.id)),
+          }));
           const normalizedMessage: ChatMessage = {
             id: message.id,
             role: message.role,
@@ -434,7 +379,6 @@ interface AppStore extends AppState {
   setProjectExpanded: (projectId: Project["id"], expanded: boolean) => void;
   setError: (threadId: ThreadId, error: string | null) => void;
   setThreadBranch: (threadId: ThreadId, branch: string | null, worktreePath: string | null) => void;
-  setSidebarViewMode: (viewMode: SidebarViewMode) => void;
 }
 
 export const useStore = create<AppStore>((set) => ({
@@ -449,8 +393,6 @@ export const useStore = create<AppStore>((set) => ({
   setError: (threadId, error) => set((state) => setError(state, threadId, error)),
   setThreadBranch: (threadId, branch, worktreePath) =>
     set((state) => setThreadBranch(state, threadId, branch, worktreePath)),
-  setSidebarViewMode: (viewMode) =>
-    set((state) => (state.sidebarViewMode === viewMode ? state : { ...state, sidebarViewMode: viewMode })),
 }));
 
 // Persist on every state change

@@ -1,7 +1,7 @@
 import type { GitStackedAction, GitStatusResult, ThreadId } from "@t3tools/contracts";
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDownIcon, CloudUploadIcon, FileSearchIcon, GitCommitIcon, InfoIcon } from "lucide-react";
+import { ChevronDownIcon, CloudUploadIcon, GitCommitIcon, InfoIcon } from "lucide-react";
 import { GitHubIcon } from "./Icons";
 import {
   buildGitActionProgressStages,
@@ -46,7 +46,6 @@ import { readNativeApi } from "~/nativeApi";
 interface GitActionsControlProps {
   gitCwd: string | null;
   activeThreadId: ThreadId | null;
-  onRequestReview?: (() => void) | undefined;
 }
 
 interface PendingDefaultBranchAction {
@@ -99,7 +98,7 @@ function getMenuActionDisabledReason(
   }
 
   if (hasOpenPr) {
-    return "Open PR is currently unavailable.";
+    return "View PR is currently unavailable.";
   }
   if (!hasBranch) {
     return "Detached HEAD: checkout a branch before creating a PR.";
@@ -139,7 +138,7 @@ function GitQuickActionIcon({ quickAction }: { quickAction: GitQuickAction }) {
   return <InfoIcon className={iconClassName} />;
 }
 
-export default function GitActionsControl({ gitCwd, activeThreadId, onRequestReview }: GitActionsControlProps) {
+export default function GitActionsControl({ gitCwd, activeThreadId }: GitActionsControlProps) {
   const threadToastData = useMemo(
     () => (activeThreadId ? { threadId: activeThreadId } : undefined),
     [activeThreadId],
@@ -256,8 +255,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId, onRequestRev
     }) => {
       const actionStatus = statusOverride ?? gitStatusForActions;
       const actionBranch = actionStatus?.branch ?? null;
-      const actionIsDefaultBranch =
-        isDefaultBranchOverride ?? (featureBranch ? false : isDefaultBranch);
+      const actionIsDefaultBranch = isDefaultBranchOverride ?? (featureBranch ? false : isDefaultBranch);
       const includesCommit =
         !forcePushOnlyProgress && (action === "commit" || !!actionStatus?.hasWorkingTreeChanges);
       if (
@@ -333,8 +331,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId, onRequestRev
         stopProgressUpdates();
         const resultToast = summarizeGitResult(result);
 
-        const existingOpenPrUrl =
-          actionStatus?.pr?.state === "open" ? actionStatus.pr.url : undefined;
+        const existingOpenPrUrl = actionStatus?.pr?.state === "open" ? actionStatus.pr.url : undefined;
         const prUrl = result.pr.url ?? existingOpenPrUrl;
         const shouldOfferPushCta = action === "commit" && result.commit.status === "created";
         const shouldOfferOpenPrCta =
@@ -377,12 +374,12 @@ export default function GitActionsControl({ gitCwd, activeThreadId, onRequestRev
                 },
               }
             : shouldOfferOpenPrCta
-              ? {
-                  actionProps: {
-                    children: "Open PR",
-                    onClick: () => {
-                      const api = readNativeApi();
-                      if (!api) return;
+                ? {
+                    actionProps: {
+                      children: "View PR",
+                      onClick: () => {
+                        const api = readNativeApi();
+                        if (!api) return;
                       closeResultToast();
                       void api.shell.openExternal(prUrl);
                     },
@@ -427,8 +424,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId, onRequestRev
 
   const continuePendingDefaultBranchAction = useCallback(() => {
     if (!pendingDefaultBranchAction) return;
-    const { action, commitMessage, forcePushOnlyProgress, onConfirmed } =
-      pendingDefaultBranchAction;
+    const { action, commitMessage, forcePushOnlyProgress, onConfirmed } = pendingDefaultBranchAction;
     setPendingDefaultBranchAction(null);
     void runGitActionWithToast({
       action,
@@ -457,8 +453,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId, onRequestRev
 
   const checkoutFeatureBranchAndContinuePendingAction = useCallback(() => {
     if (!pendingDefaultBranchAction) return;
-    const { action, commitMessage, forcePushOnlyProgress, onConfirmed } =
-      pendingDefaultBranchAction;
+    const { action, commitMessage, forcePushOnlyProgress, onConfirmed } = pendingDefaultBranchAction;
     setPendingDefaultBranchAction(null);
     checkoutNewBranchAndRunAction({
       action,
@@ -596,15 +591,6 @@ export default function GitActionsControl({ gitCwd, activeThreadId, onRequestRev
           {initMutation.isPending ? "Initializing..." : "Initialize Git"}
         </Button>
       ) : (
-        <>
-        {gitStatusForActions?.pr?.state === "open" && onRequestReview && (
-          <Button variant="outline" size="xs" onClick={onRequestReview}>
-            <FileSearchIcon className="size-3.5" />
-            <span className="sr-only @sm/header-actions:not-sr-only @sm/header-actions:ml-0.5">
-              Review
-            </span>
-          </Button>
-        )}
         <Group aria-label="Git actions">
           {quickActionDisabledReason ? (
             <Popover>
@@ -718,7 +704,6 @@ export default function GitActionsControl({ gitCwd, activeThreadId, onRequestRev
             </MenuPopup>
           </Menu>
         </Group>
-        </>
       )}
 
       <Dialog
@@ -740,9 +725,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId, onRequestRev
               <div className="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1">
                 <span className="text-muted-foreground">Branch</span>
                 <span className="flex items-center justify-between gap-2">
-                  <span className="font-medium">
-                    {gitStatusForActions?.branch ?? "(detached HEAD)"}
-                  </span>
+                  <span className="font-medium">{gitStatusForActions?.branch ?? "(detached HEAD)"}</span>
                   {isDefaultBranch && (
                     <span className="text-right text-warning text-xs">Warning: default branch</span>
                   )}

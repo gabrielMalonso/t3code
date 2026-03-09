@@ -17,7 +17,6 @@ import {
   type OrchestrationCommand,
   ORCHESTRATION_WS_CHANNELS,
   ORCHESTRATION_WS_METHODS,
-  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   ProjectId,
   ThreadId,
@@ -72,7 +71,6 @@ import {
   resolveAttachmentPathById,
 } from "./attachmentStore.ts";
 import { parseBase64DataUrl } from "./imageMime.ts";
-import { isAllowedFileAttachment } from "./fileMime.ts";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService.ts";
 import { expandHomePath } from "./os-jank.ts";
 
@@ -199,7 +197,8 @@ function stripRequestTag<T extends { _tag: string }>(body: T) {
 
 function messageFromCause(cause: Cause.Cause<unknown>): string {
   const squashed = Cause.squash(cause);
-  const message = squashed instanceof Error ? squashed.message.trim() : String(squashed).trim();
+  const message =
+    squashed instanceof Error ? squashed.message.trim() : String(squashed).trim();
   return message.length > 0 ? message : Cause.pretty(cause);
 }
 
@@ -332,7 +331,10 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       } satisfies OrchestrationCommand;
     }
 
-    if (input.command.type === "project.meta.update" && input.command.workspaceRoot !== undefined) {
+    if (
+      input.command.type === "project.meta.update" &&
+      input.command.workspaceRoot !== undefined
+    ) {
       return {
         ...input.command,
         workspaceRoot: yield* normalizeProjectWorkspaceRoot(input.command.workspaceRoot),
@@ -349,74 +351,33 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       (attachment) =>
         Effect.gen(function* () {
           const parsed = parseBase64DataUrl(attachment.dataUrl);
-          if (!parsed) {
+          if (!parsed || !parsed.mimeType.startsWith("image/")) {
             return yield* new RouteRequestError({
-              message: `Invalid attachment payload for '${attachment.name}'.`,
+              message: `Invalid image attachment payload for '${attachment.name}'.`,
             });
           }
 
           const bytes = Buffer.from(parsed.base64, "base64");
-
-          let persistedAttachment: { type: "image" | "file"; id: string; name: string; mimeType: string; sizeBytes: number };
-
-          switch (attachment.type) {
-            case "image": {
-              if (!parsed.mimeType.startsWith("image/")) {
-                return yield* new RouteRequestError({
-                  message: `Invalid image attachment payload for '${attachment.name}'.`,
-                });
-              }
-              if (bytes.byteLength === 0 || bytes.byteLength > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
-                return yield* new RouteRequestError({
-                  message: `Image attachment '${attachment.name}' is empty or too large.`,
-                });
-              }
-
-              const attachmentId = createAttachmentId(turnStartCommand.threadId);
-              if (!attachmentId) {
-                return yield* new RouteRequestError({
-                  message: "Failed to create a safe attachment id.",
-                });
-              }
-
-              persistedAttachment = {
-                type: "image" as const,
-                id: attachmentId,
-                name: attachment.name,
-                mimeType: parsed.mimeType.toLowerCase(),
-                sizeBytes: bytes.byteLength,
-              };
-              break;
-            }
-            case "file": {
-              if (!isAllowedFileAttachment({ mimeType: parsed.mimeType, fileName: attachment.name })) {
-                return yield* new RouteRequestError({
-                  message: `Unsupported file type for '${attachment.name}'.`,
-                });
-              }
-              if (bytes.byteLength === 0 || bytes.byteLength > PROVIDER_SEND_TURN_MAX_FILE_BYTES) {
-                return yield* new RouteRequestError({
-                  message: `File attachment '${attachment.name}' is empty or too large.`,
-                });
-              }
-
-              const attachmentId = createAttachmentId(turnStartCommand.threadId);
-              if (!attachmentId) {
-                return yield* new RouteRequestError({
-                  message: "Failed to create a safe attachment id.",
-                });
-              }
-
-              persistedAttachment = {
-                type: "file" as const,
-                id: attachmentId,
-                name: attachment.name,
-                mimeType: parsed.mimeType.toLowerCase(),
-                sizeBytes: bytes.byteLength,
-              };
-              break;
-            }
+          if (bytes.byteLength === 0 || bytes.byteLength > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+            return yield* new RouteRequestError({
+              message: `Image attachment '${attachment.name}' is empty or too large.`,
+            });
           }
+
+          const attachmentId = createAttachmentId(turnStartCommand.threadId);
+          if (!attachmentId) {
+            return yield* new RouteRequestError({
+              message: "Failed to create a safe attachment id.",
+            });
+          }
+
+          const persistedAttachment = {
+            type: "image" as const,
+            id: attachmentId,
+            name: attachment.name,
+            mimeType: parsed.mimeType.toLowerCase(),
+            sizeBytes: bytes.byteLength,
+          };
 
           const attachmentPath = resolveAttachmentPath({
             stateDir: serverConfig.stateDir,
@@ -722,7 +683,6 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
           title: "New thread",
           model: bootstrapProjectDefaultModel,
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-          statusCategory: "in-progress",
           runtimeMode: "full-access",
           branch: null,
           worktreePath: null,
@@ -817,16 +777,14 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
           relativePath: body.relativePath,
           path,
         });
-        yield* fileSystem
-          .makeDirectory(path.dirname(target.absolutePath), { recursive: true })
-          .pipe(
-            Effect.mapError(
-              (cause) =>
-                new RouteRequestError({
-                  message: `Failed to prepare workspace path: ${String(cause)}`,
-                }),
-            ),
-          );
+        yield* fileSystem.makeDirectory(path.dirname(target.absolutePath), { recursive: true }).pipe(
+          Effect.mapError(
+            (cause) =>
+              new RouteRequestError({
+                message: `Failed to prepare workspace path: ${String(cause)}`,
+              }),
+          ),
+        );
         yield* fileSystem.writeFileString(target.absolutePath, body.contents).pipe(
           Effect.mapError(
             (cause) =>

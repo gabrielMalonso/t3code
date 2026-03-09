@@ -8,13 +8,7 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 
-import type {
-  ChatMessage,
-  ProposedPlan,
-  SessionPhase,
-  ThreadSession,
-  TurnDiffSummary,
-} from "./types";
+import type { ChatMessage, ProposedPlan, SessionPhase, ThreadSession, TurnDiffSummary } from "./types";
 
 export type ProviderPickerKind = ProviderKind | "claudeCode" | "cursor";
 
@@ -24,7 +18,7 @@ export const PROVIDER_OPTIONS: Array<{
   available: boolean;
 }> = [
   { value: "codex", label: "Codex", available: true },
-  { value: "claudeCode", label: "Claude Code", available: true },
+  { value: "claudeCode", label: "Claude Code", available: false },
   { value: "cursor", label: "Cursor", available: false },
 ];
 
@@ -36,24 +30,6 @@ export interface WorkLogEntry {
   command?: string;
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
-}
-
-export interface CommentaryEntry {
-  id: string;
-  createdAt: string;
-  turnId: TurnId | null;
-  label: string;
-  detail: string;
-}
-
-export interface PendingFileChangeEntry {
-  id: string;
-  createdAt: string;
-  turnId: TurnId | null;
-  label: string;
-  detail?: string;
-  changedFiles: ReadonlyArray<string>;
-  status: "inProgress" | "completed";
 }
 
 export interface PendingApproval {
@@ -99,18 +75,6 @@ export type TimelineEntry =
       kind: "proposed-plan";
       createdAt: string;
       proposedPlan: ProposedPlan;
-    }
-  | {
-      id: string;
-      kind: "commentary";
-      createdAt: string;
-      entry: CommentaryEntry;
-    }
-  | {
-      id: string;
-      kind: "file-change-preview";
-      createdAt: string;
-      entry: PendingFileChangeEntry;
     }
   | {
       id: string;
@@ -174,7 +138,9 @@ export function deriveActiveWorkStartedAt(
   return sendStartedAt;
 }
 
-function requestKindFromRequestType(requestType: unknown): PendingApproval["requestKind"] | null {
+function requestKindFromRequestType(
+  requestType: unknown,
+): PendingApproval["requestKind"] | null {
   switch (requestType) {
     case "command_execution_approval":
     case "exec_command_approval":
@@ -367,7 +333,9 @@ export function deriveActivePlanState(
         return null;
       }
       const status =
-        record.status === "completed" || record.status === "inProgress" ? record.status : "pending";
+        record.status === "completed" || record.status === "inProgress"
+          ? record.status
+          : "pending";
       return {
         step: record.step,
         status,
@@ -387,9 +355,7 @@ export function deriveActivePlanState(
   return {
     createdAt: latest.createdAt,
     turnId: latest.turnId,
-    ...(payload && "explanation" in payload
-      ? { explanation: payload.explanation as string | null }
-      : {}),
+    ...(payload && "explanation" in payload ? { explanation: payload.explanation as string | null } : {}),
     steps,
   };
 }
@@ -451,16 +417,8 @@ export function deriveWorkLogEntries(
         activity.payload && typeof activity.payload === "object"
           ? (activity.payload as Record<string, unknown>)
           : null;
-      if (activity.kind === "task.progress") {
-        return null;
-      }
-      const itemType =
-        payload && typeof payload.itemType === "string" ? payload.itemType : undefined;
-      const changedFiles = extractChangedFiles(payload);
-      if (itemType === "file_change" && changedFiles.length > 0) {
-        return null;
-      }
       const command = extractToolCommand(payload);
+      const changedFiles = extractChangedFiles(payload);
       const entry: WorkLogEntry = {
         id: activity.id,
         createdAt: activity.createdAt,
@@ -477,90 +435,7 @@ export function deriveWorkLogEntries(
         entry.changedFiles = changedFiles;
       }
       return entry;
-    })
-    .filter((entry): entry is WorkLogEntry => entry !== null);
-}
-
-export function deriveCommentaryEntries(
-  activities: ReadonlyArray<OrchestrationThreadActivity>,
-  latestTurnId: TurnId | undefined,
-): CommentaryEntry[] {
-  const ordered = [...activities].toSorted(compareActivitiesByOrder);
-  return ordered
-    .filter((activity) => (latestTurnId ? activity.turnId === latestTurnId : true))
-    .filter((activity) => activity.kind === "task.progress")
-    .map((activity) => {
-      const payload =
-        activity.payload && typeof activity.payload === "object"
-          ? (activity.payload as Record<string, unknown>)
-          : null;
-      const detail =
-        payload && typeof payload.detail === "string" && payload.detail.length > 0
-          ? payload.detail
-          : activity.summary;
-      return {
-        id: activity.id,
-        createdAt: activity.createdAt,
-        turnId: activity.turnId,
-        label: activity.summary,
-        detail,
-      };
     });
-}
-
-export function derivePendingFileChangeEntries(
-  activities: ReadonlyArray<OrchestrationThreadActivity>,
-  latestTurnId: TurnId | undefined,
-): PendingFileChangeEntry[] {
-  const ordered = [...activities].toSorted(compareActivitiesByOrder);
-  const entries = ordered
-    .filter((activity) => (latestTurnId ? activity.turnId === latestTurnId : true))
-    .map<PendingFileChangeEntry | null>((activity) => {
-      const payload =
-        activity.payload && typeof activity.payload === "object"
-          ? (activity.payload as Record<string, unknown>)
-          : null;
-      const itemType =
-        payload && typeof payload.itemType === "string" ? payload.itemType : undefined;
-      if (itemType !== "file_change") {
-        return null;
-      }
-      const changedFiles = extractChangedFiles(payload);
-      if (changedFiles.length === 0) {
-        return null;
-      }
-      const detail =
-        payload && typeof payload.detail === "string" && payload.detail.length > 0
-          ? payload.detail
-          : undefined;
-      const entry: PendingFileChangeEntry = {
-        id: activity.id,
-        createdAt: activity.createdAt,
-        turnId: activity.turnId,
-        label: activity.summary,
-        changedFiles,
-        status: activity.kind === "tool.completed" ? "completed" : "inProgress",
-      };
-      if (detail) {
-        entry.detail = detail;
-      }
-      return entry;
-    })
-    .filter((entry): entry is PendingFileChangeEntry => entry !== null);
-  return entries.filter((entry, index) => {
-    const previous = entries[index - 1];
-    if (!previous) {
-      return true;
-    }
-    return !(
-      previous.turnId === entry.turnId &&
-      previous.label === entry.label &&
-      previous.detail === entry.detail &&
-      previous.status === entry.status &&
-      previous.changedFiles.length === entry.changedFiles.length &&
-      previous.changedFiles.every((filePath, fileIndex) => filePath === entry.changedFiles[fileIndex])
-    );
-  });
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -612,7 +487,12 @@ function pushChangedFile(target: string[], seen: Set<string>, value: unknown) {
   target.push(normalized);
 }
 
-function collectChangedFiles(value: unknown, target: string[], seen: Set<string>, depth: number) {
+function collectChangedFiles(
+  value: unknown,
+  target: string[],
+  seen: Set<string>,
+  depth: number,
+) {
   if (depth > 4 || target.length >= 12) {
     return;
   }
@@ -692,19 +572,11 @@ export function hasToolActivityForTurn(
   return activities.some((activity) => activity.turnId === turnId && activity.tone === "tool");
 }
 
-export function deriveTimelineEntries({
-  messages,
-  proposedPlans,
-  commentaryEntries,
-  pendingFileChangeEntries,
-  workEntries,
-}: {
-  messages: ChatMessage[];
-  proposedPlans: ProposedPlan[];
-  commentaryEntries: CommentaryEntry[];
-  pendingFileChangeEntries: PendingFileChangeEntry[];
-  workEntries: WorkLogEntry[];
-}): TimelineEntry[] {
+export function deriveTimelineEntries(
+  messages: ChatMessage[],
+  proposedPlans: ProposedPlan[],
+  workEntries: WorkLogEntry[],
+): TimelineEntry[] {
   const messageRows: TimelineEntry[] = messages.map((message) => ({
     id: message.id,
     kind: "message",
@@ -717,25 +589,13 @@ export function deriveTimelineEntries({
     createdAt: proposedPlan.createdAt,
     proposedPlan,
   }));
-  const commentaryRows: TimelineEntry[] = commentaryEntries.map((entry) => ({
-    id: entry.id,
-    kind: "commentary",
-    createdAt: entry.createdAt,
-    entry,
-  }));
-  const fileChangeRows: TimelineEntry[] = pendingFileChangeEntries.map((entry) => ({
-    id: entry.id,
-    kind: "file-change-preview",
-    createdAt: entry.createdAt,
-    entry,
-  }));
   const workRows: TimelineEntry[] = workEntries.map((entry) => ({
     id: entry.id,
     kind: "work",
     createdAt: entry.createdAt,
     entry,
   }));
-  return [...messageRows, ...proposedPlanRows, ...commentaryRows, ...fileChangeRows, ...workRows].toSorted((a, b) =>
+  return [...messageRows, ...proposedPlanRows, ...workRows].toSorted((a, b) =>
     a.createdAt.localeCompare(b.createdAt),
   );
 }

@@ -82,11 +82,7 @@ function runGit(
 
 function initRepo(
   cwd: string,
-): Effect.Effect<
-  void,
-  PlatformError.PlatformError | GitCommandError,
-  FileSystem.FileSystem | Scope.Scope | GitService
-> {
+): Effect.Effect<void, PlatformError.PlatformError | GitCommandError, FileSystem.FileSystem | Scope.Scope | GitService> {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     yield* runGit(cwd, ["init", "--initial-branch=main"]);
@@ -116,7 +112,9 @@ function createTextGeneration(overrides: Partial<FakeGitTextGeneration> = {}): T
       Effect.succeed({
         subject: "Implement stacked git actions",
         body: "",
-        ...(input.includeBranch ? { branch: "feature/implement-stacked-git-actions" } : {}),
+        ...(input.includeBranch
+          ? { branch: "feature/implement-stacked-git-actions" }
+          : {}),
       }),
     generatePrContent: () =>
       Effect.succeed({
@@ -558,7 +556,9 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
               return {
                 subject: "Implement stacked git actions",
                 body: "",
-                ...(input.includeBranch ? { branch: "feature/implement-stacked-git-actions" } : {}),
+                ...(input.includeBranch
+                  ? { branch: "feature/implement-stacked-git-actions" }
+                  : {}),
               };
             }),
         },
