@@ -70,11 +70,17 @@ interface PendingDefaultBranchAction {
 
 type GitActionToastId = ReturnType<typeof toastManager.add>;
 
-function getMenuActionDisabledReason(
-  item: GitActionMenuItem,
-  gitStatus: GitStatusResult | null,
-  isBusy: boolean,
-): string | null {
+function getMenuActionDisabledReason({
+  item,
+  gitStatus,
+  isBusy,
+  hasOriginRemote,
+}: {
+  item: GitActionMenuItem;
+  gitStatus: GitStatusResult | null;
+  isBusy: boolean;
+  hasOriginRemote: boolean;
+}): string | null {
   if (!item.disabled) return null;
   if (isBusy) return "Git action in progress.";
   if (!gitStatus) return "Git status is unavailable.";
@@ -102,6 +108,9 @@ function getMenuActionDisabledReason(
     if (isBehind) {
       return "Branch is behind upstream. Pull/rebase before pushing.";
     }
+    if (!gitStatus.hasUpstream && !hasOriginRemote) {
+      return 'Add an "origin" remote before pushing.';
+    }
     if (!isAhead) {
       return "No local commits to push.";
     }
@@ -120,6 +129,9 @@ function getMenuActionDisabledReason(
   }
   if (hasChanges) {
     return "Commit local changes before creating a PR.";
+  }
+  if (!gitStatus.hasUpstream && !hasOriginRemote) {
+    return 'Add an "origin" remote before creating a PR.';
   }
   if (!isAhead) {
     return "No local commits to include in a PR.";
@@ -176,6 +188,7 @@ export default function GitActionsControl({
   const { data: branchList = null } = useQuery(gitBranchesQueryOptions(gitCwd));
   // Default to true while loading so we don't flash init controls.
   const isRepo = branchList?.isRepo ?? true;
+  const hasOriginRemote = branchList?.hasOriginRemote ?? false;
   const currentBranch = branchList?.branches.find((branch) => branch.current)?.name ?? null;
   const isGitStatusOutOfSync =
     !!gitStatus?.branch && !!currentBranch && gitStatus.branch !== currentBranch;
@@ -212,12 +225,13 @@ export default function GitActionsControl({
 
   const worktreeContext = useMemo(() => (isWorktree ? { isWorktree: true } : null), [isWorktree]);
   const gitActionMenuItems = useMemo(
-    () => buildMenuItems(gitStatusForActions, isGitActionRunning, worktreeContext),
-    [gitStatusForActions, isGitActionRunning, worktreeContext],
+    () => buildMenuItems(gitStatusForActions, isGitActionRunning, hasOriginRemote, worktreeContext),
+    [gitStatusForActions, hasOriginRemote, isGitActionRunning, worktreeContext],
   );
   const quickAction = useMemo(
-    () => resolveQuickAction(gitStatusForActions, isGitActionRunning, isDefaultBranch),
-    [gitStatusForActions, isDefaultBranch, isGitActionRunning],
+    () =>
+      resolveQuickAction(gitStatusForActions, isGitActionRunning, isDefaultBranch, hasOriginRemote),
+    [gitStatusForActions, hasOriginRemote, isDefaultBranch, isGitActionRunning],
   );
   const quickActionDisabledReason = quickAction.disabled
     ? (quickAction.hint ?? "This action is currently unavailable.")
@@ -718,11 +732,12 @@ export default function GitActionsControl({
               </MenuTrigger>
               <MenuPopup align="end" className="w-full">
                 {gitActionMenuItems.map((item) => {
-                  const disabledReason = getMenuActionDisabledReason(
+                  const disabledReason = getMenuActionDisabledReason({
                     item,
-                    gitStatusForActions,
-                    isGitActionRunning,
-                  );
+                    gitStatus: gitStatusForActions,
+                    isBusy: isGitActionRunning,
+                    hasOriginRemote,
+                  });
                   if (item.disabled && disabledReason) {
                     return (
                       <Popover key={`${item.id}-${item.label}`}>
