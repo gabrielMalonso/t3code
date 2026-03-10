@@ -293,9 +293,7 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
         }
 
         yield* upsertSessionBinding(session, threadId, {
-          ...(input.providerOptions !== undefined
-            ? { providerOptions: input.providerOptions }
-            : {}),
+          providerOptions: input.providerOptions,
         });
         yield* analytics.record("provider.session.started", {
           provider: session.provider,
