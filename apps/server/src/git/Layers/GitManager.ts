@@ -652,6 +652,8 @@ export const makeGitManager = Effect.gen(function* () {
       aheadCount: details.aheadCount,
       behindCount: details.behindCount,
       pr,
+      ...(details.parentBranch !== undefined ? { parentBranch: details.parentBranch } : {}),
+      ...(details.parentBehindCount !== undefined ? { parentBehindCount: details.parentBehindCount } : {}),
     };
   });
 

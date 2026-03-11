@@ -2980,6 +2980,34 @@ export default function ChatView({ threadId }: ChatViewProps) {
     });
   };
 
+  const sendPromptToChat = useCallback(
+    async (text: string) => {
+      const api = readNativeApi();
+      if (!api || !activeThread) return;
+
+      const messageId = newMessageId();
+      const createdAt = new Date().toISOString();
+
+      setOptimisticUserMessages((existing) => [
+        ...existing,
+        { id: messageId, role: "user" as const, text, createdAt, streaming: false },
+      ]);
+      shouldAutoScrollRef.current = true;
+      forceStickToBottom();
+
+      await api.orchestration.dispatchCommand({
+        type: "thread.turn.start",
+        commandId: newCommandId(),
+        threadId: activeThread.id,
+        message: { messageId, role: "user", text, attachments: [] },
+        runtimeMode,
+        interactionMode,
+        createdAt,
+      });
+    },
+    [activeThread, runtimeMode, interactionMode, forceStickToBottom],
+  );
+
   const onRespondToApproval = useCallback(
     async (requestId: ApprovalRequestId, decision: ProviderApprovalDecision) => {
       const api = readNativeApi();
@@ -3701,6 +3729,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
           onAddProjectScript={saveProjectScript}
           onUpdateProjectScript={updateProjectScript}
           onDeleteProjectScript={deleteProjectScript}
+          isWorktree={activeThread.worktreePath != null}
+          onSendPrompt={sendPromptToChat}
           onToggleDiff={onToggleDiff}
           onRequestReview={() => void onReviewPrInNewThread()}
         />
@@ -4401,6 +4431,8 @@ interface ChatHeaderProps {
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<void>;
   onUpdateProjectScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void>;
   onDeleteProjectScript: (scriptId: string) => Promise<void>;
+  isWorktree: boolean;
+  onSendPrompt: (text: string) => void;
   onToggleDiff: () => void;
   onRequestReview?: () => void;
 }
@@ -4422,6 +4454,8 @@ const ChatHeader = memo(function ChatHeader({
   onAddProjectScript,
   onUpdateProjectScript,
   onDeleteProjectScript,
+  isWorktree,
+  onSendPrompt,
   onToggleDiff,
   onRequestReview,
 }: ChatHeaderProps) {
@@ -4465,7 +4499,7 @@ const ChatHeader = memo(function ChatHeader({
             openInCwd={openInCwd}
           />
         )}
-        {activeProjectName && <GitActionsControl gitCwd={gitCwd} activeThreadId={activeThreadId} onRequestReview={onRequestReview} />}
+        {activeProjectName && <GitActionsControl gitCwd={gitCwd} activeThreadId={activeThreadId} isWorktree={isWorktree} onSendPrompt={onSendPrompt} onRequestReview={onRequestReview} />}
         <Tooltip>
           <TooltipTrigger
             render={

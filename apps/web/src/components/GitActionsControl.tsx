@@ -1,7 +1,7 @@
 import type { GitStackedAction, GitStatusResult, ThreadId } from "@t3tools/contracts";
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDownIcon, CloudUploadIcon, FileSearchIcon, GitCommitIcon, InfoIcon } from "lucide-react";
+import { ChevronDownIcon, CloudUploadIcon, FileSearchIcon, GitCommitIcon, InfoIcon, RefreshCwIcon } from "lucide-react";
 import { GitHubIcon } from "./Icons";
 import {
   buildGitActionProgressStages,
@@ -46,6 +46,8 @@ import { readNativeApi } from "~/nativeApi";
 interface GitActionsControlProps {
   gitCwd: string | null;
   activeThreadId: ThreadId | null;
+  isWorktree?: boolean;
+  onSendPrompt?: (text: string) => void;
   onRequestReview?: (() => void) | undefined;
 }
 
@@ -98,6 +100,10 @@ function getMenuActionDisabledReason(
     return "Push is currently unavailable.";
   }
 
+  if (item.id === "sync") {
+    return "Sync is currently unavailable.";
+  }
+
   if (hasOpenPr) {
     return "View PR is currently unavailable.";
   }
@@ -123,6 +129,7 @@ const COMMIT_DIALOG_DESCRIPTION =
 function GitActionItemIcon({ icon }: { icon: GitActionIconName }) {
   if (icon === "commit") return <GitCommitIcon />;
   if (icon === "push") return <CloudUploadIcon />;
+  if (icon === "sync") return <RefreshCwIcon />;
   return <GitHubIcon />;
 }
 
@@ -139,7 +146,7 @@ function GitQuickActionIcon({ quickAction }: { quickAction: GitQuickAction }) {
   return <InfoIcon className={iconClassName} />;
 }
 
-export default function GitActionsControl({ gitCwd, activeThreadId, onRequestReview }: GitActionsControlProps) {
+export default function GitActionsControl({ gitCwd, activeThreadId, isWorktree, onSendPrompt, onRequestReview }: GitActionsControlProps) {
   const threadToastData = useMemo(
     () => (activeThreadId ? { threadId: activeThreadId } : undefined),
     [activeThreadId],
@@ -184,9 +191,13 @@ export default function GitActionsControl({ gitCwd, activeThreadId, onRequestRev
     return current?.isDefault ?? (branchName === "main" || branchName === "master");
   }, [branchList?.branches, gitStatusForActions?.branch]);
 
+  const worktreeContext = useMemo(
+    () => (isWorktree ? { isWorktree: true } : null),
+    [isWorktree],
+  );
   const gitActionMenuItems = useMemo(
-    () => buildMenuItems(gitStatusForActions, isGitActionRunning),
-    [gitStatusForActions, isGitActionRunning],
+    () => buildMenuItems(gitStatusForActions, isGitActionRunning, worktreeContext),
+    [gitStatusForActions, isGitActionRunning, worktreeContext],
   );
   const quickAction = useMemo(
     () => resolveQuickAction(gitStatusForActions, isGitActionRunning, isDefaultBranch),
@@ -521,11 +532,47 @@ export default function GitActionsControl({ gitCwd, activeThreadId, onRequestRev
     }
   }, [openExistingPr, pullMutation, quickAction, runGitActionWithToast, threadToastData]);
 
+  const handleSyncFromParent = useCallback(async () => {
+    const status = gitStatusForActions;
+    const parentBranch = status?.parentBranch;
+    if (!parentBranch) return;
+
+    const hasLocalCommits = (status?.aheadCount ?? 0) > 0;
+
+    if (!hasLocalCommits) {
+      const promise = pullMutation.mutateAsync();
+      toastManager.promise(promise, {
+        loading: { title: `Pulling from ${parentBranch}...`, data: threadToastData },
+        success: () => ({
+          title: `Synced with ${parentBranch}`,
+          data: threadToastData,
+        }),
+        error: (err) => ({
+          title: "Pull failed",
+          description: err instanceof Error ? err.message : "An error occurred.",
+          data: threadToastData,
+        }),
+      });
+      void promise.catch(() => undefined);
+    } else {
+      const hasUncommittedChanges = status?.hasWorkingTreeChanges ?? false;
+      const commitPart = hasUncommittedChanges
+        ? "First, commit and push all pending changes. Then, "
+        : "";
+      const prompt = `${commitPart}Rebase this branch onto ${parentBranch}. Then push --force-with-lease.`;
+      onSendPrompt?.(prompt);
+    }
+  }, [gitStatusForActions, pullMutation, threadToastData, onSendPrompt]);
+
   const openDialogForMenuItem = useCallback(
     (item: GitActionMenuItem) => {
       if (item.disabled) return;
       if (item.kind === "open_pr") {
         void openExistingPr();
+        return;
+      }
+      if (item.kind === "run_sync") {
+        void handleSyncFromParent();
         return;
       }
       if (item.dialogAction === "push") {
@@ -538,7 +585,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId, onRequestRev
       }
       setIsCommitDialogOpen(true);
     },
-    [openExistingPr, runGitActionWithToast, setIsCommitDialogOpen],
+    [openExistingPr, handleSyncFromParent, runGitActionWithToast, setIsCommitDialogOpen],
   );
 
   const runDialogAction = useCallback(() => {

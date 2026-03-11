@@ -143,6 +143,8 @@ export const GitStatusResult = Schema.Struct({
   aheadCount: NonNegativeInt,
   behindCount: NonNegativeInt,
   pr: Schema.NullOr(GitStatusPr),
+  parentBranch: Schema.optional(TrimmedNonEmptyStringSchema.pipe(Schema.NullOr)),
+  parentBehindCount: Schema.optional(NonNegativeInt),
 });
 export type GitStatusResult = typeof GitStatusResult.Type;
 
