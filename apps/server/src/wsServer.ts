@@ -825,6 +825,11 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         return yield* git.pullCurrentBranch(body.cwd);
       }
 
+      case WS_METHODS.gitMergeFromParent: {
+        const body = stripRequestTag(request.body);
+        return yield* git.mergeFromParent(body.cwd, body.parentBranch);
+      }
+
       case WS_METHODS.gitRunStackedAction: {
         const body = stripRequestTag(request.body);
         return yield* gitManager.runStackedAction(body);

@@ -56,6 +56,12 @@ export const GitPullInput = Schema.Struct({
 });
 export type GitPullInput = typeof GitPullInput.Type;
 
+export const GitMergeFromParentInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  parentBranch: TrimmedNonEmptyStringSchema,
+});
+export type GitMergeFromParentInput = typeof GitMergeFromParentInput.Type;
+
 export const GitRunStackedActionInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
   action: GitStackedAction,
@@ -145,6 +151,7 @@ export const GitStatusResult = Schema.Struct({
   pr: Schema.NullOr(GitStatusPr),
   parentBranch: Schema.optional(TrimmedNonEmptyStringSchema.pipe(Schema.NullOr)),
   parentBehindCount: Schema.optional(NonNegativeInt),
+  parentAheadCount: Schema.optional(NonNegativeInt),
 });
 export type GitStatusResult = typeof GitStatusResult.Type;
 

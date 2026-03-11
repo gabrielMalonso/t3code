@@ -28,6 +28,7 @@ export interface GitStatusDetails extends Omit<GitStatusResult, "pr"> {
   upstreamRef: string | null;
   parentBranch?: string | null;
   parentBehindCount?: number;
+  parentAheadCount?: number;
 }
 
 export interface GitPreparedCommitContext {
@@ -149,6 +150,15 @@ export interface GitCoreShape {
    * Pull current branch from upstream using fast-forward only.
    */
   readonly pullCurrentBranch: (cwd: string) => Effect.Effect<GitPullResult, GitCommandError>;
+
+  /**
+   * Merge from a parent branch using fast-forward only.
+   * Used for worktree branches that don't have an upstream configured.
+   */
+  readonly mergeFromParent: (
+    cwd: string,
+    parentBranch: string,
+  ) => Effect.Effect<GitPullResult, GitCommandError>;
 
   /**
    * Create a worktree and branch from a base branch.

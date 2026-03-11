@@ -2995,17 +2995,27 @@ export default function ChatView({ threadId }: ChatViewProps) {
       shouldAutoScrollRef.current = true;
       forceStickToBottom();
 
-      await api.orchestration.dispatchCommand({
-        type: "thread.turn.start",
-        commandId: newCommandId(),
-        threadId: activeThread.id,
-        message: { messageId, role: "user", text, attachments: [] },
-        runtimeMode,
-        interactionMode,
-        createdAt,
-      });
+      try {
+        await api.orchestration.dispatchCommand({
+          type: "thread.turn.start",
+          commandId: newCommandId(),
+          threadId: activeThread.id,
+          message: { messageId, role: "user", text, attachments: [] },
+          runtimeMode,
+          interactionMode,
+          createdAt,
+        });
+      } catch (err) {
+        setOptimisticUserMessages((existing) =>
+          existing.filter((message) => message.id !== messageId),
+        );
+        setThreadError(
+          activeThread.id,
+          err instanceof Error ? err.message : "Failed to send prompt.",
+        );
+      }
     },
-    [activeThread, runtimeMode, interactionMode, forceStickToBottom],
+    [activeThread, runtimeMode, interactionMode, forceStickToBottom, setThreadError],
   );
 
   const onRespondToApproval = useCallback(
@@ -4432,7 +4442,7 @@ interface ChatHeaderProps {
   onUpdateProjectScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void>;
   onDeleteProjectScript: (scriptId: string) => Promise<void>;
   isWorktree: boolean;
-  onSendPrompt: (text: string) => void;
+  onSendPrompt: (text: string) => void | Promise<void>;
   onToggleDiff: () => void;
   onRequestReview?: () => void;
 }

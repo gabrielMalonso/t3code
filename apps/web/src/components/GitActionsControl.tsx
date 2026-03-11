@@ -41,6 +41,7 @@ import { toastManager } from "~/components/ui/toast";
 import {
   gitBranchesQueryOptions,
   gitInitMutationOptions,
+  gitMergeFromParentMutationOptions,
   gitMutationKeys,
   gitPullMutationOptions,
   gitRunStackedActionMutationOptions,
@@ -54,7 +55,7 @@ interface GitActionsControlProps {
   gitCwd: string | null;
   activeThreadId: ThreadId | null;
   isWorktree?: boolean;
-  onSendPrompt?: (text: string) => void;
+  onSendPrompt?: (text: string) => void | Promise<void>;
   onRequestReview?: (() => void) | undefined;
 }
 
@@ -192,11 +193,16 @@ export default function GitActionsControl({
     gitRunStackedActionMutationOptions({ cwd: gitCwd, queryClient }),
   );
   const pullMutation = useMutation(gitPullMutationOptions({ cwd: gitCwd, queryClient }));
+  const mergeFromParentMutation = useMutation(
+    gitMergeFromParentMutationOptions({ cwd: gitCwd, queryClient }),
+  );
 
   const isRunStackedActionRunning =
     useIsMutating({ mutationKey: gitMutationKeys.runStackedAction(gitCwd) }) > 0;
   const isPullRunning = useIsMutating({ mutationKey: gitMutationKeys.pull(gitCwd) }) > 0;
-  const isGitActionRunning = isRunStackedActionRunning || isPullRunning;
+  const isMergeFromParentRunning =
+    useIsMutating({ mutationKey: gitMutationKeys.mergeFromParent(gitCwd) }) > 0;
+  const isGitActionRunning = isRunStackedActionRunning || isPullRunning || isMergeFromParentRunning;
   const isDefaultBranch = useMemo(() => {
     const branchName = gitStatusForActions?.branch;
     if (!branchName) return false;
@@ -550,18 +556,18 @@ export default function GitActionsControl({
     const parentBranch = status?.parentBranch;
     if (!parentBranch) return;
 
-    const hasLocalCommits = (status?.aheadCount ?? 0) > 0;
+    const hasLocalCommits = (status?.parentAheadCount ?? status?.aheadCount ?? 0) > 0;
 
     if (!hasLocalCommits) {
-      const promise = pullMutation.mutateAsync();
+      const promise = mergeFromParentMutation.mutateAsync(parentBranch);
       toastManager.promise(promise, {
-        loading: { title: `Pulling from ${parentBranch}...`, data: threadToastData },
+        loading: { title: `Syncing from ${parentBranch}...`, data: threadToastData },
         success: () => ({
           title: `Synced with ${parentBranch}`,
           data: threadToastData,
         }),
         error: (err) => ({
-          title: "Pull failed",
+          title: "Sync failed",
           description: err instanceof Error ? err.message : "An error occurred.",
           data: threadToastData,
         }),
@@ -573,9 +579,9 @@ export default function GitActionsControl({
         ? "First, commit and push all pending changes. Then, "
         : "";
       const prompt = `${commitPart}Rebase this branch onto ${parentBranch}. Then push --force-with-lease.`;
-      onSendPrompt?.(prompt);
+      await onSendPrompt?.(prompt);
     }
-  }, [gitStatusForActions, pullMutation, threadToastData, onSendPrompt]);
+  }, [gitStatusForActions, mergeFromParentMutation, threadToastData, onSendPrompt]);
 
   const openDialogForMenuItem = useCallback(
     (item: GitActionMenuItem) => {
