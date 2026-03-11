@@ -597,9 +597,14 @@ const makeGitCore = Effect.gen(function* () {
     cwd: string,
     parentBranch: string,
   ): Effect.Effect<number, GitCommandError> =>
-    executeGit("GitCore.computeBehindCountFromParent", cwd, ["rev-list", "--count", `HEAD..${parentBranch}`], {
-      allowNonZeroExit: true,
-    }).pipe(
+    executeGit(
+      "GitCore.computeBehindCountFromParent",
+      cwd,
+      ["rev-list", "--count", `HEAD..${parentBranch}`],
+      {
+        allowNonZeroExit: true,
+      },
+    ).pipe(
       Effect.map((result) => {
         if (result.code !== 0) return 0;
         const parsed = Number.parseInt(result.stdout.trim(), 10);
@@ -611,9 +616,14 @@ const makeGitCore = Effect.gen(function* () {
     cwd: string,
     parentBranch: string,
   ): Effect.Effect<number, GitCommandError> =>
-    executeGit("GitCore.computeAheadCountFromParent", cwd, ["rev-list", "--count", `${parentBranch}..HEAD`], {
-      allowNonZeroExit: true,
-    }).pipe(
+    executeGit(
+      "GitCore.computeAheadCountFromParent",
+      cwd,
+      ["rev-list", "--count", `${parentBranch}..HEAD`],
+      {
+        allowNonZeroExit: true,
+      },
+    ).pipe(
       Effect.map((result) => {
         if (result.code !== 0) return 0;
         const parsed = Number.parseInt(result.stdout.trim(), 10);
@@ -976,10 +986,15 @@ const makeGitCore = Effect.gen(function* () {
         ["rev-parse", "HEAD"],
         true,
       ).pipe(Effect.map((stdout) => stdout.trim()));
-      yield* executeGit("GitCore.mergeFromParent.merge", cwd, ["merge", "--ff-only", parentBranch], {
-        timeoutMs: 30_000,
-        fallbackErrorMessage: `git merge --ff-only ${parentBranch} failed`,
-      });
+      yield* executeGit(
+        "GitCore.mergeFromParent.merge",
+        cwd,
+        ["merge", "--ff-only", parentBranch],
+        {
+          timeoutMs: 30_000,
+          fallbackErrorMessage: `git merge --ff-only ${parentBranch} failed`,
+        },
+      );
       const afterSha = yield* runGitStdout(
         "GitCore.mergeFromParent.afterSha",
         cwd,

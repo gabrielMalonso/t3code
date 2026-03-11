@@ -457,7 +457,9 @@ interface StartThreadWithPromptOptions {
   sendInFlightRef: React.MutableRefObject<boolean>;
   beginSendPhase: (phase: Exclude<SendPhase, "idle">) => void;
   resetSendPhase: () => void;
-  syncServerReadModel: (snapshot: Awaited<ReturnType<NativeApi["orchestration"]["getSnapshot"]>>) => void;
+  syncServerReadModel: (
+    snapshot: Awaited<ReturnType<NativeApi["orchestration"]["getSnapshot"]>>,
+  ) => void;
   navigate: ReturnType<typeof useNavigate>;
   planSidebarOpenOnNextThreadRef?: React.MutableRefObject<boolean>;
 }
@@ -530,9 +532,7 @@ async function startThreadWithPrompt(opts: StartThreadWithPromptOptions): Promis
         ...(selectedModelOptionsForDispatch
           ? { modelOptions: selectedModelOptionsForDispatch }
           : {}),
-        ...(providerOptionsForDispatch
-          ? { providerOptions: providerOptionsForDispatch }
-          : {}),
+        ...(providerOptionsForDispatch ? { providerOptions: providerOptionsForDispatch } : {}),
         assistantDeliveryMode: enableAssistantStreaming ? "streaming" : "buffered",
         runtimeMode,
         interactionMode: "default",
@@ -567,8 +567,7 @@ async function startThreadWithPrompt(opts: StartThreadWithPromptOptions): Promis
       toastManager.add({
         type: "error",
         title: errorToastTitle,
-        description:
-          err instanceof Error ? err.message : errorToastFallbackDescription,
+        description: err instanceof Error ? err.message : errorToastFallbackDescription,
       });
     })
     .then(finish, finish);

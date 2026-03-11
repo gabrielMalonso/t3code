@@ -684,7 +684,8 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
             branch: options.branch === undefined ? existing.branch : (options.branch ?? null),
             worktreePath: nextWorktreePath,
             envMode:
-              options.envMode ?? (nextWorktreePath ? "worktree" : (existing.envMode ?? DEFAULT_ENV_MODE)),
+              options.envMode ??
+              (nextWorktreePath ? "worktree" : (existing.envMode ?? DEFAULT_ENV_MODE)),
           };
           const isUnchanged =
             nextDraftThread.projectId === existing.projectId &&
