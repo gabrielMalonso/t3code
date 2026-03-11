@@ -451,7 +451,7 @@ interface StartThreadWithPromptOptions {
   selectedProvider: ProviderKind;
   selectedModel: ModelSlug | null;
   selectedModelOptionsForDispatch: { codex: Record<string, unknown> } | undefined;
-  providerOptionsForDispatch: Record<string, unknown> | undefined;
+  providerOptionsForDispatch?: Record<string, unknown>;
   enableAssistantStreaming: boolean;
   runtimeMode: RuntimeMode;
   sendInFlightRef: React.MutableRefObject<boolean>;
@@ -3298,7 +3298,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       selectedProvider,
       selectedModel,
       selectedModelOptionsForDispatch,
-      providerOptionsForDispatch,
+      ...(providerOptionsForDispatch ? { providerOptionsForDispatch } : {}),
       enableAssistantStreaming: settings.enableAssistantStreaming,
       runtimeMode,
       sendInFlightRef,
@@ -3352,7 +3352,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       selectedProvider,
       selectedModel,
       selectedModelOptionsForDispatch,
-      providerOptionsForDispatch,
+      ...(providerOptionsForDispatch ? { providerOptionsForDispatch } : {}),
       enableAssistantStreaming: settings.enableAssistantStreaming,
       runtimeMode,
       sendInFlightRef,
@@ -4499,7 +4499,15 @@ const ChatHeader = memo(function ChatHeader({
             openInCwd={openInCwd}
           />
         )}
-        {activeProjectName && <GitActionsControl gitCwd={gitCwd} activeThreadId={activeThreadId} isWorktree={isWorktree} onSendPrompt={onSendPrompt} onRequestReview={onRequestReview} />}
+        {activeProjectName && (
+          <GitActionsControl
+            gitCwd={gitCwd}
+            activeThreadId={activeThreadId}
+            isWorktree={isWorktree}
+            onSendPrompt={onSendPrompt}
+            onRequestReview={onRequestReview}
+          />
+        )}
         <Tooltip>
           <TooltipTrigger
             render={
