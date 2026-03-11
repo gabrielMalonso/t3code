@@ -18,6 +18,7 @@ export const gitMutationKeys = {
   checkout: (cwd: string | null) => ["git", "mutation", "checkout", cwd] as const,
   runStackedAction: (cwd: string | null) => ["git", "mutation", "run-stacked-action", cwd] as const,
   pull: (cwd: string | null) => ["git", "mutation", "pull", cwd] as const,
+  mergeFromParent: (cwd: string | null) => ["git", "mutation", "merge-from-parent", cwd] as const,
   preparePullRequestThread: (cwd: string | null) =>
     ["git", "mutation", "prepare-pull-request-thread", cwd] as const,
 };
@@ -146,6 +147,23 @@ export function gitPullMutationOptions(input: { cwd: string | null; queryClient:
       const api = ensureNativeApi();
       if (!input.cwd) throw new Error("Git pull is unavailable.");
       return api.git.pull({ cwd: input.cwd });
+    },
+    onSettled: async () => {
+      await invalidateGitQueries(input.queryClient);
+    },
+  });
+}
+
+export function gitMergeFromParentMutationOptions(input: {
+  cwd: string | null;
+  queryClient: QueryClient;
+}) {
+  return mutationOptions({
+    mutationKey: gitMutationKeys.mergeFromParent(input.cwd),
+    mutationFn: async (parentBranch: string) => {
+      const api = ensureNativeApi();
+      if (!input.cwd) throw new Error("Git merge from parent is unavailable.");
+      return api.git.mergeFromParent({ cwd: input.cwd, parentBranch });
     },
     onSettled: async () => {
       await invalidateGitQueries(input.queryClient);

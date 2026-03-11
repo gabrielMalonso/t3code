@@ -9,6 +9,7 @@ import type {
   GitInitInput,
   GitListBranchesInput,
   GitListBranchesResult,
+  GitMergeFromParentInput,
   GitPullInput,
   GitPullResult,
   GitRemoveWorktreeInput,
@@ -144,6 +145,7 @@ export interface NativeApi {
     ) => Promise<GitPreparePullRequestThreadResult>;
     // Stacked action API
     pull: (input: GitPullInput) => Promise<GitPullResult>;
+    mergeFromParent: (input: GitMergeFromParentInput) => Promise<GitPullResult>;
     status: (input: GitStatusInput) => Promise<GitStatusResult>;
     runStackedAction: (input: GitRunStackedActionInput) => Promise<GitRunStackedActionResult>;
   };

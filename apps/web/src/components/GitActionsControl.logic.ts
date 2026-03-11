@@ -4,16 +4,16 @@ import type {
   GitStatusResult,
 } from "@t3tools/contracts";
 
-export type GitActionIconName = "commit" | "push" | "pr";
+export type GitActionIconName = "commit" | "push" | "pr" | "sync";
 
 export type GitDialogAction = "commit" | "push" | "create_pr";
 
 export interface GitActionMenuItem {
-  id: "commit" | "push" | "pr";
+  id: "commit" | "push" | "pr" | "sync";
   label: string;
   disabled: boolean;
   icon: GitActionIconName;
-  kind: "open_dialog" | "open_pr";
+  kind: "open_dialog" | "open_pr" | "run_sync";
   dialogAction?: GitDialogAction;
 }
 
@@ -113,6 +113,7 @@ export function summarizeGitResult(result: GitRunStackedActionResult): {
 export function buildMenuItems(
   gitStatus: GitStatusResult | null,
   isBusy: boolean,
+  worktreeContext?: { isWorktree: boolean } | null,
 ): GitActionMenuItem[] {
   if (!gitStatus) return [];
 
@@ -126,7 +127,7 @@ export function buildMenuItems(
     !isBusy && hasBranch && !hasChanges && !hasOpenPr && gitStatus.aheadCount > 0 && !isBehind;
   const canOpenPr = !isBusy && hasOpenPr;
 
-  return [
+  const items: GitActionMenuItem[] = [
     {
       id: "commit",
       label: "Commit",
@@ -160,6 +161,19 @@ export function buildMenuItems(
           dialogAction: "create_pr",
         },
   ];
+
+  const parentBehindCount = gitStatus.parentBehindCount ?? 0;
+  if (worktreeContext?.isWorktree && gitStatus.parentBranch && parentBehindCount > 0) {
+    items.push({
+      id: "sync",
+      label: `Sync from ${gitStatus.parentBranch} (${parentBehindCount} behind)`,
+      disabled: isBusy,
+      icon: "sync",
+      kind: "run_sync",
+    });
+  }
+
+  return items;
 }
 
 export function resolveQuickAction(

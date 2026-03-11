@@ -572,6 +572,65 @@ const makeGitCore = Effect.gen(function* () {
       return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
     });
 
+  const isInsideWorktree = (cwd: string): Effect.Effect<boolean, GitCommandError> =>
+    executeGit("GitCore.isInsideWorktree", cwd, ["rev-parse", "--git-common-dir"], {
+      allowNonZeroExit: true,
+    }).pipe(
+      Effect.map((result) => {
+        if (result.code !== 0) return false;
+        const gitDir = result.stdout.trim();
+        return gitDir !== ".git" && gitDir.length > 0;
+      }),
+    );
+
+  const resolveParentBranch = (
+    cwd: string,
+    branch: string,
+  ): Effect.Effect<string | null, GitCommandError> =>
+    Effect.gen(function* () {
+      const configured = yield* readConfigValue(cwd, `branch.${branch}.t3ParentBranch`);
+      if (configured && configured !== branch) return configured;
+      return yield* resolveBaseBranchForNoUpstream(cwd, branch);
+    });
+
+  const computeBehindCountFromParent = (
+    cwd: string,
+    parentBranch: string,
+  ): Effect.Effect<number, GitCommandError> =>
+    executeGit(
+      "GitCore.computeBehindCountFromParent",
+      cwd,
+      ["rev-list", "--count", `HEAD..${parentBranch}`],
+      {
+        allowNonZeroExit: true,
+      },
+    ).pipe(
+      Effect.map((result) => {
+        if (result.code !== 0) return 0;
+        const parsed = Number.parseInt(result.stdout.trim(), 10);
+        return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+      }),
+    );
+
+  const computeAheadCountFromParent = (
+    cwd: string,
+    parentBranch: string,
+  ): Effect.Effect<number, GitCommandError> =>
+    executeGit(
+      "GitCore.computeAheadCountFromParent",
+      cwd,
+      ["rev-list", "--count", `${parentBranch}..HEAD`],
+      {
+        allowNonZeroExit: true,
+      },
+    ).pipe(
+      Effect.map((result) => {
+        if (result.code !== 0) return 0;
+        const parsed = Number.parseInt(result.stdout.trim(), 10);
+        return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+      }),
+    );
+
   const readBranchRecency = (cwd: string): Effect.Effect<Map<string, number>, GitCommandError> =>
     Effect.gen(function* () {
       const branchRecency = yield* executeGit(
@@ -695,6 +754,26 @@ const makeGitCore = Effect.gen(function* () {
       }
       files.sort((a, b) => a.path.localeCompare(b.path));
 
+      let parentBranch: string | null = null;
+      let parentBehindCount = 0;
+      let parentAheadCount = 0;
+      const worktreeDetected = yield* isInsideWorktree(cwd).pipe(
+        Effect.catch(() => Effect.succeed(false)),
+      );
+      if (worktreeDetected && branch) {
+        parentBranch = yield* resolveParentBranch(cwd, branch).pipe(
+          Effect.catch(() => Effect.succeed(null)),
+        );
+        if (parentBranch) {
+          parentBehindCount = yield* computeBehindCountFromParent(cwd, parentBranch).pipe(
+            Effect.catch(() => Effect.succeed(0)),
+          );
+          parentAheadCount = yield* computeAheadCountFromParent(cwd, parentBranch).pipe(
+            Effect.catch(() => Effect.succeed(0)),
+          );
+        }
+      }
+
       return {
         branch,
         upstreamRef,
@@ -707,6 +786,7 @@ const makeGitCore = Effect.gen(function* () {
         hasUpstream: upstreamRef !== null,
         aheadCount,
         behindCount,
+        ...(worktreeDetected ? { parentBranch, parentBehindCount, parentAheadCount } : {}),
       };
     });
 
@@ -880,6 +960,51 @@ const makeGitCore = Effect.gen(function* () {
         status: beforeSha.length > 0 && beforeSha === afterSha ? "skipped_up_to_date" : "pulled",
         branch,
         upstreamBranch: refreshed.upstreamRef,
+      };
+    });
+
+  const mergeFromParent: GitCoreShape["mergeFromParent"] = (cwd, parentBranch) =>
+    Effect.gen(function* () {
+      const details = yield* statusDetails(cwd);
+      const branch = details.branch;
+      if (!branch) {
+        return yield* createGitCommandError(
+          "GitCore.mergeFromParent",
+          cwd,
+          ["merge", "--ff-only", parentBranch],
+          "Cannot merge from detached HEAD.",
+        );
+      }
+      // Best-effort fetch of the parent branch from origin
+      yield* executeGit("GitCore.mergeFromParent.fetch", cwd, ["fetch", "origin", parentBranch], {
+        timeoutMs: 30_000,
+        allowNonZeroExit: true,
+      });
+      const beforeSha = yield* runGitStdout(
+        "GitCore.mergeFromParent.beforeSha",
+        cwd,
+        ["rev-parse", "HEAD"],
+        true,
+      ).pipe(Effect.map((stdout) => stdout.trim()));
+      yield* executeGit(
+        "GitCore.mergeFromParent.merge",
+        cwd,
+        ["merge", "--ff-only", parentBranch],
+        {
+          timeoutMs: 30_000,
+          fallbackErrorMessage: `git merge --ff-only ${parentBranch} failed`,
+        },
+      );
+      const afterSha = yield* runGitStdout(
+        "GitCore.mergeFromParent.afterSha",
+        cwd,
+        ["rev-parse", "HEAD"],
+        true,
+      ).pipe(Effect.map((stdout) => stdout.trim()));
+      return {
+        status: beforeSha.length > 0 && beforeSha === afterSha ? "skipped_up_to_date" : "pulled",
+        branch,
+        upstreamBranch: null,
       };
     });
 
@@ -1116,6 +1241,15 @@ const makeGitCore = Effect.gen(function* () {
         fallbackErrorMessage: "git worktree add failed",
       });
 
+      if (input.newBranch) {
+        yield* runGit(
+          "GitCore.createWorktree.setParentBranch",
+          input.cwd,
+          ["config", "--local", `branch.${input.newBranch}.t3ParentBranch`, input.branch],
+          true,
+        );
+      }
+
       return {
         worktree: {
           path: worktreePath,
@@ -1327,6 +1461,7 @@ const makeGitCore = Effect.gen(function* () {
     commit,
     pushCurrentBranch,
     pullCurrentBranch,
+    mergeFromParent,
     readRangeContext,
     readConfigValue,
     listBranches,

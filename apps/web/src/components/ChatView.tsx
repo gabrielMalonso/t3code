@@ -457,7 +457,9 @@ interface StartThreadWithPromptOptions {
   sendInFlightRef: React.MutableRefObject<boolean>;
   beginSendPhase: (phase: Exclude<SendPhase, "idle">) => void;
   resetSendPhase: () => void;
-  syncServerReadModel: (snapshot: Awaited<ReturnType<NativeApi["orchestration"]["getSnapshot"]>>) => void;
+  syncServerReadModel: (
+    snapshot: Awaited<ReturnType<NativeApi["orchestration"]["getSnapshot"]>>,
+  ) => void;
   navigate: ReturnType<typeof useNavigate>;
   planSidebarOpenOnNextThreadRef?: React.MutableRefObject<boolean>;
 }
@@ -530,9 +532,7 @@ async function startThreadWithPrompt(opts: StartThreadWithPromptOptions): Promis
         ...(selectedModelOptionsForDispatch
           ? { modelOptions: selectedModelOptionsForDispatch }
           : {}),
-        ...(providerOptionsForDispatch
-          ? { providerOptions: providerOptionsForDispatch }
-          : {}),
+        ...(providerOptionsForDispatch ? { providerOptions: providerOptionsForDispatch } : {}),
         assistantDeliveryMode: enableAssistantStreaming ? "streaming" : "buffered",
         runtimeMode,
         interactionMode: "default",
@@ -567,8 +567,7 @@ async function startThreadWithPrompt(opts: StartThreadWithPromptOptions): Promis
       toastManager.add({
         type: "error",
         title: errorToastTitle,
-        description:
-          err instanceof Error ? err.message : errorToastFallbackDescription,
+        description: err instanceof Error ? err.message : errorToastFallbackDescription,
       });
     })
     .then(finish, finish);
@@ -2980,6 +2979,44 @@ export default function ChatView({ threadId }: ChatViewProps) {
     });
   };
 
+  const sendPromptToChat = useCallback(
+    async (text: string) => {
+      const api = readNativeApi();
+      if (!api || !activeThread) return;
+
+      const messageId = newMessageId();
+      const createdAt = new Date().toISOString();
+
+      setOptimisticUserMessages((existing) => [
+        ...existing,
+        { id: messageId, role: "user" as const, text, createdAt, streaming: false },
+      ]);
+      shouldAutoScrollRef.current = true;
+      forceStickToBottom();
+
+      try {
+        await api.orchestration.dispatchCommand({
+          type: "thread.turn.start",
+          commandId: newCommandId(),
+          threadId: activeThread.id,
+          message: { messageId, role: "user", text, attachments: [] },
+          runtimeMode,
+          interactionMode,
+          createdAt,
+        });
+      } catch (err) {
+        setOptimisticUserMessages((existing) =>
+          existing.filter((message) => message.id !== messageId),
+        );
+        setThreadError(
+          activeThread.id,
+          err instanceof Error ? err.message : "Failed to send prompt.",
+        );
+      }
+    },
+    [activeThread, runtimeMode, interactionMode, forceStickToBottom, setThreadError],
+  );
+
   const onRespondToApproval = useCallback(
     async (requestId: ApprovalRequestId, decision: ProviderApprovalDecision) => {
       const api = readNativeApi();
@@ -3270,7 +3307,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       selectedProvider,
       selectedModel,
       selectedModelOptionsForDispatch,
-      providerOptionsForDispatch,
+      ...(providerOptionsForDispatch ? { providerOptionsForDispatch } : {}),
       enableAssistantStreaming: settings.enableAssistantStreaming,
       runtimeMode,
       sendInFlightRef,
@@ -3324,6 +3361,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       selectedProvider,
       selectedModel,
       selectedModelOptionsForDispatch,
+      ...(providerOptionsForDispatch ? { providerOptionsForDispatch } : {}),
       enableAssistantStreaming: settings.enableAssistantStreaming,
       runtimeMode,
       sendInFlightRef,
@@ -3344,6 +3382,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     runtimeMode,
     selectedModel,
     selectedModelOptionsForDispatch,
+    providerOptionsForDispatch,
     selectedProvider,
     settings.enableAssistantStreaming,
     syncServerReadModel,
@@ -3699,6 +3738,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
           onAddProjectScript={saveProjectScript}
           onUpdateProjectScript={updateProjectScript}
           onDeleteProjectScript={deleteProjectScript}
+          isWorktree={activeThread.worktreePath != null}
+          onSendPrompt={sendPromptToChat}
           onToggleDiff={onToggleDiff}
           onRequestReview={() => void onReviewPrInNewThread()}
         />
@@ -4399,6 +4440,8 @@ interface ChatHeaderProps {
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<void>;
   onUpdateProjectScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void>;
   onDeleteProjectScript: (scriptId: string) => Promise<void>;
+  isWorktree: boolean;
+  onSendPrompt: (text: string) => void | Promise<void>;
   onToggleDiff: () => void;
   onRequestReview?: () => void;
 }
@@ -4420,6 +4463,8 @@ const ChatHeader = memo(function ChatHeader({
   onAddProjectScript,
   onUpdateProjectScript,
   onDeleteProjectScript,
+  isWorktree,
+  onSendPrompt,
   onToggleDiff,
   onRequestReview,
 }: ChatHeaderProps) {
@@ -4463,7 +4508,15 @@ const ChatHeader = memo(function ChatHeader({
             openInCwd={openInCwd}
           />
         )}
-        {activeProjectName && <GitActionsControl gitCwd={gitCwd} activeThreadId={activeThreadId} onRequestReview={onRequestReview} />}
+        {activeProjectName && (
+          <GitActionsControl
+            gitCwd={gitCwd}
+            activeThreadId={activeThreadId}
+            isWorktree={isWorktree}
+            onSendPrompt={onSendPrompt}
+            onRequestReview={onRequestReview}
+          />
+        )}
         <Tooltip>
           <TooltipTrigger
             render={
