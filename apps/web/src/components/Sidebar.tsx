@@ -1653,7 +1653,8 @@ export default function Sidebar() {
                                         )}
                                       </div>
                                       <div className="ml-auto flex shrink-0 items-center gap-1.5">
-                                        {(thread.implementationThreadId || thread.sourceThreadId) && (
+                                        {(thread.implementationThreadId ||
+                                          thread.sourceThreadId) && (
                                           <Tooltip>
                                             <TooltipTrigger
                                               render={
@@ -1668,7 +1669,9 @@ export default function Sidebar() {
                                                   onClick={(event) => {
                                                     event.stopPropagation();
                                                     event.preventDefault();
-                                                    const targetId = thread.implementationThreadId ?? thread.sourceThreadId;
+                                                    const targetId =
+                                                      thread.implementationThreadId ??
+                                                      thread.sourceThreadId;
                                                     if (targetId) {
                                                       void navigate({
                                                         to: "/$threadId",

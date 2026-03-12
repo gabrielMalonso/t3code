@@ -19,7 +19,12 @@ export interface ThreadStatusPill {
 
 type ThreadStatusInput = Pick<
   Thread,
-  "interactionMode" | "implementationThreadId" | "latestTurn" | "lastVisitedAt" | "proposedPlans" | "session"
+  | "interactionMode"
+  | "implementationThreadId"
+  | "latestTurn"
+  | "lastVisitedAt"
+  | "proposedPlans"
+  | "session"
 >;
 
 export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {

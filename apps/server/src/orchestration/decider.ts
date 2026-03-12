@@ -161,7 +161,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: command.interactionMode,
           branch: command.branch,
           worktreePath: command.worktreePath,
-          ...(command.sourceThreadId !== undefined ? { sourceThreadId: command.sourceThreadId } : {}),
+          ...(command.sourceThreadId !== undefined
+            ? { sourceThreadId: command.sourceThreadId }
+            : {}),
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
@@ -211,7 +213,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.model !== undefined ? { model: command.model } : {}),
           ...(command.branch !== undefined ? { branch: command.branch } : {}),
           ...(command.worktreePath !== undefined ? { worktreePath: command.worktreePath } : {}),
-          ...(command.implementationThreadId !== undefined ? { implementationThreadId: command.implementationThreadId } : {}),
+          ...(command.implementationThreadId !== undefined
+            ? { implementationThreadId: command.implementationThreadId }
+            : {}),
           updatedAt: occurredAt,
         },
       };

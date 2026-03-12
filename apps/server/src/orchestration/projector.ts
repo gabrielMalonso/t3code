@@ -300,7 +300,9 @@ export function projectEvent(
             ...(payload.model !== undefined ? { model: payload.model } : {}),
             ...(payload.branch !== undefined ? { branch: payload.branch } : {}),
             ...(payload.worktreePath !== undefined ? { worktreePath: payload.worktreePath } : {}),
-            ...(payload.implementationThreadId !== undefined ? { implementationThreadId: payload.implementationThreadId } : {}),
+            ...(payload.implementationThreadId !== undefined
+              ? { implementationThreadId: payload.implementationThreadId }
+              : {}),
             updatedAt: payload.updatedAt,
           }),
         })),
