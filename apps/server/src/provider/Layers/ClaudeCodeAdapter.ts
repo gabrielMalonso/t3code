@@ -323,6 +323,8 @@ function mapSystemMessage(
           tools: system.tools,
           permissionMode: asString(system.permissionMode),
           sessionId: asString(system.session_id),
+          skills: Array.isArray(system.skills) ? system.skills : [],
+          slashCommands: Array.isArray(system.slash_commands) ? system.slash_commands : [],
         },
       },
     },
