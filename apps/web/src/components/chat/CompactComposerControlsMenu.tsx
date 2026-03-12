@@ -18,6 +18,7 @@ import {
   MenuSeparator as MenuDivider,
   MenuTrigger,
 } from "../ui/menu";
+import { reasoningLabelByOption } from "../ChatView.logic";
 
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
   activePlan: boolean;
@@ -35,12 +36,6 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   onToggleRuntimeMode: () => void;
 }) {
   const defaultReasoningEffort = getDefaultReasoningEffort("codex");
-  const reasoningLabelByOption: Record<CodexReasoningEffort, string> = {
-    low: "Low",
-    medium: "Medium",
-    high: "High",
-    xhigh: "Extra High",
-  };
 
   return (
     <Menu>

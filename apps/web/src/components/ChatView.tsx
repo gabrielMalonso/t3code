@@ -120,6 +120,7 @@ import { readNativeApi } from "~/nativeApi";
 import { resolveAppModelSelection, useAppSettings } from "../appSettings";
 import {
   type ComposerImageAttachment,
+  DEFAULT_ENV_MODE,
   type DraftThreadEnvMode,
   type PersistedComposerImageAttachment,
   useComposerDraftStore,
@@ -1861,8 +1862,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const envMode: DraftThreadEnvMode = activeWorktreePath
     ? "worktree"
     : isLocalDraftThread
-      ? (draftThread?.envMode ?? "local")
-      : "local";
+      ? (draftThread?.envMode ?? DEFAULT_ENV_MODE)
+      : DEFAULT_ENV_MODE;
 
   useEffect(() => {
     if (phase !== "running") return;
@@ -2436,6 +2437,72 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }
   };
 
+  const sendPromptToChat = useCallback(
+    async (text: string) => {
+      const api = readNativeApi();
+      if (
+        !api ||
+        !activeThread ||
+        !isServerThread ||
+        isSendBusy ||
+        isConnecting ||
+        sendInFlightRef.current
+      )
+        return;
+      const threadIdForSend = activeThread.id;
+      const createdAt = new Date().toISOString();
+      sendInFlightRef.current = true;
+      beginSendPhase("sending-turn");
+      await api.orchestration
+        .dispatchCommand({
+          type: "thread.turn.start",
+          commandId: newCommandId(),
+          threadId: threadIdForSend,
+          message: {
+            messageId: newMessageId(),
+            role: "user",
+            text,
+            attachments: [],
+          },
+          provider: selectedProvider,
+          model: selectedModel || undefined,
+          ...(selectedModelOptionsForDispatch
+            ? { modelOptions: selectedModelOptionsForDispatch }
+            : {}),
+          ...(providerOptionsForDispatch ? { providerOptions: providerOptionsForDispatch } : {}),
+          assistantDeliveryMode: settings.enableAssistantStreaming ? "streaming" : "buffered",
+          runtimeMode,
+          interactionMode: "default",
+          createdAt,
+        })
+        .catch((err: unknown) => {
+          setThreadError(
+            threadIdForSend,
+            err instanceof Error ? err.message : "Failed to send message.",
+          );
+        })
+        .finally(() => {
+          sendInFlightRef.current = false;
+          resetSendPhase();
+        });
+    },
+    [
+      activeThread,
+      beginSendPhase,
+      isConnecting,
+      isSendBusy,
+      isServerThread,
+      providerOptionsForDispatch,
+      resetSendPhase,
+      runtimeMode,
+      selectedModel,
+      selectedModelOptionsForDispatch,
+      selectedProvider,
+      setThreadError,
+      settings.enableAssistantStreaming,
+    ],
+  );
+
   const onInterrupt = async () => {
     const api = readNativeApi();
     if (!api || !activeThread) return;
@@ -2709,10 +2776,106 @@ export default function ChatView({ threadId }: ChatViewProps) {
     ],
   );
 
+  const startThreadWithPrompt = useCallback(
+    async (opts: {
+      nextThreadId: ThreadId;
+      nextThreadTitle: string;
+      nextThreadModel: ModelSlug;
+      prompt: string;
+      projectId: ProjectId;
+      branch: string | null | undefined;
+      worktreePath: string | null | undefined;
+      finish: () => void;
+      onPlanSidebarOpen: () => void;
+    }) => {
+      const api = readNativeApi();
+      if (!api) return;
+      const createdAt = new Date().toISOString();
+      await api.orchestration
+        .dispatchCommand({
+          type: "thread.create",
+          commandId: newCommandId(),
+          threadId: opts.nextThreadId,
+          projectId: opts.projectId,
+          title: opts.nextThreadTitle,
+          model: opts.nextThreadModel,
+          runtimeMode,
+          interactionMode: "default",
+          branch: opts.branch ?? null,
+          worktreePath: opts.worktreePath ?? null,
+          createdAt,
+        })
+        .then(() => {
+          return api.orchestration.dispatchCommand({
+            type: "thread.turn.start",
+            commandId: newCommandId(),
+            threadId: opts.nextThreadId,
+            message: {
+              messageId: newMessageId(),
+              role: "user",
+              text: opts.prompt,
+              attachments: [],
+            },
+            provider: selectedProvider,
+            model: selectedModel || undefined,
+            ...(selectedModelOptionsForDispatch
+              ? { modelOptions: selectedModelOptionsForDispatch }
+              : {}),
+            ...(providerOptionsForDispatch ? { providerOptions: providerOptionsForDispatch } : {}),
+            assistantDeliveryMode: settings.enableAssistantStreaming ? "streaming" : "buffered",
+            runtimeMode,
+            interactionMode: "default",
+            createdAt,
+          });
+        })
+        .then(() => api.orchestration.getSnapshot())
+        .then((snapshot) => {
+          syncServerReadModel(snapshot);
+          opts.onPlanSidebarOpen();
+          return navigate({
+            to: "/$threadId",
+            params: { threadId: opts.nextThreadId },
+          });
+        })
+        .catch(async (err) => {
+          await api.orchestration
+            .dispatchCommand({
+              type: "thread.delete",
+              commandId: newCommandId(),
+              threadId: opts.nextThreadId,
+            })
+            .catch(() => undefined);
+          await api.orchestration
+            .getSnapshot()
+            .then((snapshot) => {
+              syncServerReadModel(snapshot);
+            })
+            .catch(() => undefined);
+          toastManager.add({
+            type: "error",
+            title: "Could not start implementation thread",
+            description:
+              err instanceof Error
+                ? err.message
+                : "An error occurred while creating the new thread.",
+          });
+        })
+        .then(opts.finish, opts.finish);
+    },
+    [
+      navigate,
+      providerOptionsForDispatch,
+      runtimeMode,
+      selectedModel,
+      selectedModelOptionsForDispatch,
+      selectedProvider,
+      settings.enableAssistantStreaming,
+      syncServerReadModel,
+    ],
+  );
+
   const onImplementPlanInNewThread = useCallback(async () => {
-    const api = readNativeApi();
     if (
-      !api ||
       !activeThread ||
       !activeProject ||
       !activeProposedPlan ||
@@ -2724,7 +2887,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
       return;
     }
 
-    const createdAt = new Date().toISOString();
     const nextThreadId = newThreadId();
     const planMarkdown = activeProposedPlan.planMarkdown;
     const implementationPrompt = buildPlanImplementationPrompt(planMarkdown);
@@ -2742,75 +2904,20 @@ export default function ChatView({ threadId }: ChatViewProps) {
       resetSendPhase();
     };
 
-    await api.orchestration
-      .dispatchCommand({
-        type: "thread.create",
-        commandId: newCommandId(),
-        threadId: nextThreadId,
-        projectId: activeProject.id,
-        title: nextThreadTitle,
-        model: nextThreadModel,
-        runtimeMode,
-        interactionMode: "default",
-        branch: activeThread.branch,
-        worktreePath: activeThread.worktreePath,
-        createdAt,
-      })
-      .then(() => {
-        return api.orchestration.dispatchCommand({
-          type: "thread.turn.start",
-          commandId: newCommandId(),
-          threadId: nextThreadId,
-          message: {
-            messageId: newMessageId(),
-            role: "user",
-            text: implementationPrompt,
-            attachments: [],
-          },
-          provider: selectedProvider,
-          model: selectedModel || undefined,
-          ...(selectedModelOptionsForDispatch
-            ? { modelOptions: selectedModelOptionsForDispatch }
-            : {}),
-          ...(providerOptionsForDispatch ? { providerOptions: providerOptionsForDispatch } : {}),
-          assistantDeliveryMode: settings.enableAssistantStreaming ? "streaming" : "buffered",
-          runtimeMode,
-          interactionMode: "default",
-          createdAt,
-        });
-      })
-      .then(() => api.orchestration.getSnapshot())
-      .then((snapshot) => {
-        syncServerReadModel(snapshot);
+    await startThreadWithPrompt({
+      nextThreadId,
+      nextThreadTitle,
+      nextThreadModel,
+      prompt: implementationPrompt,
+      projectId: activeProject.id,
+      branch: activeThread.branch,
+      worktreePath: activeThread.worktreePath,
+      finish,
+      onPlanSidebarOpen: () => {
         // Signal that the plan sidebar should open on the new thread.
         planSidebarOpenOnNextThreadRef.current = true;
-        return navigate({
-          to: "/$threadId",
-          params: { threadId: nextThreadId },
-        });
-      })
-      .catch(async (err) => {
-        await api.orchestration
-          .dispatchCommand({
-            type: "thread.delete",
-            commandId: newCommandId(),
-            threadId: nextThreadId,
-          })
-          .catch(() => undefined);
-        await api.orchestration
-          .getSnapshot()
-          .then((snapshot) => {
-            syncServerReadModel(snapshot);
-          })
-          .catch(() => undefined);
-        toastManager.add({
-          type: "error",
-          title: "Could not start implementation thread",
-          description:
-            err instanceof Error ? err.message : "An error occurred while creating the new thread.",
-        });
-      })
-      .then(finish, finish);
+      },
+    });
   }, [
     activeProject,
     activeProposedPlan,
@@ -2819,15 +2926,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
     isConnecting,
     isSendBusy,
     isServerThread,
-    navigate,
     resetSendPhase,
-    runtimeMode,
     selectedModel,
-    selectedModelOptionsForDispatch,
-    providerOptionsForDispatch,
-    selectedProvider,
-    settings.enableAssistantStreaming,
-    syncServerReadModel,
+    startThreadWithPrompt,
   ]);
 
   const onProviderModelSelect = useCallback(
@@ -3177,6 +3278,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
           diffToggleShortcutLabel={diffPanelShortcutLabel}
           gitCwd={gitCwd}
           diffOpen={diffOpen}
+          isWorktree={activeThread.worktreePath != null}
+          onSendPrompt={sendPromptToChat}
           onRunProjectScript={(script) => {
             void runProjectScript(script);
           }}

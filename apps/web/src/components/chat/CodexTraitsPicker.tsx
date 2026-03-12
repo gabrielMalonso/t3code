@@ -3,6 +3,7 @@ import { getDefaultReasoningEffort } from "@t3tools/shared/model";
 import { memo, useState } from "react";
 import { ChevronDownIcon } from "lucide-react";
 import { Button } from "../ui/button";
+import { reasoningLabelByOption } from "../ChatView.logic";
 import {
   Menu,
   MenuGroup,
@@ -22,12 +23,6 @@ export const CodexTraitsPicker = memo(function CodexTraitsPicker(props: {
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const defaultReasoningEffort = getDefaultReasoningEffort("codex");
-  const reasoningLabelByOption: Record<CodexReasoningEffort, string> = {
-    low: "Low",
-    medium: "Medium",
-    high: "High",
-    xhigh: "Extra High",
-  };
   const triggerLabel = [
     reasoningLabelByOption[props.effort],
     ...(props.fastModeEnabled ? ["Fast"] : []),

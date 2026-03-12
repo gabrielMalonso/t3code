@@ -1,10 +1,17 @@
-import { type ProviderKind, type ThreadId } from "@t3tools/contracts";
+import { type CodexReasoningEffort, type ProviderKind, type ThreadId } from "@t3tools/contracts";
 import { type ChatMessage, type Thread } from "../types";
 import { randomUUID } from "~/lib/utils";
 import { getAppModelOptions } from "../appSettings";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 
 export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by-project";
+
+export const reasoningLabelByOption: Record<CodexReasoningEffort, string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra High",
+};
 const WORKTREE_BRANCH_PREFIX = "t3code";
 
 export function readLastInvokedScriptByProjectFromStorage(): Record<string, string> {

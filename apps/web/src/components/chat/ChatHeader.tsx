@@ -27,6 +27,8 @@ interface ChatHeaderProps {
   diffToggleShortcutLabel: string | null;
   gitCwd: string | null;
   diffOpen: boolean;
+  isWorktree?: boolean;
+  onSendPrompt?: (text: string) => void | Promise<void>;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<void>;
   onUpdateProjectScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void>;
@@ -47,6 +49,8 @@ export const ChatHeader = memo(function ChatHeader({
   diffToggleShortcutLabel,
   gitCwd,
   diffOpen,
+  isWorktree,
+  onSendPrompt,
   onRunProjectScript,
   onAddProjectScript,
   onUpdateProjectScript,
@@ -93,7 +97,14 @@ export const ChatHeader = memo(function ChatHeader({
             openInCwd={openInCwd}
           />
         )}
-        {activeProjectName && <GitActionsControl gitCwd={gitCwd} activeThreadId={activeThreadId} />}
+        {activeProjectName && (
+          <GitActionsControl
+            gitCwd={gitCwd}
+            activeThreadId={activeThreadId}
+            isWorktree={isWorktree ?? false}
+            {...(onSendPrompt != null ? { onSendPrompt } : {})}
+          />
+        )}
         <Tooltip>
           <TooltipTrigger
             render={
