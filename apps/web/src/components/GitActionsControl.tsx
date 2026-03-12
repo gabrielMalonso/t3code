@@ -39,6 +39,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Textarea } from "~/components/ui/textarea";
 import { toastManager } from "~/components/ui/toast";
+import { openInPreferredEditor } from "~/editorPreferences";
 import {
   gitBranchesQueryOptions,
   gitInitMutationOptions,
@@ -49,7 +50,7 @@ import {
   gitStatusQueryOptions,
   invalidateGitQueries,
 } from "~/lib/gitReactQuery";
-import { preferredTerminalEditor, resolvePathLinkTarget } from "~/terminal-links";
+import { resolvePathLinkTarget } from "~/terminal-links";
 import { readNativeApi } from "~/nativeApi";
 
 interface GitActionsControlProps {
@@ -677,7 +678,7 @@ export default function GitActionsControl({
         return;
       }
       const target = resolvePathLinkTarget(filePath, gitCwd);
-      void api.shell.openInEditor(target, preferredTerminalEditor()).catch((error) => {
+      void openInPreferredEditor(api, target).catch((error) => {
         toastManager.add({
           type: "error",
           title: "Unable to open file",
