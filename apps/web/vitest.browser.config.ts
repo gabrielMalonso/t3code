@@ -15,7 +15,10 @@ export default mergeConfig(
       },
     },
     test: {
-      include: ["src/components/ChatView.browser.tsx"],
+      include: [
+        "src/components/ChatView.browser.tsx",
+        "src/components/KeybindingsToast.browser.tsx",
+      ],
       browser: {
         enabled: true,
         provider: playwright(),
@@ -24,6 +27,10 @@ export default mergeConfig(
       },
       testTimeout: 30_000,
       hookTimeout: 30_000,
+      // The @pierre/diffs WorkerPoolManager fires unhandled rejections when web
+      // workers fail to initialize during teardown. This is benign in tests —
+      // the diff rendering pool is not exercised by any browser test assertion.
+      dangerouslyIgnoreUnhandledErrors: true,
     },
   }),
 );
