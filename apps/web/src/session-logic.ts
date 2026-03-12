@@ -37,6 +37,7 @@ export interface WorkLogEntry {
   changedFiles?: ReadonlyArray<string>;
   toolName?: string;
   itemType?: string;
+  diffStats?: { added: number; removed: number };
   tone: "thinking" | "tool" | "info" | "error";
 }
 
@@ -448,6 +449,10 @@ export function deriveWorkLogEntries(
       if (itemType) {
         entry.itemType = itemType;
       }
+      const diffStats = extractDiffStats(payload);
+      if (diffStats) {
+        entry.diffStats = diffStats;
+      }
       return entry;
     });
 }
@@ -564,6 +569,17 @@ function extractToolName(payload: Record<string, unknown> | null): string | unde
 
 function extractItemType(payload: Record<string, unknown> | null): string | undefined {
   return asTrimmedString(payload?.itemType) ?? undefined;
+}
+
+function extractDiffStats(
+  payload: Record<string, unknown> | null,
+): { added: number; removed: number } | undefined {
+  const data = asRecord(payload?.data);
+  if (!data) return undefined;
+  const added = typeof data.addedLines === "number" ? data.addedLines : undefined;
+  const removed = typeof data.removedLines === "number" ? data.removedLines : undefined;
+  if (added === undefined && removed === undefined) return undefined;
+  return { added: added ?? 0, removed: removed ?? 0 };
 }
 
 function compareActivitiesByOrder(

@@ -357,8 +357,10 @@ function richToolLabel(entry: {
   command?: string;
   detail?: string;
   changedFiles?: ReadonlyArray<string>;
-}): { primary: string; secondary?: string } {
+  diffStats?: { added: number; removed: number };
+}): { primary: string; secondary?: string; diffStats?: { added: number; removed: number } } {
   const name = entry.toolName;
+  const diff = entry.diffStats;
   if (name === "Bash" && entry.command) {
     return { primary: "Bash", secondary: truncateForDisplay(entry.command, 80) };
   }
@@ -366,12 +368,15 @@ function richToolLabel(entry: {
     return { primary: "Read", secondary: basenameForDisplay(entry.changedFiles[0]) };
   }
   if (name === "Write" && entry.changedFiles?.[0]) {
-    const suffix = entry.detail?.match(/\((\d+ lines)\)/)?.[1];
     const base = basenameForDisplay(entry.changedFiles[0]);
-    return { primary: suffix ? `Write ${suffix}` : "Write", secondary: base };
+    return { primary: "Write", secondary: base, ...(diff ? { diffStats: diff } : {}) };
   }
   if (name === "Edit" && entry.changedFiles?.[0]) {
-    return { primary: "Edit", secondary: basenameForDisplay(entry.changedFiles[0]) };
+    return {
+      primary: "Edit",
+      secondary: basenameForDisplay(entry.changedFiles[0]),
+      ...(diff ? { diffStats: diff } : {}),
+    };
   }
   if (name === "Grep" && entry.detail) {
     return { primary: "Grep", secondary: entry.detail };
@@ -5639,7 +5644,7 @@ const MessagesTimeline = memo(function MessagesTimeline({
               <div className="space-y-1">
                 {visibleEntries.map((workEntry) => {
                   const icon = toolEntryIcon(workEntry);
-                  const { primary, secondary } = richToolLabel(workEntry);
+                  const { primary, secondary, diffStats } = richToolLabel(workEntry);
                   return (
                     <div
                       key={`work-row:${workEntry.id}`}
@@ -5656,6 +5661,20 @@ const MessagesTimeline = memo(function MessagesTimeline({
                           {secondary && (
                             <span className="ml-1.5 font-mono text-[10px] text-muted-foreground/55">
                               {secondary}
+                            </span>
+                          )}
+                          {diffStats && (
+                            <span className="ml-2 inline-flex items-center gap-1.5 font-mono text-[10px]">
+                              {diffStats.added > 0 && (
+                                <span className="text-green-500">
+                                  +{diffStats.added}
+                                </span>
+                              )}
+                              {diffStats.removed > 0 && (
+                                <span className="text-red-400">
+                                  &minus;{diffStats.removed}
+                                </span>
+                              )}
                             </span>
                           )}
                         </p>

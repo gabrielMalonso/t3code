@@ -193,8 +193,22 @@ function extractToolContext(data: unknown): Record<string, unknown> | undefined 
     if (typeof input.description === "string")
       result.description = (input.description as string).slice(0, 200);
     if (typeof input.query === "string") result.query = input.query;
-    if (typeof input.content === "string")
-      result.lineCount = (input.content as string).split("\n").length;
+    if (typeof input.content === "string") {
+      const lines = (input.content as string).split("\n").length;
+      result.lineCount = lines;
+      result.addedLines = lines;
+      result.removedLines = 0;
+    }
+    if (typeof input.old_string === "string" || typeof input.new_string === "string") {
+      const oldLines = typeof input.old_string === "string"
+        ? (input.old_string as string).split("\n").length
+        : 0;
+      const newLines = typeof input.new_string === "string"
+        ? (input.new_string as string).split("\n").length
+        : 0;
+      result.addedLines = newLines;
+      result.removedLines = oldLines;
+    }
   }
   return Object.keys(result).length > 0 ? result : undefined;
 }
