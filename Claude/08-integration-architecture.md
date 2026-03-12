@@ -73,18 +73,18 @@ O frontend renderiza `OrchestrationEvent`. Se o mapeamento Claude -> ProviderRun
 
 ## Mapeamento SDKMessage -> ProviderRuntimeEvent
 
-| SDKMessage | ProviderRuntimeEventType | Notas |
-|------------|-------------------------|-------|
-| `system` (init) | `session.started` + `session.configured` | Metadata da sessao |
-| `stream_event` (thinking_delta) | `content.delta` | Novo tipo de content |
-| `stream_event` (text_delta) | `content.delta` | Texto do assistente |
-| `stream_event` (content_block_start, tool_use) | `item.started` | Tool call iniciado |
-| `stream_event` (input_json_delta) | `content.delta` | Input parcial do tool |
-| `stream_event` (content_block_stop) | `item.completed` | Tool call completo |
-| `assistant` | Multiplos `item.*` events | Mensagem completa |
-| `user` (tool_use_result) | `item.completed` | Resultado do tool |
-| `result` (success) | `turn.completed` | Turn finalizado |
-| `result` (error_*) | `turn.aborted` | Turn falhou |
+| SDKMessage                                     | ProviderRuntimeEventType                 | Notas                 |
+| ---------------------------------------------- | ---------------------------------------- | --------------------- |
+| `system` (init)                                | `session.started` + `session.configured` | Metadata da sessao    |
+| `stream_event` (thinking_delta)                | `content.delta`                          | Novo tipo de content  |
+| `stream_event` (text_delta)                    | `content.delta`                          | Texto do assistente   |
+| `stream_event` (content_block_start, tool_use) | `item.started`                           | Tool call iniciado    |
+| `stream_event` (input_json_delta)              | `content.delta`                          | Input parcial do tool |
+| `stream_event` (content_block_stop)            | `item.completed`                         | Tool call completo    |
+| `assistant`                                    | Multiplos `item.*` events                | Mensagem completa     |
+| `user` (tool_use_result)                       | `item.completed`                         | Resultado do tool     |
+| `result` (success)                             | `turn.completed`                         | Turn finalizado       |
+| `result` (error\_\*)                           | `turn.aborted`                           | Turn falhou           |
 
 ## Fluxo Detalhado
 
@@ -93,7 +93,7 @@ O frontend renderiza `OrchestrationEvent`. Se o mapeamento Claude -> ProviderRun
 ```typescript
 // ClaudeAdapter.startSession()
 const q = query({
-  prompt: streamingInput,     // AsyncIterable para chat interativo
+  prompt: streamingInput, // AsyncIterable para chat interativo
   options: {
     cwd: workspaceRoot,
     model: selectedModel,
@@ -101,7 +101,7 @@ const q = query({
     thinking: { type: "adaptive" },
     allowedTools: ["Read", "Edit", "Write", "Bash", "Glob", "Grep"],
     canUseTool: (name, input) => this.handlePermission(threadId, name, input),
-  }
+  },
 });
 
 // Guardar referencia ao query object para controle
@@ -113,7 +113,7 @@ this.sessions.set(threadId, { query: q, sessionId: null });
 ```typescript
 // ClaudeAdapter.streamEvents()
 for await (const msg of q) {
-  yield* this.mapToProviderEvents(threadId, msg);
+  yield * this.mapToProviderEvents(threadId, msg);
 }
 ```
 
@@ -182,24 +182,27 @@ respondToRequest(threadId, requestId, decision) {
 ## Riscos e Decisoes
 
 ### Risco 1: Agent SDK spawna processo
+
 O Agent SDK spawna um processo `claude` CLI. Precisamos garantir que o CLI esta instalado no servidor.
 
 **Alternativa:** Usar a Messages API diretamente (`@anthropic-ai/sdk`) e implementar o agent loop manualmente. Mais trabalho, mas sem dependencia de CLI.
 
 ### Risco 2: Mapeamento de eventos
+
 O Codex e o Claude tem pipelines de eventos diferentes. O mapeamento precisa ser robusto.
 
 ### Risco 3: Thinking blocks
+
 O frontend nao tem conceito de thinking. Precisamos adicionar esse conceito ao sistema de activities/events.
 
 ### Decisao: Agent SDK vs Messages API Direta
 
-| | Agent SDK | Messages API Direta |
-|--|-----------|-------------------|
-| Complexidade de implementacao | Menor (SDK gerencia loop) | Maior (implementar loop, tools, etc.) |
-| Dependencia externa | CLI `claude` instalado | Apenas npm package |
-| Controle fino | Menor (SDK decide) | Total |
-| Paridade com Claude Code | Alta (mesmo engine) | Media |
-| Manutenção | SDK atualiza automaticamente | Precisa acompanhar API changes |
+|                               | Agent SDK                    | Messages API Direta                   |
+| ----------------------------- | ---------------------------- | ------------------------------------- |
+| Complexidade de implementacao | Menor (SDK gerencia loop)    | Maior (implementar loop, tools, etc.) |
+| Dependencia externa           | CLI `claude` instalado       | Apenas npm package                    |
+| Controle fino                 | Menor (SDK decide)           | Total                                 |
+| Paridade com Claude Code      | Alta (mesmo engine)          | Media                                 |
+| Manutenção                    | SDK atualiza automaticamente | Precisa acompanhar API changes        |
 
 **Recomendacao:** Comecar com Agent SDK para MVP rapido. Migrar para Messages API direta se necessario.

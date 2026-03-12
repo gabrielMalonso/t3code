@@ -3,6 +3,7 @@
 ## Persistencia de Sessoes
 
 O Agent SDK persiste sessoes automaticamente em disco:
+
 ```
 ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl
 ```
@@ -14,9 +15,9 @@ const q = query({
   prompt: "Analyze this codebase",
   options: {
     cwd: "/path/to/project",
-    sessionId: "custom-id",       // opcional
-    persistSession: true,          // default: true
-  }
+    sessionId: "custom-id", // opcional
+    persistSession: true, // default: true
+  },
 });
 ```
 
@@ -26,8 +27,8 @@ const q = query({
 const q = query({
   prompt: "Now fix that bug",
   options: {
-    continue: true,   // continua a sessao mais recente do cwd
-  }
+    continue: true, // continua a sessao mais recente do cwd
+  },
 });
 ```
 
@@ -37,8 +38,8 @@ const q = query({
 const q = query({
   prompt: "Follow up on the previous work",
   options: {
-    resume: "session-id-aqui",   // retoma sessao especifica
-  }
+    resume: "session-id-aqui", // retoma sessao especifica
+  },
 });
 ```
 
@@ -49,8 +50,8 @@ const q = query({
   prompt: "Try a different approach",
   options: {
     resume: "session-id-aqui",
-    forkSession: true,            // cria branch da sessao
-  }
+    forkSession: true, // cria branch da sessao
+  },
 });
 ```
 
@@ -65,8 +66,8 @@ async function* generateMessages(): AsyncIterable<SDKUserMessage> {
     type: "user" as const,
     message: {
       role: "user" as const,
-      content: "Analyze this codebase"
-    }
+      content: "Analyze this codebase",
+    },
   };
 
   // Esperar mais input do usuario...
@@ -76,14 +77,14 @@ async function* generateMessages(): AsyncIterable<SDKUserMessage> {
     type: "user" as const,
     message: {
       role: "user" as const,
-      content: nextMessage
-    }
+      content: nextMessage,
+    },
   };
 }
 
 const q = query({
-  prompt: generateMessages(),    // AsyncIterable como prompt
-  options: { maxTurns: 50 }
+  prompt: generateMessages(), // AsyncIterable como prompt
+  options: { maxTurns: 50 },
 });
 
 for await (const message of q) {
@@ -116,6 +117,7 @@ yield {
 ## Compactacao de Contexto
 
 Quando o contexto se aproxima do limite:
+
 1. SDK automaticamente compacta mensagens anteriores
 2. Emite `SDKCompactBoundaryMessage` (type: "system", subtype: "compact_boundary")
 3. Informacoes persistentes devem estar no `systemPrompt` ou CLAUDE.md (re-injetados a cada request)
@@ -132,12 +134,12 @@ q.rewindFiles(userMessageId);
 
 ## Mapeamento para Nosso Sistema
 
-| Conceito Agent SDK | Conceito T3 Code |
-|-------------------|------------------|
-| Session | Thread (OrchestrationThread) |
-| Turn | Turn (activeTurnId) |
-| `resume` | Thread resume |
-| `forkSession` | Thread fork |
-| `interrupt()` | ThreadTurnInterruptCommand |
-| `rewindFiles()` | ThreadCheckpointRevertCommand |
-| Streaming input | Novo turn no thread |
+| Conceito Agent SDK | Conceito T3 Code              |
+| ------------------ | ----------------------------- |
+| Session            | Thread (OrchestrationThread)  |
+| Turn               | Turn (activeTurnId)           |
+| `resume`           | Thread resume                 |
+| `forkSession`      | Thread fork                   |
+| `interrupt()`      | ThreadTurnInterruptCommand    |
+| `rewindFiles()`    | ThreadCheckpointRevertCommand |
+| Streaming input    | Novo turn no thread           |

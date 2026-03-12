@@ -29,14 +29,8 @@ import {
   ProviderAdapterValidationError,
   type ProviderAdapterError,
 } from "../Errors.ts";
-import {
-  ClaudeCodeAdapter,
-  type ClaudeCodeAdapterShape,
-} from "../Services/ClaudeCodeAdapter.ts";
-import {
-  ClaudeSessionManager,
-  type ClaudeProviderEvent,
-} from "../../claudeSessionManager.ts";
+import { ClaudeCodeAdapter, type ClaudeCodeAdapterShape } from "../Services/ClaudeCodeAdapter.ts";
+import { ClaudeSessionManager, type ClaudeProviderEvent } from "../../claudeSessionManager.ts";
 import type { EventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import { randomUUID } from "node:crypto";
 import { basename, truncate } from "@t3tools/shared/strings";
@@ -99,9 +93,7 @@ function toolDetailSummary(
       const fp = asString(input.file_path);
       const content = asString(input.content);
       const lineCount = content ? content.split("\n").length : undefined;
-      return fp
-        ? `${basename(fp)}${lineCount ? ` (${lineCount} lines)` : ""}`
-        : undefined;
+      return fp ? `${basename(fp)}${lineCount ? ` (${lineCount} lines)` : ""}` : undefined;
     }
     case "Edit": {
       const fp = asString(input.file_path);
@@ -127,9 +119,7 @@ function toolDetailSummary(
 
 // ─── Event Mapping ───────────────────────────────────────────────────────────
 
-function makeEventBase(
-  event: ClaudeProviderEvent,
-): Omit<ProviderRuntimeEvent, "type" | "payload"> {
+function makeEventBase(event: ClaudeProviderEvent): Omit<ProviderRuntimeEvent, "type" | "payload"> {
   return {
     eventId: event.id,
     provider: PROVIDER,
@@ -137,9 +127,7 @@ function makeEventBase(
     createdAt: event.createdAt,
     ...(event.turnId ? { turnId: event.turnId } : {}),
     ...(event.itemId ? { itemId: RuntimeItemId.makeUnsafe(event.itemId) } : {}),
-    ...(event.requestId
-      ? { requestId: RuntimeRequestId.makeUnsafe(event.requestId) }
-      : {}),
+    ...(event.requestId ? { requestId: RuntimeRequestId.makeUnsafe(event.requestId) } : {}),
     raw: {
       source: "claude.agent-sdk.message" as const,
       messageType: event.method,
@@ -168,9 +156,7 @@ function sdkToolNameToItemType(toolName: string): CanonicalItemType {
   }
 }
 
-function mapClaudeToRuntimeEvents(
-  event: ClaudeProviderEvent,
-): ReadonlyArray<ProviderRuntimeEvent> {
+function mapClaudeToRuntimeEvents(event: ClaudeProviderEvent): ReadonlyArray<ProviderRuntimeEvent> {
   const base = makeEventBase(event);
   const sdkMessage = event.sdkMessage;
 
@@ -213,8 +199,7 @@ function mapClaudeToRuntimeEvents(
           ...base,
           type: "tool.summary",
           payload: {
-            summary:
-              asString((sdkMessage as Record<string, unknown>).summary) ?? "Tool completed",
+            summary: asString((sdkMessage as Record<string, unknown>).summary) ?? "Tool completed",
           },
         },
       ];
@@ -371,9 +356,7 @@ function mapStreamEvent(
         return [
           {
             ...base,
-            ...(toolId
-              ? { itemId: RuntimeItemId.makeUnsafe(toolId) }
-              : {}),
+            ...(toolId ? { itemId: RuntimeItemId.makeUnsafe(toolId) } : {}),
             type: "item.started",
             payload: {
               itemType: sdkToolNameToItemType(toolName),
@@ -549,9 +532,7 @@ function mapResultMessage(
           state: "completed",
           stopReason: asString(resultMsg.stop_reason),
           ...(resultMsg.usage !== undefined ? { usage: resultMsg.usage } : {}),
-          ...(asObject(resultMsg.modelUsage)
-            ? { modelUsage: asObject(resultMsg.modelUsage) }
-            : {}),
+          ...(asObject(resultMsg.modelUsage) ? { modelUsage: asObject(resultMsg.modelUsage) } : {}),
           ...(typeof resultMsg.total_cost_usd === "number"
             ? { totalCostUsd: resultMsg.total_cost_usd }
             : {}),

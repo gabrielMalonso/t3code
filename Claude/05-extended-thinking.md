@@ -11,12 +11,12 @@ Extended thinking permite que o Claude "pense em voz alta" antes de responder. O
 const q = query({
   prompt: "...",
   options: {
-    thinking: { type: "adaptive" },          // Recomendado para Opus 4.6
+    thinking: { type: "adaptive" }, // Recomendado para Opus 4.6
     // OU
-    thinking: { type: "enabled", budget_tokens: 10000 },  // Budget fixo
+    thinking: { type: "enabled", budget_tokens: 10000 }, // Budget fixo
     // OU
-    thinking: { type: "disabled" },          // Sem thinking
-  }
+    thinking: { type: "disabled" }, // Sem thinking
+  },
 });
 ```
 
@@ -35,17 +35,20 @@ const q = query({
 ```
 
 ### Claude 4+ retorna thinking RESUMIDO
+
 - Voce paga pelo thinking completo (tokens), mas recebe apenas um resumo
 - O resumo captura os pontos-chave do raciocinio
 - Nao ha como acessar o thinking completo
 
 ### Redacted Thinking
+
 ```typescript
 {
   type: "redacted_thinking",
   data: "..."  // opaco, nao mostravel
 }
 ```
+
 Aparece quando o thinking contem conteudo que o modelo decidiu redatar. Mostrar placeholder na UI.
 
 ## Streaming de Thinking
@@ -122,6 +125,7 @@ Turn 4:
 ```
 
 ### Habilitando Interleaved Thinking
+
 - **Opus 4.6**: Automatico com `thinking: { type: "adaptive" }`
 - **Outros modelos**: Requer header `interleaved-thinking-2025-05-14`
 
@@ -130,26 +134,28 @@ Turn 4:
 Ao enviar tool results de volta para a API (no agent loop), voce DEVE passar os thinking blocks de volta **sem modificacao**. A API filtra internamente.
 
 **CORRETO:**
+
 ```typescript
 messages.push({
   role: "assistant",
   content: [
-    thinkingBlock,        // MANTER - a API precisa
+    thinkingBlock, // MANTER - a API precisa
     textBlock,
-    toolUseBlock
-  ]
+    toolUseBlock,
+  ],
 });
 ```
 
 **INCORRETO:**
+
 ```typescript
 messages.push({
   role: "assistant",
   content: [
     // thinkingBlock removido - VAI QUEBRAR o raciocinio
     textBlock,
-    toolUseBlock
-  ]
+    toolUseBlock,
+  ],
 });
 ```
 
@@ -179,6 +185,7 @@ Vou corrigir o bug na funcao de validacao.
 ```
 
 ### Comportamento Sugerido
+
 - Thinking comeca EXPANDIDO enquanto streama
 - Apos conclusao do thinking, COLAPSA automaticamente (mostrando 1 linha de preview)
 - Click para expandir/colapsar

@@ -5,10 +5,7 @@ import { assertFailure } from "@effect/vitest/utils";
 import { Effect, Layer, Stream } from "effect";
 
 import { CodexAdapter, CodexAdapterShape } from "../Services/CodexAdapter.ts";
-import {
-  ClaudeCodeAdapter,
-  type ClaudeCodeAdapterShape,
-} from "../Services/ClaudeCodeAdapter.ts";
+import { ClaudeCodeAdapter, type ClaudeCodeAdapterShape } from "../Services/ClaudeCodeAdapter.ts";
 import { ProviderAdapterRegistry } from "../Services/ProviderAdapterRegistry.ts";
 import { ProviderAdapterRegistryLive } from "./ProviderAdapterRegistry.ts";
 import { ProviderUnsupportedError } from "../Errors.ts";

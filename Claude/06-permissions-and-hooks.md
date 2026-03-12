@@ -4,13 +4,13 @@
 
 O SDK tem modos de permissao built-in que controlam quais tools o Claude pode executar sem aprovacao:
 
-| Modo | Comportamento |
-|------|--------------|
-| `default` | Tools nao-aprovados disparam callback `canUseTool` |
-| `acceptEdits` | Auto-aprova file edits (Edit, Write, mkdir, rm, mv, cp) |
-| `bypassPermissions` | Tudo aprovado (APENAS para sandboxes) |
-| `dontAsk` | Rejeita qualquer tool nao pre-aprovado |
-| `plan` | Sem execucao, Claude apenas planeja |
+| Modo                | Comportamento                                           |
+| ------------------- | ------------------------------------------------------- |
+| `default`           | Tools nao-aprovados disparam callback `canUseTool`      |
+| `acceptEdits`       | Auto-aprova file edits (Edit, Write, mkdir, rm, mv, cp) |
+| `bypassPermissions` | Tudo aprovado (APENAS para sandboxes)                   |
+| `dontAsk`           | Rejeita qualquer tool nao pre-aprovado                  |
+| `plan`              | Sem execucao, Claude apenas planeja                     |
 
 ## Ordem de Avaliacao
 
@@ -32,7 +32,7 @@ const options = {
       suggestions?: PermissionUpdate[];
       toolUseID: string;
       agentID?: string;
-    }
+    },
   ): Promise<PermissionResult> => {
     // Perguntar ao usuario via WebSocket
     const userDecision = await askUserForApproval(toolName, input);
@@ -40,16 +40,16 @@ const options = {
     if (userDecision.approved) {
       return {
         behavior: "allow",
-        updatedInput: userDecision.modifiedInput,        // opcional: modificar input
-        updatedPermissions: userDecision.newRules,       // opcional: criar regras
+        updatedInput: userDecision.modifiedInput, // opcional: modificar input
+        updatedPermissions: userDecision.newRules, // opcional: criar regras
       };
     }
     return {
       behavior: "deny",
       message: "User denied this tool",
-      interrupt: false,   // true = para o agente completamente
+      interrupt: false, // true = para o agente completamente
     };
-  }
+  },
 };
 ```
 
@@ -68,20 +68,20 @@ Hooks permitem interceptar o comportamento do agente em pontos especificos.
 
 ### Hooks Disponíveis
 
-| Hook | Quando |
-|------|--------|
-| `PreToolUse` | Antes de executar um tool |
-| `PostToolUse` | Depois de executar um tool |
-| `PostToolUseFailure` | Quando tool falha |
-| `Notification` | Notificacoes gerais |
-| `UserPromptSubmit` | Antes de processar prompt do usuario |
-| `SessionStart` | Inicio de sessao |
-| `SessionEnd` | Fim de sessao |
-| `Stop` | Quando agente para |
-| `SubagentStart` | Subagent iniciado |
-| `SubagentStop` | Subagent parado |
-| `PreCompact` | Antes de compactar contexto |
-| `PermissionRequest` | Quando permissao e solicitada |
+| Hook                 | Quando                               |
+| -------------------- | ------------------------------------ |
+| `PreToolUse`         | Antes de executar um tool            |
+| `PostToolUse`        | Depois de executar um tool           |
+| `PostToolUseFailure` | Quando tool falha                    |
+| `Notification`       | Notificacoes gerais                  |
+| `UserPromptSubmit`   | Antes de processar prompt do usuario |
+| `SessionStart`       | Inicio de sessao                     |
+| `SessionEnd`         | Fim de sessao                        |
+| `Stop`               | Quando agente para                   |
+| `SubagentStart`      | Subagent iniciado                    |
+| `SubagentStop`       | Subagent parado                      |
+| `PreCompact`         | Antes de compactar contexto          |
+| `PermissionRequest`  | Quando permissao e solicitada        |
 
 ### Exemplo de Hook
 
@@ -90,25 +90,29 @@ const options = {
   hooks: {
     PreToolUse: [
       {
-        matcher: "Write|Edit",   // regex contra nome do tool
-        hooks: [async (input, toolUseID, { signal }) => {
-          // Logar no nosso sistema
-          logToolAttempt(toolUseID, input);
-          return {};  // {} = permitir, ou retornar deny
-        }]
-      }
+        matcher: "Write|Edit", // regex contra nome do tool
+        hooks: [
+          async (input, toolUseID, { signal }) => {
+            // Logar no nosso sistema
+            logToolAttempt(toolUseID, input);
+            return {}; // {} = permitir, ou retornar deny
+          },
+        ],
+      },
     ],
     PostToolUse: [
       {
         matcher: ".*",
-        hooks: [async (input, toolUseID, { signal }) => {
-          // Registrar tool executado
-          recordToolExecution(toolUseID);
-          return {};
-        }]
-      }
-    ]
-  }
+        hooks: [
+          async (input, toolUseID, { signal }) => {
+            // Registrar tool executado
+            recordToolExecution(toolUseID);
+            return {};
+          },
+        ],
+      },
+    ],
+  },
 };
 ```
 

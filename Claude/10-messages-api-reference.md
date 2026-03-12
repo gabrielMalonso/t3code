@@ -13,7 +13,7 @@ npm install @anthropic-ai/sdk
 ```typescript
 import Anthropic from "@anthropic-ai/sdk";
 
-const client = new Anthropic();  // usa ANTHROPIC_API_KEY
+const client = new Anthropic(); // usa ANTHROPIC_API_KEY
 
 const message = await client.messages.create({
   model: "claude-opus-4-6",
@@ -26,15 +26,13 @@ const message = await client.messages.create({
       input_schema: {
         type: "object",
         properties: {
-          path: { type: "string", description: "Absolute file path" }
+          path: { type: "string", description: "Absolute file path" },
         },
-        required: ["path"]
-      }
-    }
+        required: ["path"],
+      },
+    },
   ],
-  messages: [
-    { role: "user", content: "Read the main.ts file" }
-  ]
+  messages: [{ role: "user", content: "Read the main.ts file" }],
 });
 ```
 
@@ -98,9 +96,7 @@ const finalMessage = await stream.finalMessage();
 
 ```typescript
 async function agentLoop(userMessage: string) {
-  const messages: Anthropic.MessageParam[] = [
-    { role: "user", content: userMessage }
-  ];
+  const messages: Anthropic.MessageParam[] = [{ role: "user", content: userMessage }];
 
   while (true) {
     const stream = client.messages.stream({

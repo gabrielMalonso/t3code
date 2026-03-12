@@ -6,26 +6,26 @@ Toda mensagem emitida pelo SDK e um dos seguintes tipos:
 
 ```typescript
 type SDKMessage =
-  | SDKSystemMessage              // Init da sessao (primeiro evento)
-  | SDKAssistantMessage           // Resposta completa do Claude
-  | SDKUserMessage                // Input do usuario ou tool results
-  | SDKPartialAssistantMessage    // Streaming token-by-token (requer includePartialMessages)
-  | SDKResultMessage              // Resultado final (ultimo evento)
-  | SDKUserMessageReplay          // Replay ao retomar sessao
-  | SDKCompactBoundaryMessage     // Compactacao de contexto ocorreu
-  | SDKStatusMessage              // Status updates
-  | SDKToolProgressMessage        // Progresso de execucao de tool
-  | SDKToolUseSummaryMessage      // Resumo de tool use
-  | SDKHookStartedMessage         // Hook iniciado
-  | SDKHookProgressMessage        // Progresso de hook
-  | SDKHookResponseMessage        // Resposta de hook
-  | SDKAuthStatusMessage          // Status de autenticacao
-  | SDKTaskNotificationMessage    // Notificacao de task
-  | SDKTaskStartedMessage         // Task iniciada
-  | SDKTaskProgressMessage        // Progresso de task
-  | SDKFilesPersistedEvent        // Arquivos persistidos
-  | SDKRateLimitEvent             // Rate limit atingido
-  | SDKPromptSuggestionMessage;   // Sugestoes de prompt
+  | SDKSystemMessage // Init da sessao (primeiro evento)
+  | SDKAssistantMessage // Resposta completa do Claude
+  | SDKUserMessage // Input do usuario ou tool results
+  | SDKPartialAssistantMessage // Streaming token-by-token (requer includePartialMessages)
+  | SDKResultMessage // Resultado final (ultimo evento)
+  | SDKUserMessageReplay // Replay ao retomar sessao
+  | SDKCompactBoundaryMessage // Compactacao de contexto ocorreu
+  | SDKStatusMessage // Status updates
+  | SDKToolProgressMessage // Progresso de execucao de tool
+  | SDKToolUseSummaryMessage // Resumo de tool use
+  | SDKHookStartedMessage // Hook iniciado
+  | SDKHookProgressMessage // Progresso de hook
+  | SDKHookResponseMessage // Resposta de hook
+  | SDKAuthStatusMessage // Status de autenticacao
+  | SDKTaskNotificationMessage // Notificacao de task
+  | SDKTaskStartedMessage // Task iniciada
+  | SDKTaskProgressMessage // Progresso de task
+  | SDKFilesPersistedEvent // Arquivos persistidos
+  | SDKRateLimitEvent // Rate limit atingido
+  | SDKPromptSuggestionMessage; // Sugestoes de prompt
 ```
 
 ---
@@ -45,7 +45,7 @@ type SDKSystemMessage = {
   betas?: string[];
   claude_code_version: string;
   cwd: string;
-  tools: string[];                              // lista de tools disponiveis
+  tools: string[]; // lista de tools disponiveis
   mcp_servers: { name: string; status: string }[];
   model: string;
   permissionMode: PermissionMode;
@@ -69,8 +69,8 @@ type SDKAssistantMessage = {
   type: "assistant";
   uuid: UUID;
   session_id: string;
-  message: BetaMessage;                 // @anthropic-ai/sdk - contem content blocks
-  parent_tool_use_id: string | null;    // non-null = dentro de subagent
+  message: BetaMessage; // @anthropic-ai/sdk - contem content blocks
+  parent_tool_use_id: string | null; // non-null = dentro de subagent
   error?: SDKAssistantMessageError;
 };
 ```
@@ -86,6 +86,7 @@ type ContentBlock =
 ```
 
 **Uso no nosso app:** Renderizar cada content block:
+
 - `thinking` -> secao colapsavel de raciocinio
 - `text` -> markdown renderizado
 - `tool_use` -> card de tool call com nome e input
@@ -104,7 +105,7 @@ type SDKUserMessage = {
   message: MessageParam;
   parent_tool_use_id: string | null;
   isSynthetic?: boolean;
-  tool_use_result?: unknown;            // output estruturado do tool
+  tool_use_result?: unknown; // output estruturado do tool
 };
 ```
 
@@ -119,7 +120,7 @@ type SDKUserMessage = {
 ```typescript
 type SDKPartialAssistantMessage = {
   type: "stream_event";
-  event: BetaRawMessageStreamEvent;     // Raw SSE event da API
+  event: BetaRawMessageStreamEvent; // Raw SSE event da API
   parent_tool_use_id: string | null;
   uuid: UUID;
   session_id: string;
@@ -164,7 +165,12 @@ type SDKResultMessage =
       result: string;
       stop_reason: string | null;
       total_cost_usd: number;
-      usage: { input_tokens: number; output_tokens: number; cache_creation_input_tokens: number; cache_read_input_tokens: number };
+      usage: {
+        input_tokens: number;
+        output_tokens: number;
+        cache_creation_input_tokens: number;
+        cache_read_input_tokens: number;
+      };
       modelUsage: { [modelName: string]: ModelUsage };
       permission_denials: SDKPermissionDenial[];
     }
@@ -192,11 +198,11 @@ type SDKResultMessage =
 
 ## Eventos Auxiliares (podem aparecer a qualquer momento)
 
-| Evento | Quando |
-|--------|--------|
-| `SDKToolProgressMessage` | Tool em execucao (ex: bash command rodando) |
-| `SDKStatusMessage` | Status updates gerais |
-| `SDKCompactBoundaryMessage` | Contexto foi compactado (limite atingido) |
-| `SDKRateLimitEvent` | Rate limit da API |
-| `SDKHook*Message` | Hooks em execucao |
-| `SDKTask*Message` | Subagents/tasks |
+| Evento                      | Quando                                      |
+| --------------------------- | ------------------------------------------- |
+| `SDKToolProgressMessage`    | Tool em execucao (ex: bash command rodando) |
+| `SDKStatusMessage`          | Status updates gerais                       |
+| `SDKCompactBoundaryMessage` | Contexto foi compactado (limite atingido)   |
+| `SDKRateLimitEvent`         | Rate limit da API                           |
+| `SDKHook*Message`           | Hooks em execucao                           |
+| `SDKTask*Message`           | Subagents/tasks                             |

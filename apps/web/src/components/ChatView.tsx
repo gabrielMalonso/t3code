@@ -5638,10 +5638,7 @@ const MessagesTimeline = memo(function MessagesTimeline({
                   const icon = toolEntryIcon(workEntry);
                   const { primary, secondary, diffStats } = richToolLabel(workEntry);
                   return (
-                    <div
-                      key={`work-row:${workEntry.id}`}
-                      className="flex items-start gap-2 py-0.5"
-                    >
+                    <div key={`work-row:${workEntry.id}`} className="flex items-start gap-2 py-0.5">
                       <span className="mt-[3px] flex shrink-0 items-center justify-center">
                         {icon}
                       </span>
@@ -5658,14 +5655,10 @@ const MessagesTimeline = memo(function MessagesTimeline({
                           {diffStats && (
                             <span className="ml-2 inline-flex items-center gap-1.5 font-mono text-[10px]">
                               {diffStats.added > 0 && (
-                                <span className="text-green-500">
-                                  +{diffStats.added}
-                                </span>
+                                <span className="text-green-500">+{diffStats.added}</span>
                               )}
                               {diffStats.removed > 0 && (
-                                <span className="text-red-400">
-                                  &minus;{diffStats.removed}
-                                </span>
+                                <span className="text-red-400">&minus;{diffStats.removed}</span>
                               )}
                             </span>
                           )}

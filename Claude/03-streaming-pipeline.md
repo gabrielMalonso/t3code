@@ -8,9 +8,9 @@ O streaming token-by-token requer `includePartialMessages: true`:
 const q = query({
   prompt: userInput,
   options: {
-    includePartialMessages: true,  // SEM ISSO, so recebe mensagens completas
+    includePartialMessages: true, // SEM ISSO, so recebe mensagens completas
     // ... outras options
-  }
+  },
 });
 ```
 
@@ -50,25 +50,21 @@ for await (const message of q) {
           currentToolInputs.set(event.index, {
             id: block.id,
             name: block.name,
-            json: ""
+            json: "",
           });
         }
-      }
-
-      else if (event.type === "content_block_delta") {
+      } else if (event.type === "content_block_delta") {
         const delta = event.delta;
 
         if (delta.type === "thinking_delta") {
           // Append ao thinking - renderizar progressivamente
           currentThinking += delta.thinking;
           updateThinkingUI(currentThinking);
-        }
-        else if (delta.type === "text_delta") {
+        } else if (delta.type === "text_delta") {
           // Append ao texto - renderizar como markdown
           currentText += delta.text;
           updateTextUI(currentText);
-        }
-        else if (delta.type === "input_json_delta") {
+        } else if (delta.type === "input_json_delta") {
           // Acumular JSON parcial do tool input
           const tool = currentToolInputs.get(event.index);
           if (tool) {
@@ -76,13 +72,10 @@ for await (const message of q) {
             // Opcionalmente mostrar JSON parcial na UI
             updateToolInputPreview(tool.id, tool.json);
           }
-        }
-        else if (delta.type === "signature_delta") {
+        } else if (delta.type === "signature_delta") {
           // Ignorar para UI - e verificacao criptografica
         }
-      }
-
-      else if (event.type === "content_block_stop") {
+      } else if (event.type === "content_block_stop") {
         // Bloco completo - finalizar rendering
         const tool = currentToolInputs.get(event.index);
         if (tool) {
@@ -91,9 +84,7 @@ for await (const message of q) {
           finalizeToolUseBlock(tool.id, tool.name, input);
           currentToolInputs.delete(event.index);
         }
-      }
-
-      else if (event.type === "message_delta") {
+      } else if (event.type === "message_delta") {
         // stop_reason: "end_turn" ou "tool_use"
         if (event.delta.stop_reason === "tool_use") {
           // Tools vao ser executados agora
@@ -201,10 +192,12 @@ Usuario envia mensagem
 ## Relacao entre stream_event e assistant
 
 Quando `includePartialMessages: true`:
+
 - **`stream_event`** chega PRIMEIRO (token por token)
 - **`assistant`** chega DEPOIS (mensagem completa)
 
 Estrategia recomendada:
+
 1. Renderizar via `stream_event` para experiencia em tempo real
 2. Quando `assistant` chega, pode substituir o conteudo streamado pelo final (para correcao de eventuais inconsistencias)
 3. Ou simplesmente ignorar `assistant` se o streaming ja renderizou tudo corretamente

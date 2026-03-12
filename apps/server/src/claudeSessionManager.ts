@@ -317,7 +317,7 @@ export class ClaudeSessionManager extends EventEmitter {
                 requestType: toolNameToRequestType(toolName),
                 detail:
                   toolName === "Bash"
-                    ? (toolInput.command as string | undefined) ?? toolName
+                    ? ((toolInput.command as string | undefined) ?? toolName)
                     : toolName,
                 args: toolInput,
               },
@@ -329,7 +329,7 @@ export class ClaudeSessionManager extends EventEmitter {
                 requestType: toolNameToRequestType(toolName),
                 detail:
                   toolName === "Bash"
-                    ? (toolInput.command as string | undefined) ?? toolName
+                    ? ((toolInput.command as string | undefined) ?? toolName)
                     : toolName,
                 args: toolInput,
               },

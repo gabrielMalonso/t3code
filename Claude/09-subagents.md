@@ -8,13 +8,13 @@ Subagents sao agentes filhos que rodam em contexto isolado. O Claude pode delega
 
 ```typescript
 const options = {
-  allowedTools: ["Read", "Glob", "Grep", "Agent"],  // "Agent" habilita subagents
+  allowedTools: ["Read", "Glob", "Grep", "Agent"], // "Agent" habilita subagents
   agents: {
     "code-reviewer": {
       description: "Expert code reviewer",
       prompt: "Analyze code quality and suggest improvements",
       tools: ["Read", "Glob", "Grep"],
-      model: "sonnet",    // "opus", "haiku", ou "inherit" (herda do pai)
+      model: "sonnet", // "opus", "haiku", ou "inherit" (herda do pai)
       maxTurns: 10,
     },
     "test-writer": {
@@ -23,18 +23,18 @@ const options = {
       tools: ["Read", "Write", "Bash", "Glob", "Grep"],
       model: "inherit",
       maxTurns: 20,
-    }
-  }
+    },
+  },
 };
 ```
 
 ## Subagents Built-in do Claude Code
 
-| Agente | Modelo | Tools | Proposito |
-|--------|--------|-------|-----------|
-| **Explore** | Haiku | Read-only | Busca rapida no codebase |
-| **Plan** | Inherited | Read-only | Pesquisa para modo planejamento |
-| **General-purpose** | Inherited | Todos | Tarefas complexas multi-step |
+| Agente              | Modelo    | Tools     | Proposito                       |
+| ------------------- | --------- | --------- | ------------------------------- |
+| **Explore**         | Haiku     | Read-only | Busca rapida no codebase        |
+| **Plan**            | Inherited | Read-only | Pesquisa para modo planejamento |
+| **General-purpose** | Inherited | Todos     | Tarefas complexas multi-step    |
 
 ## Como Subagents Aparecem nos Eventos
 
@@ -89,6 +89,7 @@ Mensagens de subagents tem `parent_tool_use_id` non-null:
 ```
 
 ### Recomendacoes de UI:
+
 - Mostrar subagent como card aninhado (indentado)
 - Nome e descricao do subagent no header
 - Activities do subagent dentro do card (colapsavel)
@@ -103,6 +104,7 @@ Mensagens de subagents tem `parent_tool_use_id` non-null:
 ## Mapeamento para Nosso Sistema
 
 O subagent pode ser modelado como:
+
 - Uma activity do tipo `task.subagent` no thread principal
 - Com sub-activities aninhadas dentro (tools executados pelo subagent)
 - Ou como um "mini-thread" temporario

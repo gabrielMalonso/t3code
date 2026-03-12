@@ -180,9 +180,7 @@ function extractToolContext(data: unknown): Record<string, unknown> | undefined 
   if (!data || typeof data !== "object") return undefined;
   const obj = data as Record<string, unknown>;
   const input =
-    obj.input && typeof obj.input === "object"
-      ? (obj.input as Record<string, unknown>)
-      : undefined;
+    obj.input && typeof obj.input === "object" ? (obj.input as Record<string, unknown>) : undefined;
   const toolName = asString(obj.name);
   const result: Record<string, unknown> = {};
   if (toolName) result.toolName = toolName;
@@ -200,12 +198,10 @@ function extractToolContext(data: unknown): Record<string, unknown> | undefined 
       result.removedLines = 0;
     }
     if (typeof input.old_string === "string" || typeof input.new_string === "string") {
-      const oldLines = typeof input.old_string === "string"
-        ? (input.old_string as string).split("\n").length
-        : 0;
-      const newLines = typeof input.new_string === "string"
-        ? (input.new_string as string).split("\n").length
-        : 0;
+      const oldLines =
+        typeof input.old_string === "string" ? (input.old_string as string).split("\n").length : 0;
+      const newLines =
+        typeof input.new_string === "string" ? (input.new_string as string).split("\n").length : 0;
       result.addedLines = newLines;
       result.removedLines = oldLines;
     }
