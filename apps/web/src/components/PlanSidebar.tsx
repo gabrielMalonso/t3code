@@ -1,4 +1,5 @@
 import { memo, useState, useCallback, useRef, useEffect } from "react";
+import { type TimestampFormat } from "../appSettings";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { ScrollArea } from "./ui/scroll-area";
@@ -12,9 +13,9 @@ import {
   PanelRightCloseIcon,
 } from "lucide-react";
 import { cn } from "~/lib/utils";
-import { formatTimestamp } from "../session-logic";
 import type { ActivePlanState } from "../session-logic";
 import type { LatestProposedPlanState } from "../session-logic";
+import { formatTimestamp } from "../timestampFormat";
 import {
   proposedPlanTitle,
   buildProposedPlanMarkdownFilename,
@@ -54,6 +55,7 @@ interface PlanSidebarProps {
   activeProposedPlan: LatestProposedPlanState | null;
   markdownCwd: string | undefined;
   workspaceRoot: string | undefined;
+  timestampFormat: TimestampFormat;
   onClose: () => void;
 }
 
@@ -62,6 +64,7 @@ const PlanSidebar = memo(function PlanSidebar({
   activeProposedPlan,
   markdownCwd,
   workspaceRoot,
+  timestampFormat,
   onClose,
 }: PlanSidebarProps) {
   const [proposedPlanExpanded, setProposedPlanExpanded] = useState(false);
@@ -127,7 +130,7 @@ const PlanSidebar = memo(function PlanSidebar({
           </Badge>
           {activePlan ? (
             <span className="text-[11px] text-muted-foreground/60">
-              {formatTimestamp(activePlan.createdAt)}
+              {formatTimestamp(activePlan.createdAt, timestampFormat)}
             </span>
           ) : null}
         </div>

@@ -5,7 +5,7 @@ import {
   type VirtualItem,
   useVirtualizer,
 } from "@tanstack/react-virtual";
-import { deriveTimelineEntries, formatElapsed, formatTimestamp } from "../../session-logic";
+import { deriveTimelineEntries, formatElapsed } from "../../session-logic";
 import { AUTO_SCROLL_BOTTOM_THRESHOLD_PX } from "../../chat-scroll";
 import { type TurnDiffSummary } from "../../types";
 import { summarizeTurnDiffStats } from "../../lib/turnDiffTree";
@@ -41,6 +41,8 @@ import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { MessageCopyButton } from "./MessageCopyButton";
 import { computeMessageDurationStart, normalizeCompactToolLabel } from "./MessagesTimeline.logic";
 import { cn } from "~/lib/utils";
+import { type TimestampFormat } from "../../appSettings";
+import { formatTimestamp } from "../../timestampFormat";
 
 const TOOL_ICON_CLASS = "h-3.5 w-3.5 shrink-0 text-muted-foreground/50";
 const THINKING_PREVIEW_CHAR_LIMIT = 220;
@@ -148,6 +150,7 @@ interface MessagesTimelineProps {
   onImageExpand: (preview: ExpandedImagePreview) => void;
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
+  timestampFormat: TimestampFormat;
   workspaceRoot: string | undefined;
 }
 
@@ -171,6 +174,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onImageExpand,
   markdownCwd,
   resolvedTheme,
+  timestampFormat,
   workspaceRoot,
 }: MessagesTimelineProps) {
   const timelineRootRef = useRef<HTMLDivElement | null>(null);
@@ -600,7 +604,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                     )}
                   </div>
                   <p className="text-right text-[10px] text-muted-foreground/30">
-                    {formatTimestamp(row.message.createdAt)}
+                    {formatTimestamp(row.message.createdAt, timestampFormat)}
                   </p>
                 </div>
               </div>
@@ -691,6 +695,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                     row.message.streaming
                       ? formatElapsed(row.durationStart, nowIso)
                       : formatElapsed(row.durationStart, row.message.completedAt),
+                    timestampFormat,
                   )}
                 </p>
               </div>
@@ -826,9 +831,13 @@ function formatWorkingTimer(startIso: string, endIso: string): string | null {
   return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
 
-function formatMessageMeta(createdAt: string, duration: string | null): string {
-  if (!duration) return formatTimestamp(createdAt);
-  return `${formatTimestamp(createdAt)} • ${duration}`;
+function formatMessageMeta(
+  createdAt: string,
+  duration: string | null,
+  timestampFormat: TimestampFormat,
+): string {
+  if (!duration) return formatTimestamp(createdAt, timestampFormat);
+  return `${formatTimestamp(createdAt, timestampFormat)} • ${duration}`;
 }
 
 function workToneIcon(tone: TimelineWorkEntry["tone"]): {
