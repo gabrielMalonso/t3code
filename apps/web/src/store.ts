@@ -274,8 +274,9 @@ export function syncServerReadModel(state: AppState, readModel: OrchestrationRea
         ),
         runtimeMode: thread.runtimeMode,
         interactionMode: thread.interactionMode,
-        session: thread.session
-          ? {
+        session: (() => {
+          if (!thread.session) return null;
+          return {
               provider:
                 normalizeProviderName(thread.session.providerName) ??
                 inferProviderForThreadModel({
@@ -290,8 +291,8 @@ export function syncServerReadModel(state: AppState, readModel: OrchestrationRea
               ...(thread.session.lastError ? { lastError: thread.session.lastError } : {}),
               ...(thread.session.skills ? { skills: [...thread.session.skills] } : {}),
               ...(thread.session.slashCommands ? { slashCommands: [...thread.session.slashCommands] } : {}),
-            }
-          : null,
+            };
+        })(),
         messages: thread.messages.map((message) => {
           const attachments = message.attachments?.map((attachment) => ({
             type: "image" as const,

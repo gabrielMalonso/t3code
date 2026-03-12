@@ -397,6 +397,20 @@ export class ClaudeSessionManager extends EventEmitter {
       if (typeof systemMsg.session_id === "string") {
         context.sdkSessionId = systemMsg.session_id;
       }
+
+      // Fetch supported commands (skills) from the SDK after init
+      if (context.queryInstance) {
+        context.queryInstance.supportedCommands().then((commands) => {
+          if (commands.length > 0) {
+            const skills = commands.map((c) => c.name);
+            this.emitEvent(threadId, "session/skills-discovered", undefined, {
+              payload: { skills },
+            });
+          }
+        }).catch(() => {
+          // Ignore errors - skills are optional
+        });
+      }
     }
 
     const event: ClaudeProviderEvent = {

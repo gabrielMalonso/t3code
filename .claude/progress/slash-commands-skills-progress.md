@@ -9,16 +9,24 @@
 ## Waves
 
 ### Wave 1: Pipeline Server (SDK -> Orchestration)
-- Status: PENDENTE
+- Status: COMPLETA
 - Tarefas: 1, 2, 3
+- Commit: bf3611b2 - "feat(skills): adiciona propagacao de skills e slash commands do SDK ate orchestration"
 
 ### Wave 2: Frontend Data Model
-- Status: PENDENTE
+- Status: COMPLETA
 - Tarefas: 4, 5
+- Commit: 1ba830e8 - "feat(slash-commands): adiciona data model para skills e slashCommands no frontend"
 
 ### Wave 3: Frontend Composer (UI + Logic)
-- Status: PENDENTE
+- Status: COMPLETA
 - Tarefas: 6, 7, 8, 9
+- Commit: 12dfaa90 - "feat(composer): implementa skills no compositor com detecção e seleção"
+
+## Validacao Final
+- Typecheck: OK (7/7 packages, 0 errors)
+- Lint: OK (9 warnings pre-existentes, 0 novos, 0 errors)
+- Tests: OK (955 passed, 2 skipped, 101 test files)
 
 ## Descobertas dos Subagentes
 

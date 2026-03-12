@@ -280,6 +280,23 @@ function mapLifecycleEvent(
         },
       ];
     }
+    case "session/skills-discovered": {
+      const p = asObject(event.payload);
+      const skills = Array.isArray(p?.skills) ? (p.skills as string[]) : [];
+      if (skills.length === 0) return [];
+      return [
+        {
+          ...base,
+          eventId: EventId.makeUnsafe(randomUUID()),
+          type: "session.configured",
+          payload: {
+            config: {
+              skills,
+            },
+          },
+        },
+      ];
+    }
     case "runtime.error": {
       const p = asObject(event.payload);
       return [
