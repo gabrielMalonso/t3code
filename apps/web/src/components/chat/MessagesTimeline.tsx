@@ -33,6 +33,7 @@ import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesTree } from "./ChangedFilesTree";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { MessageCopyButton } from "./MessageCopyButton";
+import { computeMessageDurationStart } from "./MessagesTimeline.logic";
 
 const TOOL_ICON_CLASS = "h-3.5 w-3.5 shrink-0 text-muted-foreground/50";
 
@@ -192,6 +193,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 
   const rows = useMemo<TimelineRow[]>(() => {
     const nextRows: TimelineRow[] = [];
+    const durationStartByMessageId = computeMessageDurationStart(
+      timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
+    );
 
     for (let index = 0; index < timelineEntries.length; index += 1) {
       const timelineEntry = timelineEntries[index];
@@ -233,6 +237,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         id: timelineEntry.id,
         createdAt: timelineEntry.createdAt,
         message: timelineEntry.message,
+        durationStart:
+          durationStartByMessageId.get(timelineEntry.message.id) ?? timelineEntry.message.createdAt,
         showCompletionDivider:
           timelineEntry.message.role === "assistant" &&
           completionDividerBeforeEntryId === timelineEntry.id,
@@ -625,8 +631,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                   {formatMessageMeta(
                     row.message.createdAt,
                     row.message.streaming
-                      ? formatElapsed(row.message.createdAt, nowIso)
-                      : formatElapsed(row.message.createdAt, row.message.completedAt),
+                      ? formatElapsed(row.durationStart, nowIso)
+                      : formatElapsed(row.durationStart, row.message.completedAt),
                   )}
                 </p>
               </div>
@@ -723,6 +729,7 @@ type TimelineRow =
       id: string;
       createdAt: string;
       message: TimelineMessage;
+      durationStart: string;
       showCompletionDivider: boolean;
     }
   | {
