@@ -23,6 +23,8 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     latestTurn: null,
     branch: null,
     worktreePath: null,
+    sourceThreadId: null,
+    implementationThreadId: null,
     ...overrides,
   };
 }

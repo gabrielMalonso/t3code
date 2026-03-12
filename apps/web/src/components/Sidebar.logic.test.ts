@@ -26,6 +26,7 @@ describe("hasUnseenCompletion", () => {
     expect(
       hasUnseenCompletion({
         interactionMode: "default",
+        implementationThreadId: null,
         latestTurn: makeLatestTurn(),
         lastVisitedAt: "2026-03-09T10:04:00.000Z",
         proposedPlans: [],
@@ -66,6 +67,7 @@ describe("shouldClearThreadSelectionOnMouseDown", () => {
 describe("resolveThreadStatusPill", () => {
   const baseThread = {
     interactionMode: "plan" as const,
+    implementationThreadId: null,
     latestTurn: null,
     lastVisitedAt: undefined,
     proposedPlans: [],
@@ -153,6 +155,62 @@ describe("resolveThreadStatusPill", () => {
         hasPendingUserInput: false,
       }),
     ).toMatchObject({ label: "Completed", pulse: false });
+  });
+
+  it("shows implemented when a plan thread has an implementation thread linked", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          implementationThreadId: "impl-thread-1" as never,
+          latestTurn: makeLatestTurn(),
+          proposedPlans: [
+            {
+              id: "plan-1" as never,
+              turnId: "turn-1" as never,
+              createdAt: "2026-03-09T10:00:00.000Z",
+              updatedAt: "2026-03-09T10:05:00.000Z",
+              planMarkdown: "# Plan",
+            },
+          ],
+          session: {
+            ...baseThread.session,
+            status: "ready",
+            orchestrationStatus: "ready",
+          },
+        },
+        hasPendingApprovals: false,
+        hasPendingUserInput: false,
+      }),
+    ).toMatchObject({ label: "Implemented", pulse: false });
+  });
+
+  it("shows plan ready when plan thread has no implementation thread linked", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          implementationThreadId: null,
+          latestTurn: makeLatestTurn(),
+          proposedPlans: [
+            {
+              id: "plan-1" as never,
+              turnId: "turn-1" as never,
+              createdAt: "2026-03-09T10:00:00.000Z",
+              updatedAt: "2026-03-09T10:05:00.000Z",
+              planMarkdown: "# Plan",
+            },
+          ],
+          session: {
+            ...baseThread.session,
+            status: "ready",
+            orchestrationStatus: "ready",
+          },
+        },
+        hasPendingApprovals: false,
+        hasPendingUserInput: false,
+      }),
+    ).toMatchObject({ label: "Plan Ready", pulse: false });
   });
 });
 
