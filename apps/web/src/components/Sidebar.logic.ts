@@ -10,7 +10,8 @@ export interface ThreadStatusPill {
     | "Completed"
     | "Pending Approval"
     | "Awaiting Input"
-    | "Plan Ready";
+    | "Plan Ready"
+    | "Implemented";
   colorClass: string;
   dotClass: string;
   pulse: boolean;
@@ -18,7 +19,7 @@ export interface ThreadStatusPill {
 
 type ThreadStatusInput = Pick<
   Thread,
-  "interactionMode" | "latestTurn" | "lastVisitedAt" | "proposedPlans" | "session"
+  "interactionMode" | "implementationThreadId" | "latestTurn" | "lastVisitedAt" | "proposedPlans" | "session"
 >;
 
 export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {
@@ -77,6 +78,15 @@ export function resolveThreadStatusPill(input: {
       colorClass: "text-sky-600 dark:text-sky-300/80",
       dotClass: "bg-sky-500 dark:bg-sky-300/80",
       pulse: true,
+    };
+  }
+
+  if (thread.interactionMode === "plan" && thread.implementationThreadId) {
+    return {
+      label: "Implemented",
+      colorClass: "text-emerald-600 dark:text-emerald-300/90",
+      dotClass: "bg-emerald-500 dark:bg-emerald-300/90",
+      pulse: false,
     };
   }
 

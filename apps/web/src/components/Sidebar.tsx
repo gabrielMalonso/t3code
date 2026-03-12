@@ -1,5 +1,6 @@
 import {
   ArrowLeftIcon,
+  ArrowRightFromLineIcon,
   ChevronRightIcon,
   FolderIcon,
   GitPullRequestIcon,
@@ -1652,6 +1653,41 @@ export default function Sidebar() {
                                         )}
                                       </div>
                                       <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                                        {(thread.implementationThreadId || thread.sourceThreadId) && (
+                                          <Tooltip>
+                                            <TooltipTrigger
+                                              render={
+                                                <button
+                                                  type="button"
+                                                  aria-label={
+                                                    thread.implementationThreadId
+                                                      ? "Go to implementation thread"
+                                                      : "Go to planning thread"
+                                                  }
+                                                  className="inline-flex items-center justify-center text-muted-foreground/50 hover:text-foreground/80 cursor-pointer rounded-sm outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                                                  onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    event.preventDefault();
+                                                    const targetId = thread.implementationThreadId ?? thread.sourceThreadId;
+                                                    if (targetId) {
+                                                      void navigate({
+                                                        to: "/$threadId",
+                                                        params: { threadId: targetId },
+                                                      });
+                                                    }
+                                                  }}
+                                                >
+                                                  <ArrowRightFromLineIcon className="size-3" />
+                                                </button>
+                                              }
+                                            />
+                                            <TooltipPopup side="top">
+                                              {thread.implementationThreadId
+                                                ? "Go to implementation thread"
+                                                : "Go to planning thread"}
+                                            </TooltipPopup>
+                                          </Tooltip>
+                                        )}
                                         {terminalStatus && (
                                           <span
                                             role="img"

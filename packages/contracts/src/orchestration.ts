@@ -268,6 +268,8 @@ export const OrchestrationThread = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  sourceThreadId: Schema.NullOr(ThreadId).pipe(Schema.withDecodingDefault(() => null)),
+  implementationThreadId: Schema.NullOr(ThreadId).pipe(Schema.withDecodingDefault(() => null)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -327,6 +329,7 @@ const ThreadCreateCommand = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  sourceThreadId: Schema.optional(ThreadId),
   createdAt: IsoDateTime,
 });
 
@@ -344,6 +347,7 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   model: Schema.optional(TrimmedNonEmptyString),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  implementationThreadId: Schema.optional(Schema.NullOr(ThreadId)),
 });
 
 const ThreadRuntimeModeSetCommand = Schema.Struct({
@@ -627,6 +631,7 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  sourceThreadId: Schema.optional(ThreadId),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -642,6 +647,7 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   model: Schema.optional(TrimmedNonEmptyString),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  implementationThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   updatedAt: IsoDateTime,
 });
 

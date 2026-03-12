@@ -2797,6 +2797,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       projectId: ProjectId;
       branch: string | null | undefined;
       worktreePath: string | null | undefined;
+      sourceThreadId?: ThreadId;
       finish: () => void;
       onPlanSidebarOpen: () => void;
     }) => {
@@ -2815,6 +2816,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           interactionMode: "default",
           branch: opts.branch ?? null,
           worktreePath: opts.worktreePath ?? null,
+          ...(opts.sourceThreadId ? { sourceThreadId: opts.sourceThreadId } : {}),
           createdAt,
         })
         .then(() => {
@@ -2839,6 +2841,18 @@ export default function ChatView({ threadId }: ChatViewProps) {
             interactionMode: "default",
             createdAt,
           });
+        })
+        .then(() => {
+          if (opts.sourceThreadId) {
+            return api.orchestration
+              .dispatchCommand({
+                type: "thread.meta.update",
+                commandId: newCommandId(),
+                threadId: opts.sourceThreadId,
+                implementationThreadId: opts.nextThreadId,
+              })
+              .catch(() => undefined);
+          }
         })
         .then(() => api.orchestration.getSnapshot())
         .then((snapshot) => {
@@ -2924,6 +2938,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       projectId: activeProject.id,
       branch: activeThread.branch,
       worktreePath: activeThread.worktreePath,
+      sourceThreadId: activeThread.id,
       finish,
       onPlanSidebarOpen: () => {
         // Signal that the plan sidebar should open on the new thread.
@@ -3327,6 +3342,40 @@ export default function ChatView({ threadId }: ChatViewProps) {
             onTouchEnd={onMessagesTouchEnd}
             onTouchCancel={onMessagesTouchEnd}
           >
+            {activeThread.implementationThreadId && (
+              <div className="mb-3 flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300/90">
+                <span>Plan implemented in another thread.</span>
+                <button
+                  type="button"
+                  className="font-medium underline underline-offset-2 hover:text-emerald-900 dark:hover:text-emerald-100"
+                  onClick={() => {
+                    void navigate({
+                      to: "/$threadId",
+                      params: { threadId: activeThread.implementationThreadId! },
+                    });
+                  }}
+                >
+                  Go to implementation
+                </button>
+              </div>
+            )}
+            {activeThread.sourceThreadId && (
+              <div className="mb-3 flex items-center gap-2 rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-2 text-xs text-violet-700 dark:text-violet-300/90">
+                <span>Implements plan from another thread.</span>
+                <button
+                  type="button"
+                  className="font-medium underline underline-offset-2 hover:text-violet-900 dark:hover:text-violet-100"
+                  onClick={() => {
+                    void navigate({
+                      to: "/$threadId",
+                      params: { threadId: activeThread.sourceThreadId! },
+                    });
+                  }}
+                >
+                  View plan
+                </button>
+              </div>
+            )}
             <MessagesTimeline
               key={activeThread.id}
               hasMessages={timelineEntries.length > 0}
