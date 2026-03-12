@@ -330,17 +330,13 @@ export class ClaudeSessionManager extends EventEmitter {
                 env: Record<string, string>;
                 signal: AbortSignal;
               }) => {
-                const child = spawn(
-                  fixAsarPath(config.command),
-                  config.args.map(fixAsarPath),
-                  {
-                    cwd: config.cwd,
-                    stdio: ["pipe", "pipe", "pipe"],
-                    signal: config.signal,
-                    env: config.env,
-                    windowsHide: true,
-                  },
-                );
+                const child = spawn(fixAsarPath(config.command), config.args.map(fixAsarPath), {
+                  cwd: config.cwd,
+                  stdio: ["pipe", "pipe", "pipe"],
+                  signal: config.signal,
+                  env: config.env,
+                  windowsHide: true,
+                });
                 child.stderr?.on("data", (chunk: Buffer) => {
                   context.stderrChunks.push(chunk.toString());
                 });
@@ -417,9 +413,7 @@ export class ClaudeSessionManager extends EventEmitter {
     this.consumeMessages(context, q).catch((error) => {
       if (!context.stopping) {
         const stderr = context.stderrChunks.join("").trim();
-        const errorMsg = stderr
-          ? `${String(error)}\n--- stderr ---\n${stderr}`
-          : String(error);
+        const errorMsg = stderr ? `${String(error)}\n--- stderr ---\n${stderr}` : String(error);
         this.emitEvent(threadId, "runtime.error", errorMsg, {
           payload: { message: errorMsg, class: "provider_error" },
         });
@@ -441,9 +435,7 @@ export class ClaudeSessionManager extends EventEmitter {
     } catch (error) {
       if (!context.stopping) {
         const stderr = context.stderrChunks.join("").trim();
-        const errorMsg = stderr
-          ? `${String(error)}\n--- stderr ---\n${stderr}`
-          : String(error);
+        const errorMsg = stderr ? `${String(error)}\n--- stderr ---\n${stderr}` : String(error);
         this.emitEvent(threadId, "runtime.error", errorMsg, {
           payload: { message: errorMsg, class: "provider_error" },
         });
