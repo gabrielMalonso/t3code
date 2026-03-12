@@ -933,10 +933,14 @@ const make = Effect.gen(function* () {
       // Extract skills and slashCommands from session.configured events
       if (event.type === "session.configured" && shouldApplyThreadLifecycle) {
         const config = event.payload.config as Record<string, unknown>;
-        const skills = Array.isArray(config.skills) ? (config.skills as string[]) : undefined;
-        const slashCommands = Array.isArray(config.slashCommands)
-          ? (config.slashCommands as string[])
-          : undefined;
+        const skills =
+          Array.isArray(config.skills) && config.skills.length > 0
+            ? (config.skills as string[])
+            : undefined;
+        const slashCommands =
+          Array.isArray(config.slashCommands) && config.slashCommands.length > 0
+            ? (config.slashCommands as string[])
+            : undefined;
         if (skills || slashCommands) {
           yield* orchestrationEngine.dispatch({
             type: "thread.session.set",
