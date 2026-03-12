@@ -93,6 +93,76 @@ function ChatRouteGlobalShortcuts() {
   return null;
 }
 
+const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
+
+function ChatRouteGlobalShortcuts() {
+  const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
+  const selectedThreadIdsSize = useThreadSelectionStore((state) => state.selectedThreadIds.size);
+  const { activeDraftThread, activeThread, handleNewThread, projects, routeThreadId } =
+    useHandleNewThread();
+  const serverConfigQuery = useQuery(serverConfigQueryOptions());
+  const keybindings = serverConfigQuery.data?.keybindings ?? EMPTY_KEYBINDINGS;
+  const terminalOpen = useTerminalStateStore((state) =>
+    routeThreadId
+      ? selectThreadTerminalState(state.terminalStateByThreadId, routeThreadId).terminalOpen
+      : false,
+  );
+
+  useEffect(() => {
+    const onWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+
+      if (event.key === "Escape" && selectedThreadIdsSize > 0) {
+        event.preventDefault();
+        clearSelection();
+        return;
+      }
+
+      const projectId = activeThread?.projectId ?? activeDraftThread?.projectId ?? projects[0]?.id;
+      if (!projectId) return;
+
+      const command = resolveShortcutCommand(event, keybindings, {
+        context: {
+          terminalFocus: isTerminalFocused(),
+          terminalOpen,
+        },
+      });
+
+      if (command === "chat.newLocal") {
+        event.preventDefault();
+        event.stopPropagation();
+        void handleNewThread(projectId);
+        return;
+      }
+
+      if (command !== "chat.new") return;
+      event.preventDefault();
+      event.stopPropagation();
+      void handleNewThread(projectId, {
+        branch: activeThread?.branch ?? activeDraftThread?.branch ?? null,
+        worktreePath: activeThread?.worktreePath ?? activeDraftThread?.worktreePath ?? null,
+        envMode: activeDraftThread?.envMode ?? (activeThread?.worktreePath ? "worktree" : "local"),
+      });
+    };
+
+    window.addEventListener("keydown", onWindowKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onWindowKeyDown);
+    };
+  }, [
+    activeDraftThread,
+    activeThread,
+    clearSelection,
+    handleNewThread,
+    keybindings,
+    projects,
+    selectedThreadIdsSize,
+    terminalOpen,
+  ]);
+
+  return null;
+}
+
 function ChatRouteLayout() {
   const navigate = useNavigate();
 
