@@ -326,7 +326,7 @@ export class ClaudeSessionManager extends EventEmitter {
               spawnClaudeCodeProcess: (config: {
                 command: string;
                 args: string[];
-                cwd: string;
+                cwd?: string;
                 env: Record<string, string>;
                 signal: AbortSignal;
               }) => {
