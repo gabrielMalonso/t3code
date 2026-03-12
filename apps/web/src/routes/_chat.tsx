@@ -62,7 +62,9 @@ function ChatRouteGlobalShortcuts() {
       void handleNewThread(projectId, {
         branch: activeThread?.branch ?? activeDraftThread?.branch ?? null,
         worktreePath: activeThread?.worktreePath ?? activeDraftThread?.worktreePath ?? null,
-        envMode: activeDraftThread?.envMode ?? (activeThread?.worktreePath ? "worktree" : DEFAULT_ENV_MODE),
+        envMode:
+          activeDraftThread?.envMode ??
+          (activeThread?.worktreePath ? "worktree" : DEFAULT_ENV_MODE),
       });
     };
 
