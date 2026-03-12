@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 
-import { query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { query, type SDKMessage, type SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
 import {
   ApprovalRequestId,
   EventId,
@@ -323,13 +323,7 @@ export class ClaudeSessionManager extends EventEmitter {
         },
         ...(RUNNING_INSIDE_ASAR
           ? {
-              spawnClaudeCodeProcess: (config: {
-                command: string;
-                args: string[];
-                cwd?: string;
-                env: Record<string, string>;
-                signal: AbortSignal;
-              }) => {
+              spawnClaudeCodeProcess: (config: SpawnOptions) => {
                 const child = spawn(fixAsarPath(config.command), config.args.map(fixAsarPath), {
                   cwd: config.cwd,
                   stdio: ["pipe", "pipe", "pipe"],
