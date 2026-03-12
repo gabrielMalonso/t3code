@@ -27,6 +27,7 @@ import {
   getDefaultModel,
   getDefaultReasoningEffort,
   getReasoningEffortOptions,
+  inferProviderFromModel,
   normalizeModelSlug,
   resolveModelSlugForProvider,
 } from "@t3tools/shared/model";
@@ -1012,7 +1013,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const lockedProvider: ProviderKind | null = hasThreadStarted
     ? (sessionProvider ?? selectedProviderByThreadId ?? null)
     : null;
-  const selectedProvider: ProviderKind = lockedProvider ?? selectedProviderByThreadId ?? "codex";
+  const inferredProviderFromDraftModel = inferProviderFromModel(composerDraft.model);
+  const selectedProvider: ProviderKind =
+    lockedProvider ?? selectedProviderByThreadId ?? inferredProviderFromDraftModel ?? "codex";
   const baseThreadModel = resolveModelSlugForProvider(
     selectedProvider,
     activeThread?.model ?? activeProject?.model ?? getDefaultModel(selectedProvider),
