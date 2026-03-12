@@ -8,8 +8,8 @@ import {
 } from "@t3tools/contracts";
 import {
   getModelOptions,
+  inferProviderFromModel,
   normalizeModelSlug,
-  resolveModelSlug,
   resolveModelSlugForProvider,
 } from "@t3tools/shared/model";
 import { create } from "zustand";
@@ -140,7 +140,10 @@ function mapProjectsFromReadModel(
       cwd: project.workspaceRoot,
       model:
         existing?.model ??
-        resolveModelSlug(project.defaultModel ?? DEFAULT_MODEL_BY_PROVIDER.codex),
+        resolveModelSlugForProvider(
+          inferProviderFromModel(project.defaultModel) ?? "codex",
+          project.defaultModel ?? DEFAULT_MODEL_BY_PROVIDER.codex,
+        ),
       expanded:
         existing?.expanded ??
         (persistedExpandedProjectCwds.size > 0
@@ -188,11 +191,8 @@ function toLegacySessionStatus(
   }
 }
 
-function toLegacyProvider(providerName: string | null): ProviderKind {
-  if (providerName === "codex") {
-    return providerName;
-  }
-  return "codex";
+function normalizeProviderName(providerName: string | null): ProviderKind | null {
+  return providerName === "codex" || providerName === "claudeCode" ? providerName : null;
 }
 
 const CODEX_MODEL_SLUGS = new Set<string>(getModelOptions("codex").map((option) => option.slug));
@@ -201,8 +201,13 @@ function inferProviderForThreadModel(input: {
   readonly model: string;
   readonly sessionProviderName: string | null;
 }): ProviderKind {
-  if (input.sessionProviderName === "codex") {
-    return input.sessionProviderName;
+  const sessionProvider = normalizeProviderName(input.sessionProviderName);
+  if (sessionProvider) {
+    return sessionProvider;
+  }
+  const inferredProvider = inferProviderFromModel(input.model);
+  if (inferredProvider) {
+    return inferredProvider;
   }
   const normalizedCodex = normalizeModelSlug(input.model, "codex");
   if (normalizedCodex && CODEX_MODEL_SLUGS.has(normalizedCodex)) {
@@ -271,7 +276,12 @@ export function syncServerReadModel(state: AppState, readModel: OrchestrationRea
         interactionMode: thread.interactionMode,
         session: thread.session
           ? {
-              provider: toLegacyProvider(thread.session.providerName),
+              provider:
+                normalizeProviderName(thread.session.providerName) ??
+                inferProviderForThreadModel({
+                  model: thread.model,
+                  sessionProviderName: thread.session.providerName,
+                }),
               status: toLegacySessionStatus(thread.session.status),
               orchestrationStatus: thread.session.status,
               activeTurnId: thread.session.activeTurnId ?? undefined,

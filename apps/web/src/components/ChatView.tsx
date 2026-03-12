@@ -27,9 +27,11 @@ import {
   getDefaultModel,
   getDefaultReasoningEffort,
   getReasoningEffortOptions,
+  inferProviderFromModel,
   normalizeModelSlug,
   resolveModelSlugForProvider,
 } from "@t3tools/shared/model";
+import { basename, truncate } from "@t3tools/shared/strings";
 import {
   memo,
   useCallback,
@@ -134,19 +136,27 @@ import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
 import {
   BotIcon,
+  BrainIcon,
   ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   CircleAlertIcon,
   FileIcon,
+  FilePlusIcon,
+  FileTextIcon,
   FolderIcon,
   DiffIcon,
   EllipsisIcon,
   FolderClosedIcon,
+  GlobeIcon,
   ListTodoIcon,
   LockIcon,
   LockOpenIcon,
+  PencilLineIcon,
+  SearchIcon,
+  TerminalIcon,
   Undo2Icon,
+  WrenchIcon,
   XIcon,
   CopyIcon,
   CheckIcon,
@@ -293,6 +303,86 @@ function workToneClass(tone: "thinking" | "tool" | "info" | "error"): string {
   if (tone === "tool") return "text-muted-foreground/70";
   if (tone === "thinking") return "text-muted-foreground/50";
   return "text-muted-foreground/40";
+}
+
+const TOOL_ICON_CLASS = "h-3.5 w-3.5 shrink-0 text-muted-foreground/50";
+
+function toolEntryIcon(entry: { toolName?: string; itemType?: string; tone: string }) {
+  switch (entry.toolName) {
+    case "Bash":
+      return <TerminalIcon className={TOOL_ICON_CLASS} />;
+    case "Read":
+      return <FileTextIcon className={TOOL_ICON_CLASS} />;
+    case "Edit":
+      return <PencilLineIcon className={TOOL_ICON_CLASS} />;
+    case "Write":
+      return <FilePlusIcon className={TOOL_ICON_CLASS} />;
+    case "Glob":
+    case "Grep":
+      return <SearchIcon className={TOOL_ICON_CLASS} />;
+    case "Agent":
+      return <BotIcon className={TOOL_ICON_CLASS} />;
+    case "WebSearch":
+      return <GlobeIcon className={TOOL_ICON_CLASS} />;
+  }
+  switch (entry.itemType) {
+    case "command_execution":
+      return <TerminalIcon className={TOOL_ICON_CLASS} />;
+    case "file_change":
+      return <FileIcon className={TOOL_ICON_CLASS} />;
+    case "collab_agent_tool_call":
+      return <BotIcon className={TOOL_ICON_CLASS} />;
+    case "web_search":
+      return <GlobeIcon className={TOOL_ICON_CLASS} />;
+    case "reasoning":
+      return <BrainIcon className={TOOL_ICON_CLASS} />;
+  }
+  if (entry.tone === "thinking") return <BrainIcon className={TOOL_ICON_CLASS} />;
+  if (entry.tone === "error")
+    return <CircleAlertIcon className={`${TOOL_ICON_CLASS} text-rose-300/50`} />;
+  return <WrenchIcon className={TOOL_ICON_CLASS} />;
+}
+
+function richToolLabel(entry: {
+  toolName?: string;
+  label: string;
+  command?: string;
+  detail?: string;
+  changedFiles?: ReadonlyArray<string>;
+  diffStats?: { added: number; removed: number };
+}): { primary: string; secondary?: string; diffStats?: { added: number; removed: number } } {
+  const name = entry.toolName;
+  const diff = entry.diffStats;
+  if (name === "Bash" && entry.command) {
+    return { primary: "Bash", secondary: truncate(entry.command, 80) };
+  }
+  if (name === "Read" && entry.changedFiles?.[0]) {
+    return { primary: "Read", secondary: basename(entry.changedFiles[0]) };
+  }
+  if (name === "Write" && entry.changedFiles?.[0]) {
+    const base = basename(entry.changedFiles[0]);
+    return { primary: "Write", secondary: base, ...(diff ? { diffStats: diff } : {}) };
+  }
+  if (name === "Edit" && entry.changedFiles?.[0]) {
+    return {
+      primary: "Edit",
+      secondary: basename(entry.changedFiles[0]),
+      ...(diff ? { diffStats: diff } : {}),
+    };
+  }
+  if (name === "Grep" && entry.detail) {
+    return { primary: "Grep", secondary: entry.detail };
+  }
+  if (name === "Glob" && entry.detail) {
+    return { primary: "Glob", secondary: entry.detail };
+  }
+  if (name === "Agent" && entry.detail) {
+    return { primary: "Agent", secondary: entry.detail };
+  }
+  if (name === "WebSearch" && entry.detail) {
+    return { primary: "Search", secondary: entry.detail };
+  }
+  return { primary: entry.label };
 }
 
 interface ExpandedImageItem {
@@ -1012,7 +1102,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const lockedProvider: ProviderKind | null = hasThreadStarted
     ? (sessionProvider ?? selectedProviderByThreadId ?? null)
     : null;
-  const selectedProvider: ProviderKind = lockedProvider ?? selectedProviderByThreadId ?? "codex";
+  const inferredProviderFromDraftModel = inferProviderFromModel(composerDraft.model);
+  const selectedProvider: ProviderKind =
+    lockedProvider ?? selectedProviderByThreadId ?? inferredProviderFromDraftModel ?? "codex";
   const baseThreadModel = resolveModelSlugForProvider(
     selectedProvider,
     activeThread?.model ?? activeProject?.model ?? getDefaultModel(selectedProvider),
@@ -5542,48 +5634,72 @@ const MessagesTimeline = memo(function MessagesTimeline({
                 )}
               </div>
               <div className="space-y-1">
-                {visibleEntries.map((workEntry) => (
-                  <div key={`work-row:${workEntry.id}`} className="flex items-start gap-2 py-0.5">
-                    <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/30" />
-                    <div className="min-w-0 flex-1 py-[2px]">
-                      <p className={`text-[11px] leading-relaxed ${workToneClass(workEntry.tone)}`}>
-                        {workEntry.label}
-                      </p>
-                      {workEntry.command && (
-                        <pre className="mt-1 overflow-x-auto rounded-md border border-border/70 bg-background/80 px-2 py-1 font-mono text-[11px] leading-relaxed text-foreground/80">
-                          {workEntry.command}
-                        </pre>
-                      )}
-                      {workEntry.changedFiles && workEntry.changedFiles.length > 0 && (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {workEntry.changedFiles.slice(0, 6).map((filePath) => (
-                            <span
-                              key={`${workEntry.id}:${filePath}`}
-                              className="rounded-md border border-border/70 bg-background/65 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/85"
-                              title={filePath}
-                            >
-                              {filePath}
-                            </span>
-                          ))}
-                          {workEntry.changedFiles.length > 6 && (
-                            <span className="px-1 text-[10px] text-muted-foreground/65">
-                              +{workEntry.changedFiles.length - 6} more
+                {visibleEntries.map((workEntry) => {
+                  const icon = toolEntryIcon(workEntry);
+                  const { primary, secondary, diffStats } = richToolLabel(workEntry);
+                  return (
+                    <div key={`work-row:${workEntry.id}`} className="flex items-start gap-2 py-0.5">
+                      <span className="mt-[3px] flex shrink-0 items-center justify-center">
+                        {icon}
+                      </span>
+                      <div className="min-w-0 flex-1 py-[2px]">
+                        <p
+                          className={`text-[11px] leading-relaxed ${workToneClass(workEntry.tone)}`}
+                        >
+                          <span className="font-medium">{primary}</span>
+                          {secondary && (
+                            <span className="ml-1.5 font-mono text-[10px] text-muted-foreground/55">
+                              {secondary}
                             </span>
                           )}
-                        </div>
-                      )}
-                      {workEntry.detail &&
-                        (!workEntry.command || workEntry.detail !== workEntry.command) && (
-                          <p
-                            className="mt-1 text-[11px] leading-relaxed text-muted-foreground/75"
-                            title={workEntry.detail}
-                          >
-                            {workEntry.detail}
-                          </p>
+                          {diffStats && (
+                            <span className="ml-2 inline-flex items-center gap-1.5 font-mono text-[10px]">
+                              {diffStats.added > 0 && (
+                                <span className="text-green-500">+{diffStats.added}</span>
+                              )}
+                              {diffStats.removed > 0 && (
+                                <span className="text-red-400">&minus;{diffStats.removed}</span>
+                              )}
+                            </span>
+                          )}
+                        </p>
+                        {workEntry.command && !secondary && (
+                          <pre className="mt-1 overflow-x-auto rounded-md border border-border/70 bg-background/80 px-2 py-1 font-mono text-[11px] leading-relaxed text-foreground/80">
+                            {workEntry.command}
+                          </pre>
                         )}
+                        {workEntry.changedFiles && workEntry.changedFiles.length > 1 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {workEntry.changedFiles.slice(0, 6).map((filePath) => (
+                              <span
+                                key={`${workEntry.id}:${filePath}`}
+                                className="rounded-md border border-border/70 bg-background/65 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/85"
+                                title={filePath}
+                              >
+                                {basename(filePath)}
+                              </span>
+                            ))}
+                            {workEntry.changedFiles.length > 6 && (
+                              <span className="px-1 text-[10px] text-muted-foreground/65">
+                                +{workEntry.changedFiles.length - 6} more
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {workEntry.detail &&
+                          workEntry.detail !== secondary &&
+                          (!workEntry.command || workEntry.detail !== workEntry.command) && (
+                            <p
+                              className="mt-1 text-[11px] leading-relaxed text-muted-foreground/75"
+                              title={workEntry.detail}
+                            >
+                              {workEntry.detail}
+                            </p>
+                          )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           );
@@ -5832,7 +5948,7 @@ function isAvailableProviderOption(option: (typeof PROVIDER_OPTIONS)[number]): o
   label: string;
   available: true;
 } {
-  return option.available && option.value !== "claudeCode";
+  return option.available;
 }
 
 const AVAILABLE_PROVIDER_OPTIONS = PROVIDER_OPTIONS.filter(isAvailableProviderOption);
@@ -5847,6 +5963,7 @@ function getCustomModelOptionsByProvider(settings: {
 }): Record<ProviderKind, ReadonlyArray<{ slug: string; name: string }>> {
   return {
     codex: getAppModelOptions("codex", settings.customCodexModels),
+    claudeCode: getAppModelOptions("claudeCode", []),
   };
 }
 

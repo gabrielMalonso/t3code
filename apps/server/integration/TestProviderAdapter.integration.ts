@@ -4,6 +4,7 @@ import {
   ApprovalRequestId,
   EventId,
   ProviderApprovalDecision,
+  type ProviderKind,
   ProviderRuntimeEvent,
   RuntimeSessionId,
   ProviderSession,
@@ -35,7 +36,7 @@ export interface TestTurnResponse {
 export type FixtureProviderRuntimeEvent = {
   readonly type: string;
   readonly eventId: EventId;
-  readonly provider: "codex";
+  readonly provider: ProviderKind;
   readonly createdAt: string;
   readonly threadId: string;
   readonly turnId?: string | undefined;

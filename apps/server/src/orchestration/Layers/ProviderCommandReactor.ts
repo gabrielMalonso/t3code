@@ -13,6 +13,7 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 import { Cache, Cause, Duration, Effect, Layer, Option, Queue, Schema, Stream } from "effect";
+import { inferProviderFromModel } from "@t3tools/shared/model";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import { GitCore } from "../../git/Services/GitCore.ts";
@@ -215,9 +216,12 @@ const make = Effect.gen(function* () {
 
     const desiredRuntimeMode = thread.runtimeMode;
     const currentProvider: ProviderKind | undefined =
-      thread.session?.providerName === "codex" ? thread.session.providerName : undefined;
-    const preferredProvider: ProviderKind | undefined = options?.provider ?? currentProvider;
+      thread.session?.providerName === "codex" || thread.session?.providerName === "claudeCode"
+        ? thread.session.providerName
+        : undefined;
     const desiredModel = options?.model ?? thread.model;
+    const preferredProvider: ProviderKind | undefined =
+      options?.provider ?? currentProvider ?? inferProviderFromModel(desiredModel) ?? undefined;
     const effectiveCwd = resolveThreadWorkspaceCwd({
       thread,
       projects: readModel.projects,

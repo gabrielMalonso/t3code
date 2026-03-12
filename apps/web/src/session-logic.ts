@@ -16,7 +16,7 @@ import type {
   TurnDiffSummary,
 } from "./types";
 
-export type ProviderPickerKind = ProviderKind | "claudeCode" | "cursor";
+export type ProviderPickerKind = ProviderKind | "cursor";
 
 export const PROVIDER_OPTIONS: Array<{
   value: ProviderPickerKind;
@@ -24,7 +24,7 @@ export const PROVIDER_OPTIONS: Array<{
   available: boolean;
 }> = [
   { value: "codex", label: "Codex", available: true },
-  { value: "claudeCode", label: "Claude Code", available: false },
+  { value: "claudeCode", label: "Claude Code", available: true },
   { value: "cursor", label: "Cursor", available: false },
 ];
 
@@ -35,6 +35,9 @@ export interface WorkLogEntry {
   detail?: string;
   command?: string;
   changedFiles?: ReadonlyArray<string>;
+  toolName?: string;
+  itemType?: string;
+  diffStats?: { added: number; removed: number };
   tone: "thinking" | "tool" | "info" | "error";
 }
 
@@ -423,6 +426,8 @@ export function deriveWorkLogEntries(
           : null;
       const command = extractToolCommand(payload);
       const changedFiles = extractChangedFiles(payload);
+      const toolName = extractToolName(payload);
+      const itemType = extractItemType(payload);
       const entry: WorkLogEntry = {
         id: activity.id,
         createdAt: activity.createdAt,
@@ -437,6 +442,16 @@ export function deriveWorkLogEntries(
       }
       if (changedFiles.length > 0) {
         entry.changedFiles = changedFiles;
+      }
+      if (toolName) {
+        entry.toolName = toolName;
+      }
+      if (itemType) {
+        entry.itemType = itemType;
+      }
+      const diffStats = extractDiffStats(payload);
+      if (diffStats) {
+        entry.diffStats = diffStats;
       }
       return entry;
     });
@@ -512,6 +527,7 @@ function collectChangedFiles(value: unknown, target: string[], seen: Set<string>
 
   pushChangedFile(target, seen, record.path);
   pushChangedFile(target, seen, record.filePath);
+  pushChangedFile(target, seen, record.file_path);
   pushChangedFile(target, seen, record.relativePath);
   pushChangedFile(target, seen, record.filename);
   pushChangedFile(target, seen, record.newPath);
@@ -544,6 +560,26 @@ function extractChangedFiles(payload: Record<string, unknown> | null): string[] 
   const changedFiles: string[] = [];
   collectChangedFiles(data, changedFiles, new Set<string>(), 0);
   return changedFiles;
+}
+
+function extractToolName(payload: Record<string, unknown> | null): string | undefined {
+  const data = asRecord(payload?.data);
+  return asTrimmedString(data?.toolName) ?? asTrimmedString(data?.name) ?? undefined;
+}
+
+function extractItemType(payload: Record<string, unknown> | null): string | undefined {
+  return asTrimmedString(payload?.itemType) ?? undefined;
+}
+
+function extractDiffStats(
+  payload: Record<string, unknown> | null,
+): { added: number; removed: number } | undefined {
+  const data = asRecord(payload?.data);
+  if (!data) return undefined;
+  const added = typeof data.addedLines === "number" ? data.addedLines : undefined;
+  const removed = typeof data.removedLines === "number" ? data.removedLines : undefined;
+  if (added === undefined && removed === undefined) return undefined;
+  return { added: added ?? 0, removed: removed ?? 0 };
 }
 
 function compareActivitiesByOrder(
