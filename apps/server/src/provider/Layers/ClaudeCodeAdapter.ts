@@ -39,6 +39,7 @@ import {
 } from "../../claudeSessionManager.ts";
 import type { EventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import { randomUUID } from "node:crypto";
+import { basename, truncate } from "@t3tools/shared/strings";
 
 const PROVIDER = "claudeCode" as const;
 
@@ -80,15 +81,6 @@ function asObject(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>;
 }
 
-function truncateStr(value: string, limit: number): string {
-  return value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
-}
-
-function basenameFromPath(filePath: string): string {
-  const lastSlash = filePath.lastIndexOf("/");
-  return lastSlash >= 0 ? filePath.slice(lastSlash + 1) : filePath;
-}
-
 function toolDetailSummary(
   toolName: string,
   input: Record<string, unknown> | undefined,
@@ -97,23 +89,23 @@ function toolDetailSummary(
   switch (toolName) {
     case "Bash": {
       const cmd = asString(input.command);
-      return cmd ? truncateStr(cmd, 120) : asString(input.description);
+      return cmd ? truncate(cmd, 120) : asString(input.description);
     }
     case "Read": {
       const fp = asString(input.file_path);
-      return fp ? basenameFromPath(fp) : undefined;
+      return fp ? basename(fp) : undefined;
     }
     case "Write": {
       const fp = asString(input.file_path);
       const content = asString(input.content);
       const lineCount = content ? content.split("\n").length : undefined;
       return fp
-        ? `${basenameFromPath(fp)}${lineCount ? ` (${lineCount} lines)` : ""}`
+        ? `${basename(fp)}${lineCount ? ` (${lineCount} lines)` : ""}`
         : undefined;
     }
     case "Edit": {
       const fp = asString(input.file_path);
-      return fp ? basenameFromPath(fp) : undefined;
+      return fp ? basename(fp) : undefined;
     }
     case "Glob": {
       return asString(input.pattern);
@@ -123,7 +115,7 @@ function toolDetailSummary(
     }
     case "Agent": {
       const desc = asString(input.description);
-      return desc ? truncateStr(desc, 100) : undefined;
+      return desc ? truncate(desc, 100) : undefined;
     }
     case "WebSearch": {
       return asString(input.query);
@@ -166,7 +158,7 @@ function sdkToolNameToItemType(toolName: string): CanonicalItemType {
     case "Read":
     case "Glob":
     case "Grep":
-      return "file_change";
+      return "file_read";
     case "Agent":
       return "collab_agent_tool_call";
     case "WebSearch":
@@ -330,6 +322,7 @@ function mapSystemMessage(
   return [
     {
       ...base,
+      eventId: EventId.makeUnsafe(randomUUID()),
       type: "session.started",
       payload: {
         message: `Claude session ${asString(system.session_id) ?? "started"}`,
@@ -452,18 +445,8 @@ function mapStreamEvent(
       return [];
     }
 
-    case "content_block_stop": {
-      return [
-        {
-          ...base,
-          type: "item.completed",
-          payload: {
-            itemType: "unknown",
-            status: "completed",
-          },
-        },
-      ];
-    }
+    case "content_block_stop":
+      return [];
 
     case "message_start": {
       return [
@@ -476,7 +459,6 @@ function mapStreamEvent(
     }
 
     case "message_delta": {
-      const msgDelta = asObject(rawEvent.delta);
       const usage = asObject(rawEvent.usage);
       return [
         {

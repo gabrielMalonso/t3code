@@ -100,6 +100,7 @@ export const CanonicalItemType = Schema.Literals([
   "reasoning",
   "plan",
   "command_execution",
+  "file_read",
   "file_change",
   "mcp_tool_call",
   "dynamic_tool_call",

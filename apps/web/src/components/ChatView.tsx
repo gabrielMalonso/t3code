@@ -31,6 +31,7 @@ import {
   normalizeModelSlug,
   resolveModelSlugForProvider,
 } from "@t3tools/shared/model";
+import { basename, truncate } from "@t3tools/shared/strings";
 import {
   memo,
   useCallback,
@@ -342,15 +343,6 @@ function toolEntryIcon(entry: { toolName?: string; itemType?: string; tone: stri
   return <WrenchIcon className={TOOL_ICON_CLASS} />;
 }
 
-function truncateForDisplay(value: string, limit: number): string {
-  return value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
-}
-
-function basenameForDisplay(filePath: string): string {
-  const lastSlash = filePath.lastIndexOf("/");
-  return lastSlash >= 0 ? filePath.slice(lastSlash + 1) : filePath;
-}
-
 function richToolLabel(entry: {
   toolName?: string;
   label: string;
@@ -362,19 +354,19 @@ function richToolLabel(entry: {
   const name = entry.toolName;
   const diff = entry.diffStats;
   if (name === "Bash" && entry.command) {
-    return { primary: "Bash", secondary: truncateForDisplay(entry.command, 80) };
+    return { primary: "Bash", secondary: truncate(entry.command, 80) };
   }
   if (name === "Read" && entry.changedFiles?.[0]) {
-    return { primary: "Read", secondary: basenameForDisplay(entry.changedFiles[0]) };
+    return { primary: "Read", secondary: basename(entry.changedFiles[0]) };
   }
   if (name === "Write" && entry.changedFiles?.[0]) {
-    const base = basenameForDisplay(entry.changedFiles[0]);
+    const base = basename(entry.changedFiles[0]);
     return { primary: "Write", secondary: base, ...(diff ? { diffStats: diff } : {}) };
   }
   if (name === "Edit" && entry.changedFiles?.[0]) {
     return {
       primary: "Edit",
-      secondary: basenameForDisplay(entry.changedFiles[0]),
+      secondary: basename(entry.changedFiles[0]),
       ...(diff ? { diffStats: diff } : {}),
     };
   }
@@ -5691,7 +5683,7 @@ const MessagesTimeline = memo(function MessagesTimeline({
                                 className="rounded-md border border-border/70 bg-background/65 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/85"
                                 title={filePath}
                               >
-                                {basenameForDisplay(filePath)}
+                                {basename(filePath)}
                               </span>
                             ))}
                             {workEntry.changedFiles.length > 6 && (

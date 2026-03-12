@@ -271,6 +271,13 @@ export class ClaudeSessionManager extends EventEmitter {
       }
     }
 
+    // Deny any pending approvals from the previous turn so they don't leak.
+    for (const [, pending] of context.pendingApprovals) {
+      clearTimeout(pending.timeout);
+      pending.resolve({ behavior: "deny", message: "Turn interrupted" });
+    }
+    context.pendingApprovals.clear();
+
     const threadId = context.mutableSession.threadId;
     const cwd = context.mutableSession.cwd;
     const effectivePermission =
