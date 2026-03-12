@@ -1,6 +1,6 @@
 import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
 
-export type ComposerTriggerKind = "path" | "slash-command" | "slash-model";
+export type ComposerTriggerKind = "path" | "slash-command" | "slash-model" | "skill";
 export type ComposerSlashCommand = "model" | "plan" | "default";
 
 export interface ComposerTrigger {
@@ -109,7 +109,11 @@ export function isCollapsedCursorAdjacentToMention(
   return false;
 }
 
-export function detectComposerTrigger(text: string, cursorInput: number): ComposerTrigger | null {
+export function detectComposerTrigger(
+  text: string,
+  cursorInput: number,
+  availableSkills: readonly string[] = [],
+): ComposerTrigger | null {
   const cursor = clampCursor(text, cursorInput);
   const lineStart = text.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
   const linePrefix = text.slice(lineStart, cursor);
@@ -133,6 +137,12 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
           rangeStart: lineStart,
           rangeEnd: cursor,
         };
+      }
+      if (availableSkills.length > 0) {
+        const lowerQuery = commandQuery.toLowerCase();
+        if (!lowerQuery || availableSkills.some((s) => s.toLowerCase().startsWith(lowerQuery))) {
+          return { kind: "skill", query: commandQuery, rangeStart: lineStart, rangeEnd: cursor };
+        }
       }
       return null;
     }

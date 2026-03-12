@@ -169,6 +169,7 @@ const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
 const EMPTY_PROJECT_ENTRIES: ProjectEntry[] = [];
 const EMPTY_AVAILABLE_EDITORS: EditorId[] = [];
 const EMPTY_PROVIDER_STATUSES: ServerProviderStatus[] = [];
+const EMPTY_SKILLS: readonly string[] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
 const COMPOSER_PATH_QUERY_DEBOUNCE_MS = 120;
 const SCRIPT_TERMINAL_COLS = 120;
@@ -909,6 +910,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }),
   );
   const workspaceEntries = workspaceEntriesQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
+  const sessionSkills = activeThread?.session?.skills ?? EMPTY_SKILLS;
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
@@ -947,12 +949,34 @@ export default function ChatView({ threadId }: ChatViewProps) {
         },
       ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
       const query = composerTrigger.query.trim().toLowerCase();
-      if (!query) {
-        return [...slashCommandItems];
-      }
-      return slashCommandItems.filter(
-        (item) => item.command.includes(query) || item.label.slice(1).includes(query),
-      );
+      const filteredSlashCommandItems = !query
+        ? [...slashCommandItems]
+        : slashCommandItems.filter(
+            (item) => item.command.includes(query) || item.label.slice(1).includes(query),
+          );
+      const skillItems: ComposerCommandItem[] = sessionSkills
+        .filter((skill) => !query || skill.toLowerCase().includes(query))
+        .map((skill) => ({
+          id: `skill:${skill}`,
+          type: "skill" as const,
+          skillName: skill,
+          label: `/${skill}`,
+          description: `Run ${skill} skill`,
+        }));
+      return [...filteredSlashCommandItems, ...skillItems];
+    }
+
+    if (composerTrigger.kind === "skill") {
+      const query = composerTrigger.query.trim().toLowerCase();
+      return sessionSkills
+        .filter((skill) => !query || skill.toLowerCase().includes(query))
+        .map((skill) => ({
+          id: `skill:${skill}`,
+          type: "skill" as const,
+          skillName: skill,
+          label: `/${skill}`,
+          description: `Run ${skill} skill`,
+        }));
     }
 
     return searchableModelOptions
@@ -971,7 +995,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         label: name,
         description: `${providerLabel} · ${slug}`,
       }));
-  }, [composerTrigger, searchableModelOptions, workspaceEntries]);
+  }, [composerTrigger, searchableModelOptions, sessionSkills, workspaceEntries]);
   const composerMenuOpen = Boolean(composerTrigger);
   const activeComposerMenuItem = useMemo(
     () =>
@@ -3054,9 +3078,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
     const expandedCursor = expandCollapsedComposerCursor(snapshot.value, snapshot.cursor);
     return {
       snapshot,
-      trigger: detectComposerTrigger(snapshot.value, expandedCursor),
+      trigger: detectComposerTrigger(snapshot.value, expandedCursor, sessionSkills),
     };
-  }, [readComposerSnapshot]);
+  }, [readComposerSnapshot, sessionSkills]);
 
   const onSelectComposerItem = useCallback(
     (item: ComposerCommandItem) => {
@@ -3099,12 +3123,27 @@ export default function ChatView({ threadId }: ChatViewProps) {
         }
         return;
       }
-      onProviderModelSelect(item.provider, item.model);
-      const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
-        expectedText: expectedToken,
-      });
-      if (applied) {
-        setComposerHighlightedItemId(null);
+      if (item.type === "model") {
+        onProviderModelSelect(item.provider, item.model);
+        const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+          expectedText: expectedToken,
+        });
+        if (applied) {
+          setComposerHighlightedItemId(null);
+        }
+        return;
+      }
+      if (item.type === "skill") {
+        const applied = applyPromptReplacement(
+          trigger.rangeStart,
+          trigger.rangeEnd,
+          `/${item.skillName} `,
+          { expectedText: expectedToken },
+        );
+        if (applied) {
+          setComposerHighlightedItemId(null);
+        }
+        return;
       }
     },
     [
@@ -3161,6 +3200,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           : detectComposerTrigger(
               nextPrompt,
               expandCollapsedComposerCursor(nextPrompt, nextCursor),
+              sessionSkills,
             ),
       );
     },
@@ -3168,6 +3208,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       activePendingProgress?.activeQuestion,
       activePendingUserInput,
       onChangeActivePendingUserInputCustomAnswer,
+      sessionSkills,
       setPrompt,
     ],
   );
