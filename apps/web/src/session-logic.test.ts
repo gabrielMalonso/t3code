@@ -479,6 +479,69 @@ describe("deriveWorkLogEntries", () => {
       "apps/web/src/session-logic.ts",
     ]);
   });
+
+  it("extracts command from Claude normalized tool context shape", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "claude-bash",
+        kind: "tool.completed",
+        summary: "Bash complete",
+        payload: {
+          itemType: "command_execution",
+          data: {
+            toolName: "Bash",
+            command: "bun run test",
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities, undefined);
+    expect(entry?.command).toBe("bun run test");
+    expect(entry?.toolName).toBe("Bash");
+  });
+
+  it("extracts changed file path from Claude normalized tool context shape", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "claude-read",
+        kind: "tool.completed",
+        summary: "Read complete",
+        payload: {
+          itemType: "file_change",
+          data: {
+            toolName: "Read",
+            filePath: "/Users/dev/src/index.ts",
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities, undefined);
+    expect(entry?.changedFiles).toEqual(["/Users/dev/src/index.ts"]);
+    expect(entry?.toolName).toBe("Read");
+  });
+
+  it("populates toolName and itemType on work log entries", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "claude-grep",
+        kind: "tool.completed",
+        summary: "Grep complete",
+        payload: {
+          itemType: "file_change",
+          data: {
+            toolName: "Grep",
+            pattern: "TODO",
+          },
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities, undefined);
+    expect(entry?.toolName).toBe("Grep");
+    expect(entry?.itemType).toBe("file_change");
+  });
 });
 
 describe("deriveTimelineEntries", () => {

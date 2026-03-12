@@ -172,6 +172,33 @@ function requestKindFromCanonicalRequestType(
   }
 }
 
+/**
+ * Extracts a compact, safe-to-persist context object from a tool_use block.
+ * Strips large fields (e.g. Write content) to keep activity payloads small.
+ */
+function extractToolContext(data: unknown): Record<string, unknown> | undefined {
+  if (!data || typeof data !== "object") return undefined;
+  const obj = data as Record<string, unknown>;
+  const input =
+    obj.input && typeof obj.input === "object"
+      ? (obj.input as Record<string, unknown>)
+      : undefined;
+  const toolName = asString(obj.name);
+  const result: Record<string, unknown> = {};
+  if (toolName) result.toolName = toolName;
+  if (input) {
+    if (typeof input.command === "string") result.command = input.command;
+    if (typeof input.file_path === "string") result.filePath = input.file_path;
+    if (typeof input.pattern === "string") result.pattern = input.pattern;
+    if (typeof input.description === "string")
+      result.description = (input.description as string).slice(0, 200);
+    if (typeof input.query === "string") result.query = input.query;
+    if (typeof input.content === "string")
+      result.lineCount = (input.content as string).split("\n").length;
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
 function isToolLifecycleItemType(itemType: string): boolean {
   return (
     itemType === "command_execution" ||
@@ -442,6 +469,7 @@ function runtimeEventToActivities(
       if (!isToolLifecycleItemType(event.payload.itemType)) {
         return [];
       }
+      const toolCtxCompleted = extractToolContext(event.payload.data);
       return [
         {
           id: event.eventId,
@@ -452,6 +480,7 @@ function runtimeEventToActivities(
           payload: {
             itemType: event.payload.itemType,
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
+            ...(toolCtxCompleted ? { data: toolCtxCompleted } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
@@ -463,6 +492,7 @@ function runtimeEventToActivities(
       if (!isToolLifecycleItemType(event.payload.itemType)) {
         return [];
       }
+      const toolCtxStarted = extractToolContext(event.payload.data);
       return [
         {
           id: event.eventId,
@@ -473,6 +503,7 @@ function runtimeEventToActivities(
           payload: {
             itemType: event.payload.itemType,
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
+            ...(toolCtxStarted ? { data: toolCtxStarted } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,

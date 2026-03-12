@@ -80,6 +80,59 @@ function asObject(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>;
 }
 
+function truncateStr(value: string, limit: number): string {
+  return value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
+}
+
+function basenameFromPath(filePath: string): string {
+  const lastSlash = filePath.lastIndexOf("/");
+  return lastSlash >= 0 ? filePath.slice(lastSlash + 1) : filePath;
+}
+
+function toolDetailSummary(
+  toolName: string,
+  input: Record<string, unknown> | undefined,
+): string | undefined {
+  if (!input) return undefined;
+  switch (toolName) {
+    case "Bash": {
+      const cmd = asString(input.command);
+      return cmd ? truncateStr(cmd, 120) : asString(input.description);
+    }
+    case "Read": {
+      const fp = asString(input.file_path);
+      return fp ? basenameFromPath(fp) : undefined;
+    }
+    case "Write": {
+      const fp = asString(input.file_path);
+      const content = asString(input.content);
+      const lineCount = content ? content.split("\n").length : undefined;
+      return fp
+        ? `${basenameFromPath(fp)}${lineCount ? ` (${lineCount} lines)` : ""}`
+        : undefined;
+    }
+    case "Edit": {
+      const fp = asString(input.file_path);
+      return fp ? basenameFromPath(fp) : undefined;
+    }
+    case "Glob": {
+      return asString(input.pattern);
+    }
+    case "Grep": {
+      return asString(input.pattern);
+    }
+    case "Agent": {
+      const desc = asString(input.description);
+      return desc ? truncateStr(desc, 100) : undefined;
+    }
+    case "WebSearch": {
+      return asString(input.query);
+    }
+    default:
+      return undefined;
+  }
+}
+
 // ─── Event Mapping ───────────────────────────────────────────────────────────
 
 function makeEventBase(
@@ -464,6 +517,8 @@ function mapAssistantMessage(
     if (blockType === "tool_use") {
       const toolName = asString(blockObj.name) ?? "unknown";
       const toolId = asString(blockObj.id);
+      const inputObj = asObject(blockObj.input);
+      const detail = toolDetailSummary(toolName, inputObj);
       events.push({
         ...base,
         eventId: EventId.makeUnsafe(randomUUID()),
@@ -473,6 +528,7 @@ function mapAssistantMessage(
           itemType: sdkToolNameToItemType(toolName),
           status: "completed",
           title: toolName,
+          ...(detail ? { detail } : {}),
           data: blockObj,
         },
       });
