@@ -5847,6 +5847,7 @@ function getCustomModelOptionsByProvider(settings: {
 }): Record<ProviderKind, ReadonlyArray<{ slug: string; name: string }>> {
   return {
     codex: getAppModelOptions("codex", settings.customCodexModels),
+    claudeCode: getAppModelOptions("claudeCode", []),
   };
 }
 
