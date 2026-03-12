@@ -288,6 +288,8 @@ export function syncServerReadModel(state: AppState, readModel: OrchestrationRea
               createdAt: thread.session.updatedAt,
               updatedAt: thread.session.updatedAt,
               ...(thread.session.lastError ? { lastError: thread.session.lastError } : {}),
+              ...(thread.session.skills ? { skills: [...thread.session.skills] } : {}),
+              ...(thread.session.slashCommands ? { slashCommands: [...thread.session.slashCommands] } : {}),
             }
           : null,
         messages: thread.messages.map((message) => {
