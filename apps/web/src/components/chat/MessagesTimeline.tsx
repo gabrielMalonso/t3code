@@ -14,16 +14,22 @@ import { basename, truncate } from "@t3tools/shared/strings";
 import {
   BotIcon,
   BrainIcon,
+  CheckIcon,
   CircleAlertIcon,
+  EyeIcon,
   FileIcon,
   FilePlusIcon,
   FileTextIcon,
   GlobeIcon,
+  HammerIcon,
+  type LucideIcon,
   PencilLineIcon,
   SearchIcon,
+  SquarePenIcon,
   TerminalIcon,
   Undo2Icon,
   WrenchIcon,
+  ZapIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { clamp } from "effect/Number";
@@ -33,7 +39,8 @@ import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesTree } from "./ChangedFilesTree";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { MessageCopyButton } from "./MessageCopyButton";
-import { computeMessageDurationStart } from "./MessagesTimeline.logic";
+import { computeMessageDurationStart, normalizeCompactToolLabel } from "./MessagesTimeline.logic";
+import { cn } from "~/lib/utils";
 
 const TOOL_ICON_CLASS = "h-3.5 w-3.5 shrink-0 text-muted-foreground/50";
 const THINKING_PREVIEW_CHAR_LIMIT = 220;
@@ -394,13 +401,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
               : groupedEntries;
           const hiddenCount = groupedEntries.length - visibleEntries.length;
           const onlyToolEntries = groupedEntries.every((entry) => entry.tone === "tool");
-          const groupLabel = onlyToolEntries
-            ? groupedEntries.length === 1
-              ? "Tool call"
-              : `Tool calls (${groupedEntries.length})`
-            : groupedEntries.length === 1
-              ? "Work event"
-              : `Work log (${groupedEntries.length})`;
+          const showHeader = hasOverflow || !onlyToolEntries;
+          const groupLabel = onlyToolEntries ? "Tool calls" : "Work log";
 
           return (
             <div className="rounded-lg border border-border/80 bg-card/45 px-3 py-2">
@@ -829,6 +831,34 @@ function formatMessageMeta(createdAt: string, duration: string | null): string {
   return `${formatTimestamp(createdAt)} • ${duration}`;
 }
 
+function workToneIcon(tone: TimelineWorkEntry["tone"]): {
+  icon: LucideIcon;
+  className: string;
+} {
+  if (tone === "error") {
+    return {
+      icon: CircleAlertIcon,
+      className: "text-foreground/92",
+    };
+  }
+  if (tone === "thinking") {
+    return {
+      icon: BotIcon,
+      className: "text-foreground/92",
+    };
+  }
+  if (tone === "info") {
+    return {
+      icon: CheckIcon,
+      className: "text-foreground/92",
+    };
+  }
+  return {
+    icon: ZapIcon,
+    className: "text-foreground/92",
+  };
+}
+
 function workToneClass(tone: "thinking" | "tool" | "info" | "error"): string {
   if (tone === "error") return "text-rose-300/50 dark:text-rose-300/50";
   if (tone === "tool") return "text-muted-foreground/70";
@@ -839,3 +869,114 @@ function workToneClass(tone: "thinking" | "tool" | "info" | "error"): string {
 function truncateWorkEntryDetail(detail: string, limit = THINKING_PREVIEW_CHAR_LIMIT): string {
   return detail.length > limit ? `${detail.slice(0, limit - 3)}...` : detail;
 }
+
+function workEntryPreview(
+  workEntry: Pick<TimelineWorkEntry, "detail" | "command" | "changedFiles">,
+) {
+  if (workEntry.command) return workEntry.command;
+  if (workEntry.detail) return workEntry.detail;
+  if ((workEntry.changedFiles?.length ?? 0) === 0) return null;
+  const [firstPath] = workEntry.changedFiles ?? [];
+  if (!firstPath) return null;
+  return workEntry.changedFiles!.length === 1
+    ? firstPath
+    : `${firstPath} +${workEntry.changedFiles!.length - 1} more`;
+}
+
+function workEntryIcon(workEntry: TimelineWorkEntry): LucideIcon {
+  if (workEntry.requestKind === "command") return TerminalIcon;
+  if (workEntry.requestKind === "file-read") return EyeIcon;
+  if (workEntry.requestKind === "file-change") return SquarePenIcon;
+
+  if (workEntry.itemType === "command_execution" || workEntry.command) {
+    return TerminalIcon;
+  }
+  if (workEntry.itemType === "file_change" || (workEntry.changedFiles?.length ?? 0) > 0) {
+    return SquarePenIcon;
+  }
+  if (workEntry.itemType === "web_search") return GlobeIcon;
+  if (workEntry.itemType === "image_view") return EyeIcon;
+
+  switch (workEntry.itemType) {
+    case "mcp_tool_call":
+      return WrenchIcon;
+    case "dynamic_tool_call":
+    case "collab_agent_tool_call":
+      return HammerIcon;
+  }
+
+  return workToneIcon(workEntry.tone).icon;
+}
+
+function capitalizePhrase(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return value;
+  }
+  return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
+}
+
+function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
+  if (!workEntry.toolTitle) {
+    return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
+  }
+  return capitalizePhrase(normalizeCompactToolLabel(workEntry.toolTitle));
+}
+
+const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
+  workEntry: TimelineWorkEntry;
+}) {
+  const { workEntry } = props;
+  const iconConfig = workToneIcon(workEntry.tone);
+  const EntryIcon = workEntryIcon(workEntry);
+  const heading = toolWorkEntryHeading(workEntry);
+  const preview = workEntryPreview(workEntry);
+  const displayText = preview ? `${heading} - ${preview}` : heading;
+  const hasChangedFiles = (workEntry.changedFiles?.length ?? 0) > 0;
+  const previewIsChangedFiles = hasChangedFiles && !workEntry.command && !workEntry.detail;
+
+  return (
+    <div className="rounded-lg px-1 py-1">
+      <div className="flex items-center gap-2 transition-[opacity,translate] duration-200">
+        <span
+          className={cn("flex size-5 shrink-0 items-center justify-center", iconConfig.className)}
+        >
+          <EntryIcon className="size-3" />
+        </span>
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <p
+            className={cn(
+              "truncate text-[11px] leading-5",
+              workToneClass(workEntry.tone),
+              preview ? "text-muted-foreground/70" : "",
+            )}
+            title={displayText}
+          >
+            <span className={cn("text-foreground/80", workToneClass(workEntry.tone))}>
+              {heading}
+            </span>
+            {preview && <span className="text-muted-foreground/55"> - {preview}</span>}
+          </p>
+        </div>
+      </div>
+      {hasChangedFiles && !previewIsChangedFiles && (
+        <div className="mt-1 flex flex-wrap gap-1 pl-6">
+          {workEntry.changedFiles?.slice(0, 4).map((filePath) => (
+            <span
+              key={`${workEntry.id}:${filePath}`}
+              className="rounded-md border border-border/55 bg-background/75 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/75"
+              title={filePath}
+            >
+              {filePath}
+            </span>
+          ))}
+          {(workEntry.changedFiles?.length ?? 0) > 4 && (
+            <span className="px-1 text-[10px] text-muted-foreground/55">
+              +{(workEntry.changedFiles?.length ?? 0) - 4}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
