@@ -36,7 +36,7 @@ import {
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
-import { Cause, DateTime, Deferred, Effect, Layer, Queue, Random, Ref, Stream } from "effect";
+import { Cause, DateTime, Deferred, Duration, Effect, Layer, Queue, Random, Ref, Stream } from "effect";
 
 import {
   ProviderAdapterProcessError,
@@ -1572,7 +1572,12 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
                 once: true,
               });
 
-              const decision = yield* Deferred.await(decisionDeferred);
+              const decision = yield* Effect.race(
+                Deferred.await(decisionDeferred),
+                Effect.sleep(Duration.millis(120_000)).pipe(
+                  Effect.as("cancel" satisfies ProviderApprovalDecision),
+                ),
+              );
               pendingApprovals.delete(requestId);
 
               const resolvedStamp = yield* makeEventStamp();
@@ -1933,8 +1938,8 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
 
     const stopAll: ClaudeCodeAdapterShape["stopAll"] = () =>
       Effect.forEach(
-        sessions,
-        ([, context]) =>
+        Array.from(sessions.values()),
+        (context) =>
           stopSessionInternal(context, {
             emitExitEvent: true,
           }),
@@ -1943,8 +1948,8 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
 
     yield* Effect.addFinalizer(() =>
       Effect.forEach(
-        sessions,
-        ([, context]) =>
+        Array.from(sessions.values()),
+        (context) =>
           stopSessionInternal(context, {
             emitExitEvent: false,
           }),
