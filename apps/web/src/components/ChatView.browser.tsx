@@ -111,6 +111,11 @@ function createBaseServerConfig(): ServerConfig {
       },
     ],
     availableEditors: [],
+    availableSkillsByProvider: {
+      codex: [],
+      claudeCode: [],
+      cursor: [],
+    },
   };
 }
 

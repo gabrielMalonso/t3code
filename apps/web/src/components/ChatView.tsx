@@ -42,10 +42,10 @@ import {
   type ComposerTrigger,
   detectComposerTrigger,
   expandCollapsedComposerCursor,
-  normalizeComposerSkillName,
   parseStandaloneComposerSlashCommand,
   replaceTextRange,
 } from "../composer-logic";
+import { resolveComposerSkills } from "../composerSkills";
 import {
   derivePendingApprovals,
   derivePendingUserInputs,
@@ -913,21 +913,19 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }),
   );
   const workspaceEntries = workspaceEntriesQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
-  const configAvailableSkills = serverConfigQuery.data?.availableSkills ?? EMPTY_SKILLS;
   const sessionSkills = useMemo(() => {
-    const rawCommands =
-      activeThread?.session?.slashCommands && activeThread.session.slashCommands.length > 0
-        ? activeThread.session.slashCommands
-        : (activeThread?.session?.skills ?? EMPTY_SKILLS);
-    const normalized = rawCommands
-      .map(normalizeComposerSkillName)
-      .filter((commandName) => commandName.length > 0);
-    // Merge session-discovered skills with filesystem-discovered skills from server config
-    const configNormalized = configAvailableSkills
-      .map(normalizeComposerSkillName)
-      .filter((commandName) => commandName.length > 0);
-    return Array.from(new Set([...normalized, ...configNormalized]));
-  }, [activeThread?.session?.skills, activeThread?.session?.slashCommands, configAvailableSkills]);
+    return resolveComposerSkills({
+      provider: selectedProvider,
+      sessionSkills: activeThread?.session?.skills,
+      sessionSlashCommands: activeThread?.session?.slashCommands,
+      availableSkillsByProvider: serverConfigQuery.data?.availableSkillsByProvider,
+    });
+  }, [
+    activeThread?.session?.skills,
+    activeThread?.session?.slashCommands,
+    selectedProvider,
+    serverConfigQuery.data?.availableSkillsByProvider,
+  ]);
   sessionSkillsRef.current = sessionSkills;
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
