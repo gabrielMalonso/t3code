@@ -119,6 +119,8 @@ interface ToolInFlight {
   readonly itemType: CanonicalItemType;
   readonly toolName: string;
   readonly title: string;
+  readonly input: Record<string, unknown>;
+  readonly inputJsonBuffer: string;
   readonly detail?: string;
 }
 
@@ -272,7 +274,14 @@ function classifyRequestType(toolName: string): CanonicalRequestType {
     : "file_change_approval";
 }
 
-function summarizeToolRequest(toolName: string, input: Record<string, unknown>): string {
+function summarizeToolRequest(
+  toolName: string,
+  input: Record<string, unknown>,
+): string | undefined {
+  if (Object.keys(input).length === 0) {
+    return undefined;
+  }
+
   const commandValue = input.command ?? input.cmd;
   const command = typeof commandValue === "string" ? commandValue : undefined;
   if (command && command.trim().length > 0) {
@@ -284,6 +293,22 @@ function summarizeToolRequest(toolName: string, input: Record<string, unknown>):
     return `${toolName}: ${serialized}`;
   }
   return `${toolName}: ${serialized.slice(0, 397)}...`;
+}
+
+function parseToolInputJson(partialJson: string): Record<string, unknown> | undefined {
+  if (partialJson.trim().length === 0) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(partialJson);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return undefined;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
 }
 
 function titleForTool(itemType: CanonicalItemType): string {
@@ -380,6 +405,34 @@ function extractAssistantText(message: SDKMessage): string {
   }
 
   return fragments.join("");
+}
+
+function extractThinkingBlocks(message: SDKMessage): string[] {
+  if (message.type !== "assistant") {
+    return [];
+  }
+
+  const content = (message.message as { content?: unknown } | undefined)?.content;
+  if (!Array.isArray(content)) {
+    return [];
+  }
+
+  const results: string[] = [];
+  for (const block of content) {
+    if (!block || typeof block !== "object") {
+      continue;
+    }
+    const candidate = block as { type?: unknown; thinking?: unknown };
+    if (
+      candidate.type === "thinking" &&
+      typeof candidate.thinking === "string" &&
+      candidate.thinking.length > 0
+    ) {
+      results.push(candidate.thinking);
+    }
+  }
+
+  return results;
 }
 
 function toSessionError(
@@ -742,7 +795,11 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           return;
         }
 
-        if (!turnState.messageCompleted) {
+        const hasTextContent =
+          turnState.emittedTextDelta || turnState.fallbackAssistantText.length > 0;
+        const needsCompletion =
+          hasTextContent && (!turnState.messageCompleted || turnState.emittedTextDelta);
+        if (needsCompletion) {
           if (!turnState.emittedTextDelta && turnState.fallbackAssistantText.length > 0) {
             const deltaStamp = yield* makeEventStamp();
             yield* offerRuntimeEvent({
@@ -876,6 +933,27 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               },
             });
           }
+
+          if (event.delta.type === "input_json_delta") {
+            const tool = context.inFlightTools.get(event.index);
+            if (!tool) {
+              return;
+            }
+
+            const partialJson =
+              typeof event.delta.partial_json === "string" ? event.delta.partial_json : "";
+            const inputJsonBuffer = `${tool.inputJsonBuffer}${partialJson}`;
+            const parsedInput = parseToolInputJson(inputJsonBuffer);
+            const input = parsedInput ? { ...tool.input, ...parsedInput } : tool.input;
+            const detail = summarizeToolRequest(tool.toolName, input);
+
+            context.inFlightTools.set(event.index, {
+              ...tool,
+              input,
+              inputJsonBuffer,
+              ...(detail ? { detail } : {}),
+            });
+          }
           return;
         }
 
@@ -903,7 +981,9 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
             itemType,
             toolName,
             title: titleForTool(itemType),
-            detail,
+            input: toolInput,
+            inputJsonBuffer: "",
+            ...(detail ? { detail } : {}),
           };
           context.inFlightTools.set(index, tool);
 
@@ -923,7 +1003,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               ...(tool.detail ? { detail: tool.detail } : {}),
               data: {
                 toolName: tool.toolName,
-                input: toolInput,
+                input: tool.input,
               },
             },
             providerRefs: {
@@ -947,6 +1027,9 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
             return;
           }
           context.inFlightTools.delete(index);
+          const parsedInput = parseToolInputJson(tool.inputJsonBuffer);
+          const input = parsedInput ? { ...tool.input, ...parsedInput } : tool.input;
+          const detail = summarizeToolRequest(tool.toolName, input);
 
           const stamp = yield* makeEventStamp();
           yield* offerRuntimeEvent({
@@ -961,7 +1044,11 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               itemType: tool.itemType,
               status: "completed",
               title: tool.title,
-              ...(tool.detail ? { detail: tool.detail } : {}),
+              ...(detail ? { detail } : {}),
+              data: {
+                toolName: tool.toolName,
+                input,
+              },
             },
             providerRefs: {
               ...providerThreadRef(context),
@@ -988,6 +1075,30 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
 
         if (context.turnState) {
           context.turnState.items.push(message.message);
+
+          // Emit thinking blocks as reasoning_text activities before the assistant text.
+          const thinkingBlocks = extractThinkingBlocks(message);
+          for (const thinking of thinkingBlocks) {
+            const thinkingStamp = yield* makeEventStamp();
+            yield* offerRuntimeEvent({
+              type: "content.delta",
+              eventId: thinkingStamp.eventId,
+              provider: PROVIDER,
+              createdAt: thinkingStamp.createdAt,
+              threadId: context.session.threadId,
+              turnId: context.turnState.turnId,
+              itemId: asRuntimeItemId(context.turnState.assistantItemId),
+              payload: {
+                streamKind: "reasoning_text",
+                delta: thinking,
+              },
+              providerRefs: {
+                ...providerThreadRef(context),
+                providerTurnId: context.turnState.turnId,
+              },
+            });
+          }
+
           const fallbackAssistantText = extractAssistantText(message);
           if (
             fallbackAssistantText.length > 0 &&
@@ -1025,6 +1136,45 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               payload: message,
             },
           });
+
+          // Only complete and rotate when the message has actual visible assistant text.
+          // Thinking blocks are projected as activities, not assistant messages.
+          // Tool-only messages stay on the same assistantItemId so the next text segment
+          // can reuse it without creating empty "(empty response)" entries.
+          const hasContent = extractAssistantText(message).length > 0;
+          if (hasContent) {
+            const completeStamp = yield* makeEventStamp();
+            yield* offerRuntimeEvent({
+              type: "item.completed",
+              eventId: completeStamp.eventId,
+              provider: PROVIDER,
+              createdAt: completeStamp.createdAt,
+              itemId: asRuntimeItemId(context.turnState.assistantItemId),
+              threadId: context.session.threadId,
+              turnId: context.turnState.turnId,
+              payload: {
+                itemType: "assistant_message",
+                status: "completed",
+                title: "Assistant message",
+                ...(fallbackAssistantText.length > 0 ? { detail: fallbackAssistantText } : {}),
+              },
+              providerRefs: {
+                ...providerThreadRef(context),
+                providerTurnId: context.turnState.turnId,
+                providerItemId: ProviderItemId.makeUnsafe(context.turnState.assistantItemId),
+              },
+            });
+
+            // Rotate assistantItemId so the next text segment (after tool calls)
+            // gets its own message ID instead of being concatenated with this one.
+            context.turnState = {
+              ...context.turnState,
+              assistantItemId: yield* Random.nextUUIDv4,
+              emittedTextDelta: false,
+              messageCompleted: true,
+              fallbackAssistantText: "",
+            };
+          }
         }
 
         context.lastAssistantUuid = message.uuid;
@@ -1525,8 +1675,8 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               const decisionDeferred = yield* Deferred.make<ProviderApprovalDecision>();
               const pendingApproval: PendingApproval = {
                 requestType,
-                detail,
                 decision: decisionDeferred,
+                ...(detail ? { detail } : {}),
                 ...(callbackOptions.suggestions
                   ? { suggestions: callbackOptions.suggestions }
                   : {}),

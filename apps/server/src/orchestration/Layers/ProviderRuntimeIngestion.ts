@@ -182,16 +182,27 @@ function extractToolContext(data: unknown): Record<string, unknown> | undefined 
   const obj = data as Record<string, unknown>;
   const input =
     obj.input && typeof obj.input === "object" ? (obj.input as Record<string, unknown>) : undefined;
-  const toolName = asString(obj.name);
+  const toolName = asString(obj.toolName) ?? asString(obj.name) ?? asString(obj.tool_name);
   const result: Record<string, unknown> = {};
   if (toolName) result.toolName = toolName;
   if (input) {
     if (typeof input.command === "string") result.command = input.command;
     if (typeof input.file_path === "string") result.filePath = input.file_path;
+    if (typeof input.path === "string") result.path = input.path;
     if (typeof input.pattern === "string") result.pattern = input.pattern;
+    if (typeof input.offset === "number") result.offset = input.offset;
+    if (typeof input.limit === "number") result.limit = input.limit;
     if (typeof input.description === "string")
       result.description = (input.description as string).slice(0, 200);
     if (typeof input.query === "string") result.query = input.query;
+    if (Array.isArray(input.file_paths)) {
+      result.filePaths = input.file_paths.filter(
+        (value): value is string => typeof value === "string",
+      );
+    }
+    if (Array.isArray(input.paths)) {
+      result.paths = input.paths.filter((value): value is string => typeof value === "string");
+    }
     if (typeof input.content === "string") {
       const lines = (input.content as string).split("\n").length;
       result.lineCount = lines;
@@ -205,6 +216,24 @@ function extractToolContext(data: unknown): Record<string, unknown> | undefined 
         typeof input.new_string === "string" ? (input.new_string as string).split("\n").length : 0;
       result.addedLines = newLines;
       result.removedLines = oldLines;
+    }
+    if (Array.isArray(input.edits)) {
+      let addedLines = 0;
+      let removedLines = 0;
+      for (const edit of input.edits) {
+        if (!edit || typeof edit !== "object") continue;
+        const editRecord = edit as Record<string, unknown>;
+        if (typeof editRecord.old_string === "string") {
+          removedLines += editRecord.old_string.split("\n").length;
+        }
+        if (typeof editRecord.new_string === "string") {
+          addedLines += editRecord.new_string.split("\n").length;
+        }
+      }
+      if (addedLines > 0 || removedLines > 0) {
+        result.addedLines = addedLines;
+        result.removedLines = removedLines;
+      }
     }
   }
   return Object.keys(result).length > 0 ? result : undefined;
@@ -491,7 +520,7 @@ function runtimeEventToActivities(
           payload: {
             itemType: event.payload.itemType,
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
-            ...(toolCtxCompleted ? { data: toolCtxCompleted } : {}),
+            data: { ...toolCtxCompleted, itemId: event.itemId },
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
@@ -514,7 +543,7 @@ function runtimeEventToActivities(
           payload: {
             itemType: event.payload.itemType,
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
-            ...(toolCtxStarted ? { data: toolCtxStarted } : {}),
+            data: { ...toolCtxStarted, itemId: event.itemId },
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
@@ -684,6 +713,7 @@ const make = Effect.gen(function* () {
     commandTag: string;
     finalDeltaCommandTag: string;
     fallbackText?: string;
+    messageExistsInThread?: boolean;
   }) =>
     Effect.gen(function* () {
       const bufferedText = yield* takeBufferedAssistantText(input.messageId);
@@ -706,14 +736,16 @@ const make = Effect.gen(function* () {
         });
       }
 
-      yield* orchestrationEngine.dispatch({
-        type: "thread.message.assistant.complete",
-        commandId: providerCommandId(input.event, input.commandTag),
-        threadId: input.threadId,
-        messageId: input.messageId,
-        ...(input.turnId ? { turnId: input.turnId } : {}),
-        createdAt: input.createdAt,
-      });
+      if (text.length > 0 || input.messageExistsInThread !== false) {
+        yield* orchestrationEngine.dispatch({
+          type: "thread.message.assistant.complete",
+          commandId: providerCommandId(input.event, input.commandTag),
+          threadId: input.threadId,
+          messageId: input.messageId,
+          ...(input.turnId ? { turnId: input.turnId } : {}),
+          createdAt: input.createdAt,
+        });
+      }
       yield* clearAssistantMessageState(input.messageId);
     });
 
@@ -967,6 +999,10 @@ const make = Effect.gen(function* () {
         event.type === "content.delta" && event.payload.streamKind === "assistant_text"
           ? event.payload.delta
           : undefined;
+      const reasoningDelta =
+        event.type === "content.delta" && event.payload.streamKind === "reasoning_text"
+          ? event.payload.delta
+          : undefined;
       const proposedPlanDelta =
         event.type === "turn.proposed.delta" ? event.payload.delta : undefined;
 
@@ -1004,6 +1040,26 @@ const make = Effect.gen(function* () {
             createdAt: now,
           });
         }
+      }
+
+      if (reasoningDelta && reasoningDelta.length > 0) {
+        const turnId = toTurnId(event.turnId);
+        yield* orchestrationEngine.dispatch({
+          type: "thread.activity.append",
+          commandId: providerCommandId(event, "thinking-activity"),
+          threadId: thread.id,
+          activity: {
+            id: event.eventId,
+            tone: "thinking",
+            kind: "reasoning",
+            summary:
+              reasoningDelta.length <= 200 ? reasoningDelta : `${reasoningDelta.slice(0, 197)}...`,
+            payload: { text: reasoningDelta },
+            turnId: turnId ?? null,
+            createdAt: now,
+          },
+          createdAt: now,
+        });
       }
 
       if (proposedPlanDelta && proposedPlanDelta.length > 0) {
@@ -1049,6 +1105,7 @@ const make = Effect.gen(function* () {
           createdAt: now,
           commandTag: "assistant-complete",
           finalDeltaCommandTag: "assistant-delta-finalize",
+          messageExistsInThread: Boolean(existingAssistantMessage),
           ...(assistantCompletion.fallbackText !== undefined && shouldApplyFallbackCompletionText
             ? { fallbackText: assistantCompletion.fallbackText }
             : {}),
@@ -1086,6 +1143,9 @@ const make = Effect.gen(function* () {
                 createdAt: now,
                 commandTag: "assistant-complete-finalize",
                 finalDeltaCommandTag: "assistant-delta-finalize-fallback",
+                messageExistsInThread: thread.messages.some(
+                  (message) => message.id === assistantMessageId,
+                ),
               }),
             { concurrency: 1 },
           ).pipe(Effect.asVoid);
