@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { appendFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import { updateDiscoveredSkillsCache } from "./skillsCache";
 
 import { query, type SDKMessage, type SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
 import {
@@ -533,6 +534,11 @@ export class ClaudeSessionManager extends EventEmitter {
 
         if (skills.length === 0) {
           return;
+        }
+
+        // Cache discovered skills for the server config endpoint
+        if (context.mutableSession.cwd) {
+          updateDiscoveredSkillsCache(context.mutableSession.cwd, skills);
         }
 
         this.emitEvent(threadId, "session/skills-discovered", undefined, {

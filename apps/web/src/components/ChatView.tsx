@@ -913,17 +913,21 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }),
   );
   const workspaceEntries = workspaceEntriesQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
+  const configAvailableSkills = serverConfigQuery.data?.availableSkills ?? EMPTY_SKILLS;
   const sessionSkills = useMemo(() => {
     const rawCommands =
       activeThread?.session?.slashCommands && activeThread.session.slashCommands.length > 0
         ? activeThread.session.slashCommands
         : (activeThread?.session?.skills ?? EMPTY_SKILLS);
-    return Array.from(
-      new Set(
-        rawCommands.map(normalizeComposerSkillName).filter((commandName) => commandName.length > 0),
-      ),
-    );
-  }, [activeThread?.session?.skills, activeThread?.session?.slashCommands]);
+    const normalized = rawCommands
+      .map(normalizeComposerSkillName)
+      .filter((commandName) => commandName.length > 0);
+    // Merge session-discovered skills with filesystem-discovered skills from server config
+    const configNormalized = configAvailableSkills
+      .map(normalizeComposerSkillName)
+      .filter((commandName) => commandName.length > 0);
+    return Array.from(new Set([...normalized, ...configNormalized]));
+  }, [activeThread?.session?.skills, activeThread?.session?.slashCommands, configAvailableSkills]);
   sessionSkillsRef.current = sessionSkills;
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];

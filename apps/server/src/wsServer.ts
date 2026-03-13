@@ -7,6 +7,9 @@
  * @module Server
  */
 import http from "node:http";
+import { readdirSync } from "node:fs";
+import { join, basename, extname } from "node:path";
+import { homedir } from "node:os";
 import type { Duplex } from "node:stream";
 
 import Mime from "@effect/platform-node/Mime";
@@ -78,6 +81,47 @@ import { expandHomePath } from "./os-jank.ts";
 import { makeServerPushBus } from "./wsServer/pushBus.ts";
 import { makeServerReadiness } from "./wsServer/readiness.ts";
 import { decodeJsonResult, formatSchemaError } from "@t3tools/shared/schemaJson";
+import { getDiscoveredSkillsCache } from "./skillsCache";
+
+/**
+ * Discover available Claude commands from the filesystem.
+ * Reads `.claude/commands/` directories for user and project custom commands,
+ * then merges with any SDK-discovered skills cached from previous sessions.
+ */
+function discoverCommandsFromFilesystem(projectCwd: string): string[] {
+  const commands: string[] = [];
+  const dirs = [
+    join(homedir(), ".claude", "commands"),
+    join(projectCwd, ".claude", "commands"),
+  ];
+  for (const dir of dirs) {
+    try {
+      const entries = readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isFile() && extname(entry.name) === ".md") {
+          commands.push(basename(entry.name, ".md"));
+        }
+        if (entry.isDirectory()) {
+          try {
+            const subEntries = readdirSync(join(dir, entry.name), { withFileTypes: true });
+            for (const subEntry of subEntries) {
+              if (subEntry.isFile() && extname(subEntry.name) === ".md") {
+                commands.push(`${entry.name}:${basename(subEntry.name, ".md")}`);
+              }
+            }
+          } catch {
+            // Ignore unreadable subdirectories.
+          }
+        }
+      }
+    } catch {
+      // Ignore missing directories.
+    }
+  }
+  // Merge with any previously cached SDK-discovered skills
+  const cached = getDiscoveredSkillsCache(projectCwd);
+  return [...new Set([...commands, ...cached])];
+}
 
 /**
  * ServerShape - Service API for server lifecycle control.
@@ -880,6 +924,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
           issues: keybindingsConfig.issues,
           providers: providerStatuses,
           availableEditors,
+          availableSkills: discoverCommandsFromFilesystem(cwd),
         };
 
       case WS_METHODS.serverUpsertKeybinding: {
