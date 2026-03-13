@@ -1924,11 +1924,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
   }, [closeExpandedImage, expandedImage, navigateExpandedImage]);
 
   const activeWorktreePath = activeThread?.worktreePath;
-  const envMode: DraftThreadEnvMode = activeWorktreePath
-    ? "worktree"
-    : isLocalDraftThread
-      ? (draftThread?.envMode ?? DEFAULT_ENV_MODE)
-      : DEFAULT_ENV_MODE;
+  const envMode: DraftThreadEnvMode = !isGitRepo
+    ? "local"
+    : activeWorktreePath
+      ? "worktree"
+      : isLocalDraftThread
+        ? (draftThread?.envMode ?? DEFAULT_ENV_MODE)
+        : DEFAULT_ENV_MODE;
 
   useEffect(() => {
     if (phase !== "running") return;
