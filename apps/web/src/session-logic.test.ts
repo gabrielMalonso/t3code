@@ -581,6 +581,27 @@ describe("deriveWorkLogEntries", () => {
     expect(entry?.toolName).toBe("Grep");
     expect(entry?.itemType).toBe("file_change");
   });
+
+  it("uses full reasoning payload text for thinking work log entries", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "thinking-1",
+        kind: "reasoning",
+        tone: "thinking",
+        summary: "This is truncated...",
+        payload: {
+          text: "This is the full thinking text that should stay available in the work event card.",
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities, undefined);
+    expect(entry?.label).toBe("Thinking");
+    expect(entry?.detail).toBe(
+      "This is the full thinking text that should stay available in the work event card.",
+    );
+    expect(entry?.tone).toBe("thinking");
+  });
 });
 
 describe("deriveTimelineEntries", () => {

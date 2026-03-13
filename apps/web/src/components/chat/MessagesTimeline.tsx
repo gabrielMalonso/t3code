@@ -36,6 +36,7 @@ import { MessageCopyButton } from "./MessageCopyButton";
 import { computeMessageDurationStart } from "./MessagesTimeline.logic";
 
 const TOOL_ICON_CLASS = "h-3.5 w-3.5 shrink-0 text-muted-foreground/50";
+const THINKING_PREVIEW_CHAR_LIMIT = 220;
 
 function toolEntryIcon(entry: { toolName?: string; itemType?: string; tone: string }) {
   switch (entry.toolName) {
@@ -65,9 +66,11 @@ function toolEntryIcon(entry: { toolName?: string; itemType?: string; tone: stri
     case "web_search":
       return <GlobeIcon className={TOOL_ICON_CLASS} />;
     case "reasoning":
-      return <BrainIcon className={TOOL_ICON_CLASS} />;
+      return <BrainIcon className="h-3.5 w-3.5 shrink-0 text-foreground/95 dark:text-white/95" />;
   }
-  if (entry.tone === "thinking") return <BrainIcon className={TOOL_ICON_CLASS} />;
+  if (entry.tone === "thinking") {
+    return <BrainIcon className="h-3.5 w-3.5 shrink-0 text-foreground/95 dark:text-white/95" />;
+  }
   if (entry.tone === "error")
     return <CircleAlertIcon className={`${TOOL_ICON_CLASS} text-rose-300/50`} />;
   return <WrenchIcon className={TOOL_ICON_CLASS} />;
@@ -353,12 +356,24 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const [allDirectoriesExpandedByTurnId, setAllDirectoriesExpandedByTurnId] = useState<
     Record<string, boolean>
   >({});
+  const [expandedThinkingEntryIds, setExpandedThinkingEntryIds] = useState<Record<string, boolean>>(
+    {},
+  );
   const onToggleAllDirectories = useCallback((turnId: TurnId) => {
     setAllDirectoriesExpandedByTurnId((current) => ({
       ...current,
       [turnId]: !(current[turnId] ?? true),
     }));
   }, []);
+  const onToggleThinkingEntry = useCallback((entryId: string) => {
+    setExpandedThinkingEntryIds((current) => ({
+      ...current,
+      [entryId]: !(current[entryId] ?? false),
+    }));
+  }, []);
+  useEffect(() => {
+    rowVirtualizer.measure();
+  }, [expandedThinkingEntryIds, rowVirtualizer]);
 
   const renderRowContent = (row: TimelineRow) => (
     <div
@@ -407,8 +422,21 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                 {visibleEntries.map((workEntry) => {
                   const icon = toolEntryIcon(workEntry);
                   const { primary, secondary, diffStats } = richToolLabel(workEntry);
-                  return (
-                    <div key={`work-row:${workEntry.id}`} className="flex items-start gap-2 py-0.5">
+                  const isThinkingEntry = workEntry.tone === "thinking";
+                  const isThinkingExpanded = expandedThinkingEntryIds[workEntry.id] ?? false;
+                  const thinkingCanExpand =
+                    isThinkingEntry &&
+                    typeof workEntry.detail === "string" &&
+                    workEntry.detail.length > THINKING_PREVIEW_CHAR_LIMIT;
+                  const displayDetail =
+                    isThinkingEntry &&
+                    typeof workEntry.detail === "string" &&
+                    !isThinkingExpanded &&
+                    thinkingCanExpand
+                      ? truncateWorkEntryDetail(workEntry.detail)
+                      : workEntry.detail;
+                  const content = (
+                    <>
                       <span className="mt-[3px] flex shrink-0 items-center justify-center">
                         {icon}
                       </span>
@@ -430,6 +458,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                               {diffStats.removed > 0 && (
                                 <span className="text-red-400">&minus;{diffStats.removed}</span>
                               )}
+                            </span>
+                          )}
+                          {thinkingCanExpand && (
+                            <span className="ml-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground/55 transition-colors duration-150 group-hover:text-muted-foreground/80">
+                              {isThinkingExpanded ? "Collapse" : "Expand"}
                             </span>
                           )}
                         </p>
@@ -456,17 +489,40 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                             )}
                           </div>
                         )}
-                        {workEntry.detail &&
-                          workEntry.detail !== secondary &&
-                          (!workEntry.command || workEntry.detail !== workEntry.command) && (
+                        {displayDetail &&
+                          displayDetail !== secondary &&
+                          (!workEntry.command || displayDetail !== workEntry.command) && (
                             <p
-                              className="mt-1 text-[11px] leading-relaxed text-muted-foreground/75"
-                              title={workEntry.detail}
+                              className={
+                                isThinkingEntry
+                                  ? "mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-foreground/90 dark:text-white/90"
+                                  : "mt-1 text-[11px] leading-relaxed text-muted-foreground/75"
+                              }
+                              title={!isThinkingEntry ? displayDetail : undefined}
                             >
-                              {workEntry.detail}
+                              {displayDetail}
                             </p>
                           )}
                       </div>
+                    </>
+                  );
+                  return isThinkingEntry ? (
+                    <button
+                      key={`work-row:${workEntry.id}`}
+                      type="button"
+                      aria-expanded={thinkingCanExpand ? isThinkingExpanded : undefined}
+                      className="group flex w-full items-start gap-2 rounded-md border border-white/10 bg-white/[0.045] px-2 py-2 text-left transition-colors duration-150 hover:bg-white/[0.075]"
+                      onClick={() => {
+                        if (thinkingCanExpand) {
+                          onToggleThinkingEntry(workEntry.id);
+                        }
+                      }}
+                    >
+                      {content}
+                    </button>
+                  ) : (
+                    <div key={`work-row:${workEntry.id}`} className="flex items-start gap-2 py-0.5">
+                      {content}
                     </div>
                   );
                 })}
@@ -776,6 +832,10 @@ function formatMessageMeta(createdAt: string, duration: string | null): string {
 function workToneClass(tone: "thinking" | "tool" | "info" | "error"): string {
   if (tone === "error") return "text-rose-300/50 dark:text-rose-300/50";
   if (tone === "tool") return "text-muted-foreground/70";
-  if (tone === "thinking") return "text-muted-foreground/50";
+  if (tone === "thinking") return "text-foreground/95 dark:text-white/95";
   return "text-muted-foreground/40";
+}
+
+function truncateWorkEntryDetail(detail: string, limit = THINKING_PREVIEW_CHAR_LIMIT): string {
+  return detail.length > limit ? `${detail.slice(0, limit - 3)}...` : detail;
 }

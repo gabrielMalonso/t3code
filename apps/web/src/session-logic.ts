@@ -456,13 +456,19 @@ export function deriveWorkLogEntries(
       const changedFiles = extractChangedFiles(payload);
       const toolName = extractToolName(payload);
       const itemType = extractItemType(payload);
+      const reasoningText =
+        activity.kind === "reasoning" && payload && typeof payload.text === "string"
+          ? payload.text
+          : undefined;
       const entry: WorkLogEntry = {
         id: activity.id,
         createdAt: activity.createdAt,
-        label: activity.summary,
+        label: activity.kind === "reasoning" ? "Thinking" : activity.summary,
         tone: activity.tone === "approval" ? "info" : activity.tone,
       };
-      if (payload && typeof payload.detail === "string" && payload.detail.length > 0) {
+      if (reasoningText && reasoningText.length > 0) {
+        entry.detail = reasoningText;
+      } else if (payload && typeof payload.detail === "string" && payload.detail.length > 0) {
         entry.detail = payload.detail;
       }
       if (command) {
