@@ -194,26 +194,55 @@ function discoverPluginCommands(): string[] {
 }
 
 /**
+ * Discover user-level skills from ~/.claude/skills/.
+ * Each subdirectory containing a SKILL.md is a registered skill.
+ */
+function discoverUserSkills(): string[] {
+  const skills: string[] = [];
+  const skillsDir = join(homedir(), ".claude", "skills");
+  try {
+    const entries = readdirSync(skillsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      try {
+        const files = readdirSync(join(skillsDir, entry.name));
+        if (files.some((f) => f.toUpperCase() === "SKILL.MD")) {
+          skills.push(entry.name);
+        }
+      } catch {
+        // Ignore unreadable skill directories.
+      }
+    }
+  } catch {
+    // No skills directory.
+  }
+  return skills;
+}
+
+/**
  * Discover available Claude commands from the filesystem.
- * Reads: user commands, project commands, enabled plugin commands,
+ * Reads: user commands, user skills, project commands, enabled plugin commands,
  * then merges with any SDK-discovered skills cached from previous sessions.
  */
 function discoverCommandsFromFilesystem(projectCwd: string, extraProjectCwds?: string[]): string[] {
   const commands: string[] = [];
 
-  // 1. User-level custom commands
+  // 1. User-level custom commands (~/.claude/commands/)
   readCommandDir(join(homedir(), ".claude", "commands"), commands);
 
-  // 2. Project-level custom commands (server cwd + any extra project cwds)
+  // 2. User-level skills (~/.claude/skills/<name>/SKILL.md)
+  commands.push(...discoverUserSkills());
+
+  // 3. Project-level custom commands (server cwd + any extra project cwds)
   const allCwds = [projectCwd, ...(extraProjectCwds ?? [])];
   for (const cwd of allCwds) {
     readCommandDir(join(cwd, ".claude", "commands"), commands);
   }
 
-  // 3. Enabled plugin commands
+  // 4. Enabled plugin commands
   commands.push(...discoverPluginCommands());
 
-  // 4. Merge with any previously cached SDK-discovered skills
+  // 5. Merge with any previously cached SDK-discovered skills
   const cached = getDiscoveredSkillsCache(projectCwd);
   return [...new Set([...commands, ...cached])];
 }
