@@ -684,6 +684,7 @@ const make = Effect.gen(function* () {
     commandTag: string;
     finalDeltaCommandTag: string;
     fallbackText?: string;
+    messageExistsInThread?: boolean;
   }) =>
     Effect.gen(function* () {
       const bufferedText = yield* takeBufferedAssistantText(input.messageId);
@@ -706,14 +707,16 @@ const make = Effect.gen(function* () {
         });
       }
 
-      yield* orchestrationEngine.dispatch({
-        type: "thread.message.assistant.complete",
-        commandId: providerCommandId(input.event, input.commandTag),
-        threadId: input.threadId,
-        messageId: input.messageId,
-        ...(input.turnId ? { turnId: input.turnId } : {}),
-        createdAt: input.createdAt,
-      });
+      if (text.length > 0 || input.messageExistsInThread !== false) {
+        yield* orchestrationEngine.dispatch({
+          type: "thread.message.assistant.complete",
+          commandId: providerCommandId(input.event, input.commandTag),
+          threadId: input.threadId,
+          messageId: input.messageId,
+          ...(input.turnId ? { turnId: input.turnId } : {}),
+          createdAt: input.createdAt,
+        });
+      }
       yield* clearAssistantMessageState(input.messageId);
     });
 
@@ -1073,6 +1076,7 @@ const make = Effect.gen(function* () {
           createdAt: now,
           commandTag: "assistant-complete",
           finalDeltaCommandTag: "assistant-delta-finalize",
+          messageExistsInThread: Boolean(existingAssistantMessage),
           ...(assistantCompletion.fallbackText !== undefined && shouldApplyFallbackCompletionText
             ? { fallbackText: assistantCompletion.fallbackText }
             : {}),
@@ -1110,6 +1114,9 @@ const make = Effect.gen(function* () {
                 createdAt: now,
                 commandTag: "assistant-complete-finalize",
                 finalDeltaCommandTag: "assistant-delta-finalize-fallback",
+                messageExistsInThread: thread.messages.some(
+                  (message) => message.id === assistantMessageId,
+                ),
               }),
             { concurrency: 1 },
           ).pipe(Effect.asVoid);

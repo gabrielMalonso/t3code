@@ -602,6 +602,190 @@ describe("ProviderRuntimeIngestion", () => {
     expect(message?.streaming).toBe(false);
   });
 
+  it("does not create an assistant message for item.completed without deltas or detail", async () => {
+    const harness = await createHarness();
+    const now = new Date().toISOString();
+
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-assistant-item-completed-empty"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-empty-complete"),
+      itemId: asItemId("item-empty-complete"),
+      payload: {
+        itemType: "assistant_message",
+        status: "completed",
+      },
+    });
+
+    await harness.drain();
+    const readModel = await Effect.runPromise(harness.engine.getReadModel());
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.makeUnsafe("thread-1"));
+
+    expect(thread).toBeDefined();
+    expect(
+      thread?.messages.some(
+        (message: ProviderRuntimeTestMessage) => message.id === "assistant:item-empty-complete",
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps thinking-only turns as activities without creating assistant messages", async () => {
+    const harness = await createHarness();
+    const now = new Date().toISOString();
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-turn-started-thinking-only"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-thinking-only"),
+    });
+
+    await waitForThread(
+      harness.engine,
+      (thread) =>
+        thread.session?.status === "running" &&
+        thread.session?.activeTurnId === "turn-thinking-only",
+    );
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-thinking-delta-only"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-thinking-only"),
+      itemId: asItemId("item-thinking-only"),
+      payload: {
+        streamKind: "reasoning_text",
+        delta: "thinking only",
+      },
+    });
+
+    await waitForThread(harness.engine, (thread) =>
+      thread.activities.some(
+        (activity: ProviderRuntimeTestActivity) =>
+          activity.id === "evt-thinking-delta-only" && activity.kind === "reasoning",
+      ),
+    );
+
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-turn-completed-thinking-only"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-thinking-only"),
+      payload: {
+        state: "completed",
+      },
+    });
+
+    const thread = await waitForThread(
+      harness.engine,
+      (entry) =>
+        entry.session?.status === "ready" &&
+        entry.session?.activeTurnId === null &&
+        entry.activities.some(
+          (activity: ProviderRuntimeTestActivity) =>
+            activity.id === "evt-thinking-delta-only" && activity.kind === "reasoning",
+        ),
+    );
+
+    const activity = thread.activities.find(
+      (entry: ProviderRuntimeTestActivity) => entry.id === "evt-thinking-delta-only",
+    );
+    expect(activity?.tone).toBe("thinking");
+    expect(activity?.payload).toEqual({ text: "thinking only" });
+    expect(thread.messages).toHaveLength(0);
+  });
+
+  it("finalizes assistant text normally when thinking and text are both emitted", async () => {
+    const harness = await createHarness();
+    const now = new Date().toISOString();
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-turn-started-thinking-with-text"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-thinking-with-text"),
+    });
+
+    await waitForThread(
+      harness.engine,
+      (thread) =>
+        thread.session?.status === "running" &&
+        thread.session?.activeTurnId === "turn-thinking-with-text",
+    );
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-thinking-delta-with-text"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-thinking-with-text"),
+      itemId: asItemId("item-thinking-with-text"),
+      payload: {
+        streamKind: "reasoning_text",
+        delta: "first think",
+      },
+    });
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-assistant-delta-with-thinking"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-thinking-with-text"),
+      itemId: asItemId("item-thinking-with-text"),
+      payload: {
+        streamKind: "assistant_text",
+        delta: "visible answer",
+      },
+    });
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-assistant-item-completed-with-thinking"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-thinking-with-text"),
+      itemId: asItemId("item-thinking-with-text"),
+      payload: {
+        itemType: "assistant_message",
+        status: "completed",
+      },
+    });
+
+    const thread = await waitForThread(
+      harness.engine,
+      (entry) =>
+        entry.activities.some(
+          (activity: ProviderRuntimeTestActivity) =>
+            activity.id === "evt-thinking-delta-with-text" && activity.kind === "reasoning",
+        ) &&
+        entry.messages.some(
+          (message: ProviderRuntimeTestMessage) =>
+            message.id === "assistant:item-thinking-with-text" &&
+            message.text === "visible answer" &&
+            !message.streaming,
+        ),
+    );
+
+    const message = thread.messages.find(
+      (entry: ProviderRuntimeTestMessage) => entry.id === "assistant:item-thinking-with-text",
+    );
+    expect(message?.text).toBe("visible answer");
+    expect(message?.streaming).toBe(false);
+  });
+
   it("projects completed plan items into first-class proposed plans", async () => {
     const harness = await createHarness();
     const now = new Date().toISOString();

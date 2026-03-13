@@ -770,7 +770,10 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           return;
         }
 
-        const needsCompletion = !turnState.messageCompleted || turnState.emittedTextDelta;
+        const hasTextContent =
+          turnState.emittedTextDelta || turnState.fallbackAssistantText.length > 0;
+        const needsCompletion =
+          hasTextContent && (!turnState.messageCompleted || turnState.emittedTextDelta);
         if (needsCompletion) {
           if (!turnState.emittedTextDelta && turnState.fallbackAssistantText.length > 0) {
             const deltaStamp = yield* makeEventStamp();
@@ -1079,11 +1082,11 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
             },
           });
 
-          // Only complete and rotate when the message has actual visible content.
-          // Messages with only tool_use blocks (no text/thinking) stay on the same
-          // assistantItemId to avoid creating empty "(empty response)" entries.
-          const hasContent =
-            extractAssistantText(message).length > 0 || thinkingBlocks.length > 0;
+          // Only complete and rotate when the message has actual visible assistant text.
+          // Thinking blocks are projected as activities, not assistant messages.
+          // Tool-only messages stay on the same assistantItemId so the next text segment
+          // can reuse it without creating empty "(empty response)" entries.
+          const hasContent = extractAssistantText(message).length > 0;
           if (hasContent) {
             const completeStamp = yield* makeEventStamp();
             yield* offerRuntimeEvent({
