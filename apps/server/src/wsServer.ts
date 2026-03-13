@@ -84,41 +84,136 @@ import { decodeJsonResult, formatSchemaError } from "@t3tools/shared/schemaJson"
 import { getDiscoveredSkillsCache } from "./skillsCache";
 
 /**
- * Discover available Claude commands from the filesystem.
- * Reads `.claude/commands/` directories for user and project custom commands,
- * then merges with any SDK-discovered skills cached from previous sessions.
+ * Read `.md` command files from a single commands directory.
+ * Handles both flat files (name.md) and namespaced subdirs (namespace/name.md → namespace:name).
  */
-function discoverCommandsFromFilesystem(projectCwd: string): string[] {
-  const commands: string[] = [];
-  const dirs = [
-    join(homedir(), ".claude", "commands"),
-    join(projectCwd, ".claude", "commands"),
-  ];
-  for (const dir of dirs) {
-    try {
-      const entries = readdirSync(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (entry.isFile() && extname(entry.name) === ".md") {
-          commands.push(basename(entry.name, ".md"));
-        }
-        if (entry.isDirectory()) {
-          try {
-            const subEntries = readdirSync(join(dir, entry.name), { withFileTypes: true });
-            for (const subEntry of subEntries) {
-              if (subEntry.isFile() && extname(subEntry.name) === ".md") {
-                commands.push(`${entry.name}:${basename(subEntry.name, ".md")}`);
-              }
+function readCommandDir(dir: string, commands: string[]): void {
+  try {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && extname(entry.name) === ".md") {
+        commands.push(basename(entry.name, ".md"));
+      }
+      if (entry.isDirectory()) {
+        try {
+          const subEntries = readdirSync(join(dir, entry.name), { withFileTypes: true });
+          for (const subEntry of subEntries) {
+            if (subEntry.isFile() && extname(subEntry.name) === ".md") {
+              commands.push(`${entry.name}:${basename(subEntry.name, ".md")}`);
             }
-          } catch {
-            // Ignore unreadable subdirectories.
           }
+        } catch {
+          // Ignore unreadable subdirectories.
         }
       }
+    }
+  } catch {
+    // Ignore missing directories.
+  }
+}
+
+/**
+ * Read enabled plugin names from ~/.claude/settings.json.
+ */
+function readEnabledPlugins(): Array<{ pluginName: string; marketplace: string }> {
+  try {
+    const settingsPath = join(homedir(), ".claude", "settings.json");
+    const raw = JSON.parse(require("node:fs").readFileSync(settingsPath, "utf8"));
+    const plugins = raw?.plugins ?? {};
+    const result: Array<{ pluginName: string; marketplace: string }> = [];
+    for (const [key, enabled] of Object.entries(plugins)) {
+      if (!enabled) continue;
+      // key format: "plugin-name@marketplace-name"
+      const atIndex = key.lastIndexOf("@");
+      if (atIndex > 0) {
+        result.push({
+          pluginName: key.slice(0, atIndex),
+          marketplace: key.slice(atIndex + 1),
+        });
+      }
+    }
+    return result;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Discover commands from enabled Claude plugins.
+ * Reads commands/ and skills/ directories from each enabled plugin's latest cached version.
+ */
+function discoverPluginCommands(): string[] {
+  const commands: string[] = [];
+  const enabledPlugins = readEnabledPlugins();
+  const cacheBase = join(homedir(), ".claude", "plugins", "cache");
+
+  for (const { pluginName, marketplace } of enabledPlugins) {
+    const pluginCacheDir = join(cacheBase, marketplace, pluginName);
+    try {
+      // Pick the latest cached version (most recently modified directory)
+      const versions = readdirSync(pluginCacheDir, { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name);
+      if (versions.length === 0) continue;
+      // Use last entry (sorted lexically, latest hash is fine)
+      const latestVersion = versions[versions.length - 1]!;
+      const versionDir = join(pluginCacheDir, latestVersion);
+
+      // Read commands/ directory
+      readCommandDir(join(versionDir, "commands"), commands);
+
+      // Read skills/ directory (skills/<skill-name>/SKILL.md → plugin-name:skill-name)
+      try {
+        const skillDirs = readdirSync(join(versionDir, "skills"), { withFileTypes: true });
+        for (const skillDir of skillDirs) {
+          if (skillDir.isDirectory()) {
+            commands.push(`${pluginName}:${skillDir.name}`);
+          }
+        }
+      } catch {
+        // No skills directory.
+      }
+
+      // Read agents/ directory (agents/<agent-name>.md → plugin-name:agent-name)
+      try {
+        const agentFiles = readdirSync(join(versionDir, "agents"), { withFileTypes: true });
+        for (const agentFile of agentFiles) {
+          if (agentFile.isFile() && extname(agentFile.name) === ".md") {
+            commands.push(`${pluginName}:${basename(agentFile.name, ".md")}`);
+          }
+        }
+      } catch {
+        // No agents directory.
+      }
     } catch {
-      // Ignore missing directories.
+      // Plugin not cached.
     }
   }
-  // Merge with any previously cached SDK-discovered skills
+
+  return commands;
+}
+
+/**
+ * Discover available Claude commands from the filesystem.
+ * Reads: user commands, project commands, enabled plugin commands,
+ * then merges with any SDK-discovered skills cached from previous sessions.
+ */
+function discoverCommandsFromFilesystem(projectCwd: string, extraProjectCwds?: string[]): string[] {
+  const commands: string[] = [];
+
+  // 1. User-level custom commands
+  readCommandDir(join(homedir(), ".claude", "commands"), commands);
+
+  // 2. Project-level custom commands (server cwd + any extra project cwds)
+  const allCwds = [projectCwd, ...(extraProjectCwds ?? [])];
+  for (const cwd of allCwds) {
+    readCommandDir(join(cwd, ".claude", "commands"), commands);
+  }
+
+  // 3. Enabled plugin commands
+  commands.push(...discoverPluginCommands());
+
+  // 4. Merge with any previously cached SDK-discovered skills
   const cached = getDiscoveredSkillsCache(projectCwd);
   return [...new Set([...commands, ...cached])];
 }
@@ -915,8 +1010,13 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         return yield* terminalManager.close(body);
       }
 
-      case WS_METHODS.serverGetConfig:
+      case WS_METHODS.serverGetConfig: {
         const keybindingsConfig = yield* keybindingsManager.loadConfigState;
+        // Collect cwds from all known projects for multi-project skill discovery
+        const snapshot = yield* projectionReadModelQuery.getSnapshot();
+        const projectCwds = snapshot.projects
+          .filter((p) => p.deletedAt === null && p.workspaceRoot !== cwd)
+          .map((p) => p.workspaceRoot);
         return {
           cwd,
           keybindingsConfigPath,
@@ -924,8 +1024,9 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
           issues: keybindingsConfig.issues,
           providers: providerStatuses,
           availableEditors,
-          availableSkills: discoverCommandsFromFilesystem(cwd),
+          availableSkills: discoverCommandsFromFilesystem(cwd, projectCwds),
         };
+      }
 
       case WS_METHODS.serverUpsertKeybinding: {
         const body = stripRequestTag(request.body);
