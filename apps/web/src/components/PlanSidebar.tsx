@@ -25,6 +25,7 @@ import {
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
 import { readNativeApi } from "~/nativeApi";
 import { toastManager } from "./ui/toast";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 
 function stepStatusIcon(status: string): React.ReactNode {
   if (status === "completed") {
@@ -65,8 +66,7 @@ const PlanSidebar = memo(function PlanSidebar({
 }: PlanSidebarProps) {
   const [proposedPlanExpanded, setProposedPlanExpanded] = useState(false);
   const [isSavingToWorkspace, setIsSavingToWorkspace] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { copyToClipboard, isCopied } = useCopyToClipboard();
 
   const planMarkdown = activeProposedPlan?.planMarkdown ?? null;
   const displayedPlanMarkdown = planMarkdown ? stripDisplayedPlanMarkdown(planMarkdown) : null;
@@ -74,26 +74,8 @@ const PlanSidebar = memo(function PlanSidebar({
 
   const handleCopyPlan = useCallback(() => {
     if (!planMarkdown) return;
-    void navigator.clipboard.writeText(planMarkdown);
-    if (copiedTimerRef.current != null) {
-      clearTimeout(copiedTimerRef.current);
-    }
-
-    setCopied(true);
-    copiedTimerRef.current = setTimeout(() => {
-      setCopied(false);
-      copiedTimerRef.current = null;
-    }, 2000);
-  }, [planMarkdown]);
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (copiedTimerRef.current != null) {
-        clearTimeout(copiedTimerRef.current);
-      }
-    };
-  }, []);
+    copyToClipboard(planMarkdown);
+  }, [planMarkdown, copyToClipboard]);
 
   const handleDownload = useCallback(() => {
     if (!planMarkdown) return;
@@ -166,7 +148,7 @@ const PlanSidebar = memo(function PlanSidebar({
               </MenuTrigger>
               <MenuPopup align="end">
                 <MenuItem onClick={handleCopyPlan}>
-                  {copied ? "Copied!" : "Copy to clipboard"}
+                  {isCopied ? "Copied!" : "Copy to clipboard"}
                 </MenuItem>
                 <MenuItem onClick={handleDownload}>Download as markdown</MenuItem>
                 <MenuItem
