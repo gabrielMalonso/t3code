@@ -110,7 +110,6 @@ function toProviderSession(s: MutableSession): ProviderSession {
   };
 }
 
-
 function readStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
