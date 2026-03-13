@@ -4,7 +4,6 @@ import { Outlet, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { DEFAULT_ENV_MODE } from "../composerDraftStore";
-import { DiffWorkerPoolProvider } from "../components/DiffWorkerPoolProvider";
 import ThreadSidebar from "../components/Sidebar";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { isTerminalFocused } from "../lib/terminalFocus";
@@ -115,9 +114,7 @@ function ChatRouteLayout() {
       >
         <ThreadSidebar />
       </Sidebar>
-      <DiffWorkerPoolProvider>
-        <Outlet />
-      </DiffWorkerPoolProvider>
+      <Outlet />
     </SidebarProvider>
   );
 }
