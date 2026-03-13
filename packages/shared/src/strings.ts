@@ -1,3 +1,7 @@
+export function normalizeSlashCommandName(value: string): string {
+  return value.trim().replace(/^\/+/, "");
+}
+
 export function basename(filePath: string): string {
   const lastSlash = filePath.lastIndexOf("/");
   return lastSlash >= 0 ? filePath.slice(lastSlash + 1) : filePath;

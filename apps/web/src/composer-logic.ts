@@ -1,6 +1,7 @@
+import { normalizeSlashCommandName } from "@t3tools/shared/strings";
 import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
 
-export type ComposerTriggerKind = "path" | "slash-command" | "slash-model";
+export type ComposerTriggerKind = "path" | "slash-command" | "slash-model" | "skill";
 export type ComposerSlashCommand = "model" | "plan" | "default";
 
 export interface ComposerTrigger {
@@ -11,6 +12,21 @@ export interface ComposerTrigger {
 }
 
 const SLASH_COMMANDS: readonly ComposerSlashCommand[] = ["model", "plan", "default"];
+
+export const normalizeComposerSkillName = normalizeSlashCommandName;
+
+function matchesComposerSkillQuery(skill: string, query: string): boolean {
+  const normalizedSkill = normalizeComposerSkillName(skill).toLowerCase();
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+  if (normalizedSkill.startsWith(normalizedQuery) || normalizedSkill.includes(normalizedQuery)) {
+    return true;
+  }
+  const alias = normalizedSkill.split(":").at(-1);
+  return alias !== undefined && alias.startsWith(normalizedQuery);
+}
 
 function clampCursor(text: string, cursor: number): number {
   if (!Number.isFinite(cursor)) return text.length;
@@ -109,7 +125,14 @@ export function isCollapsedCursorAdjacentToMention(
   return false;
 }
 
-export function detectComposerTrigger(text: string, cursorInput: number): ComposerTrigger | null {
+export function detectComposerTrigger(
+  text: string,
+  cursorInput: number,
+  availableSkills: readonly string[] = [],
+): ComposerTrigger | null {
+  const normalizedAvailableSkills = availableSkills
+    .map(normalizeComposerSkillName)
+    .filter((skill) => skill.length > 0);
   const cursor = clampCursor(text, cursorInput);
   const lineStart = text.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
   const linePrefix = text.slice(lineStart, cursor);
@@ -133,6 +156,13 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
           rangeStart: lineStart,
           rangeEnd: cursor,
         };
+      }
+      if (normalizedAvailableSkills.length > 0) {
+        if (
+          normalizedAvailableSkills.some((skill) => matchesComposerSkillQuery(skill, commandQuery))
+        ) {
+          return { kind: "skill", query: commandQuery, rangeStart: lineStart, rangeEnd: cursor };
+        }
       }
       return null;
     }

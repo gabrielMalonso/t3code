@@ -917,6 +917,45 @@ const make = Effect.gen(function* () {
               runtimeMode: thread.session?.runtimeMode ?? "full-access",
               activeTurnId: nextActiveTurnId,
               lastError,
+              ...(event.type !== "session.exited" && thread.session?.skills
+                ? { skills: thread.session.skills }
+                : {}),
+              ...(event.type !== "session.exited" && thread.session?.slashCommands
+                ? { slashCommands: thread.session.slashCommands }
+                : {}),
+              updatedAt: now,
+            },
+            createdAt: now,
+          });
+        }
+      }
+
+      // Extract skills and slashCommands from session.configured events
+      if (event.type === "session.configured" && shouldApplyThreadLifecycle) {
+        const config = event.payload.config as Record<string, unknown>;
+        const skills =
+          Array.isArray(config.skills) && config.skills.length > 0
+            ? (config.skills as string[])
+            : undefined;
+        const slashCommands =
+          Array.isArray(config.slashCommands) && config.slashCommands.length > 0
+            ? (config.slashCommands as string[])
+            : undefined;
+        if (skills || slashCommands) {
+          yield* orchestrationEngine.dispatch({
+            type: "thread.session.set",
+            commandId: providerCommandId(event, "thread-session-configured-skills"),
+            threadId: thread.id,
+            session: {
+              ...thread.session,
+              threadId: thread.id,
+              status: thread.session?.status ?? "ready",
+              providerName: thread.session?.providerName ?? event.provider,
+              runtimeMode: thread.session?.runtimeMode ?? "full-access",
+              activeTurnId: thread.session?.activeTurnId ?? null,
+              lastError: thread.session?.lastError ?? null,
+              skills: skills ?? [],
+              slashCommands: slashCommands ?? [],
               updatedAt: now,
             },
             createdAt: now,

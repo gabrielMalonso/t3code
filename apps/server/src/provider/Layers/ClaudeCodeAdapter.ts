@@ -280,6 +280,25 @@ function mapLifecycleEvent(
         },
       ];
     }
+    case "session/skills-discovered": {
+      const p = asObject(event.payload);
+      const skills = Array.isArray(p?.skills) ? (p.skills as string[]) : [];
+      const slashCommands = Array.isArray(p?.slashCommands) ? (p.slashCommands as string[]) : [];
+      if (skills.length === 0 && slashCommands.length === 0) return [];
+      return [
+        {
+          ...base,
+          eventId: EventId.makeUnsafe(randomUUID()),
+          type: "session.configured",
+          payload: {
+            config: {
+              ...(skills.length > 0 ? { skills } : {}),
+              ...(slashCommands.length > 0 ? { slashCommands } : {}),
+            },
+          },
+        },
+      ];
+    }
     case "runtime.error": {
       const p = asObject(event.payload);
       return [
@@ -323,6 +342,12 @@ function mapSystemMessage(
           tools: system.tools,
           permissionMode: asString(system.permissionMode),
           sessionId: asString(system.session_id),
+          ...(Array.isArray(system.skills) && system.skills.length > 0
+            ? { skills: system.skills }
+            : {}),
+          ...(Array.isArray(system.slash_commands) && system.slash_commands.length > 0
+            ? { slashCommands: system.slash_commands }
+            : {}),
         },
       },
     },

@@ -114,4 +114,6 @@ export interface ThreadSession {
   updatedAt: string;
   lastError?: string;
   orchestrationStatus: OrchestrationSessionStatus;
+  skills?: string[] | undefined;
+  slashCommands?: string[] | undefined;
 }

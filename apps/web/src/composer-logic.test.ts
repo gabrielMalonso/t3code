@@ -4,6 +4,7 @@ import {
   detectComposerTrigger,
   expandCollapsedComposerCursor,
   isCollapsedCursorAdjacentToMention,
+  normalizeComposerSkillName,
   parseStandaloneComposerSlashCommand,
   replaceTextRange,
 } from "./composer-logic";
@@ -55,6 +56,36 @@ describe("detectComposerTrigger", () => {
       rangeStart: 0,
       rangeEnd: text.length,
     });
+  });
+
+  it("detects skills when available command names include a leading slash", () => {
+    const text = "/co";
+    const trigger = detectComposerTrigger(text, text.length, ["/compact"]);
+
+    expect(trigger).toEqual({
+      kind: "skill",
+      query: "co",
+      rangeStart: 0,
+      rangeEnd: text.length,
+    });
+  });
+
+  it("detects namespaced commands when typing only the alias", () => {
+    const text = "/status";
+    const trigger = detectComposerTrigger(text, text.length, ["interface-design:status"]);
+
+    expect(trigger).toEqual({
+      kind: "skill",
+      query: "status",
+      rangeStart: 0,
+      rangeEnd: text.length,
+    });
+  });
+});
+
+describe("normalizeComposerSkillName", () => {
+  it("strips a single slash-command prefix", () => {
+    expect(normalizeComposerSkillName(" /compact ")).toBe("compact");
   });
 });
 

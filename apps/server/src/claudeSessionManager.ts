@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
+import path from "node:path";
+import { updateDiscoveredSkillsCache } from "./skillsCache";
+import { normalizeSlashCommandName } from "@t3tools/shared/strings";
 
 import { query, type SDKMessage, type SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
 import {
@@ -105,6 +108,19 @@ function toProviderSession(s: MutableSession): ProviderSession {
     createdAt: s.createdAt,
     updatedAt: s.updatedAt,
   };
+}
+
+function readStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter(
+    (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
+  );
+}
+
+function uniqueStrings(values: Iterable<string>): string[] {
+  return Array.from(new Set(values));
 }
 
 export class ClaudeSessionManager extends EventEmitter {
@@ -316,6 +332,7 @@ export class ClaudeSessionManager extends EventEmitter {
         thinking: { type: "adaptive" },
         abortController: context.abortController,
         permissionMode: effectivePermission as "default" | "bypassPermissions" | "plan",
+        settingSources: ["user", "project", "local"],
         maxTurns: 200,
         ...(context.sdkSessionId ? { resume: context.sdkSessionId } : {}),
         stderr: (chunk: string) => {
@@ -402,6 +419,7 @@ export class ClaudeSessionManager extends EventEmitter {
     });
 
     context.queryInstance = q;
+    this.discoverSupportedCommands(threadId, context, q);
 
     // Consume the async generator in the background
     this.consumeMessages(context, q).catch((error) => {
@@ -443,6 +461,46 @@ export class ClaudeSessionManager extends EventEmitter {
     }
   }
 
+  private discoverSupportedCommands(
+    threadId: ThreadId,
+    context: ClaudeSessionContext,
+    q: ReturnType<typeof query>,
+  ): void {
+    // supportedCommands() internally does: (await this.initialization).commands
+    // Both methods depend on the same initialization promise.
+    q.supportedCommands()
+      .then((commands) => {
+        if (context.stopping || context.queryInstance !== q) {
+          return;
+        }
+
+        // commands is SlashCommand[] with { name, description, ... }
+        const commandNames = (commands ?? [])
+          .map((cmd) => cmd?.name)
+          .filter((name): name is string => typeof name === "string" && name.trim().length > 0);
+
+        const skills = uniqueStrings(
+          commandNames.map(normalizeSlashCommandName).filter((name) => name.length > 0),
+        );
+
+        if (skills.length === 0) {
+          return;
+        }
+
+        // Cache discovered skills for the server config endpoint
+        if (context.mutableSession.cwd) {
+          updateDiscoveredSkillsCache(context.mutableSession.cwd, skills);
+        }
+
+        this.emitEvent(threadId, "session/skills-discovered", undefined, {
+          payload: { skills, slashCommands: commandNames },
+        });
+      })
+      .catch((err) => {
+        console.error("[ClaudeSessionManager] supportedCommands() failed:", String(err));
+      });
+  }
+
   private emitSdkMessage(
     threadId: ThreadId,
     context: ClaudeSessionContext,
@@ -453,6 +511,22 @@ export class ClaudeSessionManager extends EventEmitter {
       const systemMsg = message as Record<string, unknown>;
       if (typeof systemMsg.session_id === "string") {
         context.sdkSessionId = systemMsg.session_id;
+      }
+
+      // Extract skills directly from the system message (synchronous path).
+      // SDKSystemMessage has required fields: skills: string[], slash_commands: string[]
+      const systemSkills = readStringArray(systemMsg.skills);
+      const systemSlashCommands = readStringArray(systemMsg.slash_commands);
+
+      // Emit skills immediately if the system message contains them
+      if (systemSkills.length > 0 || systemSlashCommands.length > 0) {
+        const mergedNames = uniqueStrings([...systemSlashCommands, ...systemSkills]);
+        const skills = mergedNames.map(normalizeSlashCommandName).filter((name) => name.length > 0);
+        if (skills.length > 0) {
+          this.emitEvent(threadId, "session/skills-discovered", undefined, {
+            payload: { skills, slashCommands: mergedNames },
+          });
+        }
       }
     }
 
