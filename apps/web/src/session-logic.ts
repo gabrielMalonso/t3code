@@ -409,14 +409,42 @@ export function findLatestProposedPlan(
   };
 }
 
+function extractActivityItemId(activity: OrchestrationThreadActivity): string | null {
+  const payload = activity.payload as Record<string, unknown> | null;
+  if (!payload || typeof payload !== "object") return null;
+  const data = payload.data;
+  if (!data || typeof data !== "object") return null;
+  const itemId = (data as Record<string, unknown>).itemId;
+  return typeof itemId === "string" ? itemId : null;
+}
+
 export function deriveWorkLogEntries(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
   latestTurnId: TurnId | undefined,
 ): WorkLogEntry[] {
   const ordered = [...activities].toSorted(compareActivitiesByOrder);
+
+  // Collect itemIds of completed tools so we can deduplicate started entries.
+  const completedItemIds = new Set<string>();
+  for (const activity of ordered) {
+    if (activity.kind === "tool.completed") {
+      const itemId = extractActivityItemId(activity);
+      if (itemId) {
+        completedItemIds.add(itemId);
+      }
+    }
+  }
+
   return ordered
     .filter((activity) => (latestTurnId ? activity.turnId === latestTurnId : true))
-    .filter((activity) => activity.kind !== "tool.started")
+    .filter((activity) => {
+      // Show tool.started only while the tool is still running (no completed yet).
+      if (activity.kind === "tool.started") {
+        const itemId = extractActivityItemId(activity);
+        return !itemId || !completedItemIds.has(itemId);
+      }
+      return true;
+    })
     .filter((activity) => activity.kind !== "task.started" && activity.kind !== "task.completed")
     .filter((activity) => activity.summary !== "Checkpoint captured")
     .map((activity) => {

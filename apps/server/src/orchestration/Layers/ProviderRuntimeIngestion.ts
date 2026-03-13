@@ -491,7 +491,7 @@ function runtimeEventToActivities(
           payload: {
             itemType: event.payload.itemType,
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
-            ...(toolCtxCompleted ? { data: toolCtxCompleted } : {}),
+            data: { ...toolCtxCompleted, itemId: event.itemId },
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
@@ -514,7 +514,7 @@ function runtimeEventToActivities(
           payload: {
             itemType: event.payload.itemType,
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
-            ...(toolCtxStarted ? { data: toolCtxStarted } : {}),
+            data: { ...toolCtxStarted, itemId: event.itemId },
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
@@ -967,6 +967,10 @@ const make = Effect.gen(function* () {
         event.type === "content.delta" && event.payload.streamKind === "assistant_text"
           ? event.payload.delta
           : undefined;
+      const reasoningDelta =
+        event.type === "content.delta" && event.payload.streamKind === "reasoning_text"
+          ? event.payload.delta
+          : undefined;
       const proposedPlanDelta =
         event.type === "turn.proposed.delta" ? event.payload.delta : undefined;
 
@@ -1004,6 +1008,26 @@ const make = Effect.gen(function* () {
             createdAt: now,
           });
         }
+      }
+
+      if (reasoningDelta && reasoningDelta.length > 0) {
+        const turnId = toTurnId(event.turnId);
+        yield* orchestrationEngine.dispatch({
+          type: "thread.activity.append",
+          commandId: providerCommandId(event, "thinking-activity"),
+          threadId: thread.id,
+          activity: {
+            id: event.eventId,
+            tone: "thinking",
+            kind: "reasoning",
+            summary:
+              reasoningDelta.length <= 200 ? reasoningDelta : `${reasoningDelta.slice(0, 197)}...`,
+            payload: { text: reasoningDelta },
+            turnId: turnId ?? null,
+            createdAt: now,
+          },
+          createdAt: now,
+        });
       }
 
       if (proposedPlanDelta && proposedPlanDelta.length > 0) {

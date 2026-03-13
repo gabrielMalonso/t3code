@@ -324,24 +324,63 @@ describe("findLatestProposedPlan", () => {
 });
 
 describe("deriveWorkLogEntries", () => {
-  it("omits tool started entries and keeps completed entries", () => {
+  it("deduplicates tool.started when tool.completed exists for same item", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
         id: "tool-complete",
         createdAt: "2026-02-23T00:00:03.000Z",
         summary: "Tool call complete",
         kind: "tool.completed",
+        payload: { data: { itemId: "shared-item" } },
       }),
       makeActivity({
         id: "tool-start",
         createdAt: "2026-02-23T00:00:02.000Z",
         summary: "Tool call",
         kind: "tool.started",
+        payload: { data: { itemId: "shared-item" } },
       }),
     ];
 
     const entries = deriveWorkLogEntries(activities, undefined);
     expect(entries.map((entry) => entry.id)).toEqual(["tool-complete"]);
+  });
+
+  it("shows tool.started when no matching tool.completed exists", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "tool-start",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        summary: "Tool call",
+        kind: "tool.started",
+        payload: { data: { itemId: "in-progress-item" } },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries.map((entry) => entry.id)).toEqual(["tool-start"]);
+  });
+
+  it("shows tool.started when payload has no itemId (fail-safe)", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "tool-complete-no-id",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        summary: "Tool call complete",
+        kind: "tool.completed",
+        payload: { data: {} },
+      }),
+      makeActivity({
+        id: "tool-start-no-id",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        summary: "Tool call",
+        kind: "tool.started",
+        payload: { data: {} },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries.map((entry) => entry.id)).toEqual(["tool-start-no-id", "tool-complete-no-id"]);
   });
 
   it("omits task start and completion lifecycle entries", () => {

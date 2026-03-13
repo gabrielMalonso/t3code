@@ -382,6 +382,34 @@ function extractAssistantText(message: SDKMessage): string {
   return fragments.join("");
 }
 
+function extractThinkingBlocks(message: SDKMessage): string[] {
+  if (message.type !== "assistant") {
+    return [];
+  }
+
+  const content = (message.message as { content?: unknown } | undefined)?.content;
+  if (!Array.isArray(content)) {
+    return [];
+  }
+
+  const results: string[] = [];
+  for (const block of content) {
+    if (!block || typeof block !== "object") {
+      continue;
+    }
+    const candidate = block as { type?: unknown; thinking?: unknown };
+    if (
+      candidate.type === "thinking" &&
+      typeof candidate.thinking === "string" &&
+      candidate.thinking.length > 0
+    ) {
+      results.push(candidate.thinking);
+    }
+  }
+
+  return results;
+}
+
 function toSessionError(
   threadId: ThreadId,
   cause: unknown,
@@ -742,7 +770,8 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           return;
         }
 
-        if (!turnState.messageCompleted) {
+        const needsCompletion = !turnState.messageCompleted || turnState.emittedTextDelta;
+        if (needsCompletion) {
           if (!turnState.emittedTextDelta && turnState.fallbackAssistantText.length > 0) {
             const deltaStamp = yield* makeEventStamp();
             yield* offerRuntimeEvent({
@@ -988,6 +1017,30 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
 
         if (context.turnState) {
           context.turnState.items.push(message.message);
+
+          // Emit thinking blocks as reasoning_text activities before the assistant text.
+          const thinkingBlocks = extractThinkingBlocks(message);
+          for (const thinking of thinkingBlocks) {
+            const thinkingStamp = yield* makeEventStamp();
+            yield* offerRuntimeEvent({
+              type: "content.delta",
+              eventId: thinkingStamp.eventId,
+              provider: PROVIDER,
+              createdAt: thinkingStamp.createdAt,
+              threadId: context.session.threadId,
+              turnId: context.turnState.turnId,
+              itemId: asRuntimeItemId(context.turnState.assistantItemId),
+              payload: {
+                streamKind: "reasoning_text",
+                delta: thinking,
+              },
+              providerRefs: {
+                ...providerThreadRef(context),
+                providerTurnId: context.turnState.turnId,
+              },
+            });
+          }
+
           const fallbackAssistantText = extractAssistantText(message);
           if (
             fallbackAssistantText.length > 0 &&
@@ -1025,6 +1078,45 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               payload: message,
             },
           });
+
+          // Only complete and rotate when the message has actual visible content.
+          // Messages with only tool_use blocks (no text/thinking) stay on the same
+          // assistantItemId to avoid creating empty "(empty response)" entries.
+          const hasContent =
+            extractAssistantText(message).length > 0 || thinkingBlocks.length > 0;
+          if (hasContent) {
+            const completeStamp = yield* makeEventStamp();
+            yield* offerRuntimeEvent({
+              type: "item.completed",
+              eventId: completeStamp.eventId,
+              provider: PROVIDER,
+              createdAt: completeStamp.createdAt,
+              itemId: asRuntimeItemId(context.turnState.assistantItemId),
+              threadId: context.session.threadId,
+              turnId: context.turnState.turnId,
+              payload: {
+                itemType: "assistant_message",
+                status: "completed",
+                title: "Assistant message",
+                ...(fallbackAssistantText.length > 0 ? { detail: fallbackAssistantText } : {}),
+              },
+              providerRefs: {
+                ...providerThreadRef(context),
+                providerTurnId: context.turnState.turnId,
+                providerItemId: ProviderItemId.makeUnsafe(context.turnState.assistantItemId),
+              },
+            });
+
+            // Rotate assistantItemId so the next text segment (after tool calls)
+            // gets its own message ID instead of being concatenated with this one.
+            context.turnState = {
+              ...context.turnState,
+              assistantItemId: yield* Random.nextUUIDv4,
+              emittedTextDelta: false,
+              messageCompleted: true,
+              fallbackAssistantText: "",
+            };
+          }
         }
 
         context.lastAssistantUuid = message.uuid;
