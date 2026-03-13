@@ -16,6 +16,19 @@ export function normalizeComposerSkillName(skill: string): string {
   return skill.trim().replace(/^\/+/, "");
 }
 
+function matchesComposerSkillQuery(skill: string, query: string): boolean {
+  const normalizedSkill = normalizeComposerSkillName(skill).toLowerCase();
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+  if (normalizedSkill.startsWith(normalizedQuery) || normalizedSkill.includes(normalizedQuery)) {
+    return true;
+  }
+  const alias = normalizedSkill.split(":").at(-1);
+  return alias !== undefined && alias.startsWith(normalizedQuery);
+}
+
 function clampCursor(text: string, cursor: number): number {
   if (!Number.isFinite(cursor)) return text.length;
   return Math.max(0, Math.min(text.length, Math.floor(cursor)));
@@ -146,10 +159,8 @@ export function detectComposerTrigger(
         };
       }
       if (normalizedAvailableSkills.length > 0) {
-        const lowerQuery = commandQuery.toLowerCase();
         if (
-          !lowerQuery ||
-          normalizedAvailableSkills.some((skill) => skill.toLowerCase().startsWith(lowerQuery))
+          normalizedAvailableSkills.some((skill) => matchesComposerSkillQuery(skill, commandQuery))
         ) {
           return { kind: "skill", query: commandQuery, rangeStart: lineStart, rangeEnd: cursor };
         }

@@ -69,6 +69,18 @@ describe("detectComposerTrigger", () => {
       rangeEnd: text.length,
     });
   });
+
+  it("detects namespaced commands when typing only the alias", () => {
+    const text = "/status";
+    const trigger = detectComposerTrigger(text, text.length, ["interface-design:status"]);
+
+    expect(trigger).toEqual({
+      kind: "skill",
+      query: "status",
+      rangeStart: 0,
+      rangeEnd: text.length,
+    });
+  });
 });
 
 describe("normalizeComposerSkillName", () => {

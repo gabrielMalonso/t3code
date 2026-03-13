@@ -298,6 +298,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const composerSelectLockRef = useRef(false);
   const composerMenuOpenRef = useRef(false);
   const composerMenuItemsRef = useRef<ComposerCommandItem[]>([]);
+  const sessionSkillsRef = useRef<readonly string[]>(EMPTY_SKILLS);
   const activeComposerMenuItemRef = useRef<ComposerCommandItem | null>(null);
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewHandoffTimeoutByMessageIdRef = useRef<Record<string, number>>({});
@@ -672,6 +673,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       detectComposerTrigger(
         nextCustomAnswer,
         expandCollapsedComposerCursor(nextCustomAnswer, nextCustomAnswer.length),
+        sessionSkillsRef.current,
       ),
     );
     setComposerHighlightedItemId(null);
@@ -922,6 +924,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       ),
     );
   }, [activeThread?.session?.skills, activeThread?.session?.slashCommands]);
+  sessionSkillsRef.current = sessionSkills;
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
@@ -1794,7 +1797,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
     setSendStartedAt(null);
     setComposerHighlightedItemId(null);
     setComposerCursor(promptRef.current.length);
-    setComposerTrigger(detectComposerTrigger(promptRef.current, promptRef.current.length));
+    setComposerTrigger(
+      detectComposerTrigger(promptRef.current, promptRef.current.length, sessionSkillsRef.current),
+    );
     dragDepthRef.current = 0;
     setIsDragOverComposer(false);
     setExpandedImage(null);
@@ -2473,7 +2478,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
         setPrompt(trimmed);
         setComposerCursor(trimmed.length);
         addComposerImagesToDraft(composerImagesSnapshot.map(cloneComposerImageForRetry));
-        setComposerTrigger(detectComposerTrigger(trimmed, trimmed.length));
+        setComposerTrigger(
+          detectComposerTrigger(trimmed, trimmed.length, sessionSkillsRef.current),
+        );
       }
       setThreadError(
         threadIdForSend,
@@ -2674,7 +2681,11 @@ export default function ChatView({ threadId }: ChatViewProps) {
       setComposerTrigger(
         cursorAdjacentToMention
           ? null
-          : detectComposerTrigger(value, expandCollapsedComposerCursor(value, nextCursor)),
+          : detectComposerTrigger(
+              value,
+              expandCollapsedComposerCursor(value, nextCursor),
+              sessionSkillsRef.current,
+            ),
       );
     },
     [activePendingUserInput],
@@ -3076,7 +3087,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
         setPrompt(next.text);
       }
       setComposerCursor(next.cursor);
-      setComposerTrigger(detectComposerTrigger(next.text, next.cursor));
+      setComposerTrigger(
+        detectComposerTrigger(next.text, next.cursor, sessionSkillsRef.current),
+      );
       window.requestAnimationFrame(() => {
         composerEditorRef.current?.focusAt(next.cursor);
       });
