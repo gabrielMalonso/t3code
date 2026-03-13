@@ -115,9 +115,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
       {props.item.type === "slash-command" ? (
         <BotIcon className="size-4 text-muted-foreground/80" />
       ) : null}
-      {props.item.type === "skill" ? (
-        <ZapIcon className="size-4 text-muted-foreground/80" />
-      ) : null}
+      {props.item.type === "skill" ? <ZapIcon className="size-4 text-muted-foreground/80" /> : null}
       {props.item.type === "model" ? (
         <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
           model

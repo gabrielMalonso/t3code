@@ -107,6 +107,10 @@ function toProviderSession(s: MutableSession): ProviderSession {
   };
 }
 
+function normalizeSlashCommandName(value: string): string {
+  return value.trim().replace(/^\/+/, "");
+}
+
 export class ClaudeSessionManager extends EventEmitter {
   private sessions = new Map<ThreadId, ClaudeSessionContext>();
 
@@ -457,16 +461,24 @@ export class ClaudeSessionManager extends EventEmitter {
 
       // Fetch supported commands (skills) from the SDK after init
       if (context.queryInstance) {
-        context.queryInstance.supportedCommands().then((commands) => {
-          if (commands.length > 0) {
-            const skills = commands.map((c) => c.name);
-            this.emitEvent(threadId, "session/skills-discovered", undefined, {
-              payload: { skills },
-            });
-          }
-        }).catch(() => {
-          // Ignore errors - skills are optional
-        });
+        context.queryInstance
+          .supportedCommands()
+          .then((commands) => {
+            const slashCommands = commands
+              .map((command) => command.name)
+              .filter((name): name is string => typeof name === "string" && name.trim().length > 0);
+            if (slashCommands.length > 0) {
+              const skills = slashCommands
+                .map(normalizeSlashCommandName)
+                .filter((name) => name.length > 0);
+              this.emitEvent(threadId, "session/skills-discovered", undefined, {
+                payload: { skills, slashCommands },
+              });
+            }
+          })
+          .catch(() => {
+            // Ignore errors - skills are optional
+          });
       }
     }
 

@@ -42,6 +42,7 @@ import {
   type ComposerTrigger,
   detectComposerTrigger,
   expandCollapsedComposerCursor,
+  normalizeComposerSkillName,
   parseStandaloneComposerSlashCommand,
   replaceTextRange,
 } from "../composer-logic";
@@ -910,7 +911,17 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }),
   );
   const workspaceEntries = workspaceEntriesQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
-  const sessionSkills = activeThread?.session?.skills ?? EMPTY_SKILLS;
+  const sessionSkills = useMemo(() => {
+    const rawCommands =
+      activeThread?.session?.slashCommands && activeThread.session.slashCommands.length > 0
+        ? activeThread.session.slashCommands
+        : (activeThread?.session?.skills ?? EMPTY_SKILLS);
+    return Array.from(
+      new Set(
+        rawCommands.map(normalizeComposerSkillName).filter((commandName) => commandName.length > 0),
+      ),
+    );
+  }, [activeThread?.session?.skills, activeThread?.session?.slashCommands]);
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {

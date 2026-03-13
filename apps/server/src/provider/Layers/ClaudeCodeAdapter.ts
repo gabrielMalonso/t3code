@@ -283,7 +283,8 @@ function mapLifecycleEvent(
     case "session/skills-discovered": {
       const p = asObject(event.payload);
       const skills = Array.isArray(p?.skills) ? (p.skills as string[]) : [];
-      if (skills.length === 0) return [];
+      const slashCommands = Array.isArray(p?.slashCommands) ? (p.slashCommands as string[]) : [];
+      if (skills.length === 0 && slashCommands.length === 0) return [];
       return [
         {
           ...base,
@@ -291,7 +292,8 @@ function mapLifecycleEvent(
           type: "session.configured",
           payload: {
             config: {
-              skills,
+              ...(skills.length > 0 ? { skills } : {}),
+              ...(slashCommands.length > 0 ? { slashCommands } : {}),
             },
           },
         },

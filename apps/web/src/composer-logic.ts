@@ -12,6 +12,10 @@ export interface ComposerTrigger {
 
 const SLASH_COMMANDS: readonly ComposerSlashCommand[] = ["model", "plan", "default"];
 
+export function normalizeComposerSkillName(skill: string): string {
+  return skill.trim().replace(/^\/+/, "");
+}
+
 function clampCursor(text: string, cursor: number): number {
   if (!Number.isFinite(cursor)) return text.length;
   return Math.max(0, Math.min(text.length, Math.floor(cursor)));
@@ -114,6 +118,9 @@ export function detectComposerTrigger(
   cursorInput: number,
   availableSkills: readonly string[] = [],
 ): ComposerTrigger | null {
+  const normalizedAvailableSkills = availableSkills
+    .map(normalizeComposerSkillName)
+    .filter((skill) => skill.length > 0);
   const cursor = clampCursor(text, cursorInput);
   const lineStart = text.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
   const linePrefix = text.slice(lineStart, cursor);
@@ -138,9 +145,12 @@ export function detectComposerTrigger(
           rangeEnd: cursor,
         };
       }
-      if (availableSkills.length > 0) {
+      if (normalizedAvailableSkills.length > 0) {
         const lowerQuery = commandQuery.toLowerCase();
-        if (!lowerQuery || availableSkills.some((s) => s.toLowerCase().startsWith(lowerQuery))) {
+        if (
+          !lowerQuery ||
+          normalizedAvailableSkills.some((skill) => skill.toLowerCase().startsWith(lowerQuery))
+        ) {
           return { kind: "skill", query: commandQuery, rangeStart: lineStart, rangeEnd: cursor };
         }
       }
