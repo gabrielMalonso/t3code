@@ -119,6 +119,8 @@ interface ToolInFlight {
   readonly itemType: CanonicalItemType;
   readonly toolName: string;
   readonly title: string;
+  readonly input: Record<string, unknown>;
+  readonly inputJsonBuffer: string;
   readonly detail?: string;
 }
 
@@ -272,7 +274,14 @@ function classifyRequestType(toolName: string): CanonicalRequestType {
     : "file_change_approval";
 }
 
-function summarizeToolRequest(toolName: string, input: Record<string, unknown>): string {
+function summarizeToolRequest(
+  toolName: string,
+  input: Record<string, unknown>,
+): string | undefined {
+  if (Object.keys(input).length === 0) {
+    return undefined;
+  }
+
   const commandValue = input.command ?? input.cmd;
   const command = typeof commandValue === "string" ? commandValue : undefined;
   if (command && command.trim().length > 0) {
@@ -284,6 +293,22 @@ function summarizeToolRequest(toolName: string, input: Record<string, unknown>):
     return `${toolName}: ${serialized}`;
   }
   return `${toolName}: ${serialized.slice(0, 397)}...`;
+}
+
+function parseToolInputJson(partialJson: string): Record<string, unknown> | undefined {
+  if (partialJson.trim().length === 0) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(partialJson);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return undefined;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
 }
 
 function titleForTool(itemType: CanonicalItemType): string {
@@ -908,6 +933,27 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               },
             });
           }
+
+          if (event.delta.type === "input_json_delta") {
+            const tool = context.inFlightTools.get(event.index);
+            if (!tool) {
+              return;
+            }
+
+            const partialJson =
+              typeof event.delta.partial_json === "string" ? event.delta.partial_json : "";
+            const inputJsonBuffer = `${tool.inputJsonBuffer}${partialJson}`;
+            const parsedInput = parseToolInputJson(inputJsonBuffer);
+            const input = parsedInput ? { ...tool.input, ...parsedInput } : tool.input;
+            const detail = summarizeToolRequest(tool.toolName, input);
+
+            context.inFlightTools.set(event.index, {
+              ...tool,
+              input,
+              inputJsonBuffer,
+              ...(detail ? { detail } : {}),
+            });
+          }
           return;
         }
 
@@ -935,7 +981,9 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
             itemType,
             toolName,
             title: titleForTool(itemType),
-            detail,
+            input: toolInput,
+            inputJsonBuffer: "",
+            ...(detail ? { detail } : {}),
           };
           context.inFlightTools.set(index, tool);
 
@@ -955,7 +1003,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               ...(tool.detail ? { detail: tool.detail } : {}),
               data: {
                 toolName: tool.toolName,
-                input: toolInput,
+                input: tool.input,
               },
             },
             providerRefs: {
@@ -979,6 +1027,9 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
             return;
           }
           context.inFlightTools.delete(index);
+          const parsedInput = parseToolInputJson(tool.inputJsonBuffer);
+          const input = parsedInput ? { ...tool.input, ...parsedInput } : tool.input;
+          const detail = summarizeToolRequest(tool.toolName, input);
 
           const stamp = yield* makeEventStamp();
           yield* offerRuntimeEvent({
@@ -993,7 +1044,11 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               itemType: tool.itemType,
               status: "completed",
               title: tool.title,
-              ...(tool.detail ? { detail: tool.detail } : {}),
+              ...(detail ? { detail } : {}),
+              data: {
+                toolName: tool.toolName,
+                input,
+              },
             },
             providerRefs: {
               ...providerThreadRef(context),
@@ -1620,8 +1675,8 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
               const decisionDeferred = yield* Deferred.make<ProviderApprovalDecision>();
               const pendingApproval: PendingApproval = {
                 requestType,
-                detail,
                 decision: decisionDeferred,
+                ...(detail ? { detail } : {}),
                 ...(callbackOptions.suggestions
                   ? { suggestions: callbackOptions.suggestions }
                   : {}),

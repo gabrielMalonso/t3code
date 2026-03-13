@@ -786,6 +786,58 @@ describe("ProviderRuntimeIngestion", () => {
     expect(message?.streaming).toBe(false);
   });
 
+  it("normalizes Claude tool input into activity payload context", async () => {
+    const harness = await createHarness();
+    const now = new Date().toISOString();
+
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-claude-edit-completed"),
+      provider: "claudeCode",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-claude-edit"),
+      itemId: asItemId("tool-edit-1"),
+      payload: {
+        itemType: "file_change",
+        status: "completed",
+        title: "File change",
+        data: {
+          toolName: "Edit",
+          input: {
+            file_path: "/tmp/demo.ts",
+            old_string: "before\n",
+            new_string: "after\nnext\n",
+          },
+        },
+      },
+    });
+
+    const thread = await waitForThread(harness.engine, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) => activity.id === "evt-claude-edit-completed",
+      ),
+    );
+
+    const activity = thread.activities.find(
+      (entry: ProviderRuntimeTestActivity) => entry.id === "evt-claude-edit-completed",
+    );
+    const payload =
+      activity?.payload && typeof activity.payload === "object"
+        ? (activity.payload as Record<string, unknown>)
+        : undefined;
+    const data =
+      payload?.data && typeof payload.data === "object"
+        ? (payload.data as Record<string, unknown>)
+        : undefined;
+
+    expect(activity?.kind).toBe("tool.completed");
+    expect(data?.toolName).toBe("Edit");
+    expect(data?.filePath).toBe("/tmp/demo.ts");
+    expect(data?.addedLines).toBe(3);
+    expect(data?.removedLines).toBe(2);
+  });
+
   it("projects completed plan items into first-class proposed plans", async () => {
     const harness = await createHarness();
     const now = new Date().toISOString();
