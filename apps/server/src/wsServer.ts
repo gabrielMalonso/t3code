@@ -7,7 +7,7 @@
  * @module Server
  */
 import http from "node:http";
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join, basename, extname } from "node:path";
 import { homedir } from "node:os";
 import type { Duplex } from "node:stream";
@@ -118,7 +118,7 @@ function readCommandDir(dir: string, commands: string[]): void {
 function readEnabledPlugins(): Array<{ pluginName: string; marketplace: string }> {
   try {
     const settingsPath = join(homedir(), ".claude", "settings.json");
-    const raw = JSON.parse(require("node:fs").readFileSync(settingsPath, "utf8"));
+    const raw = JSON.parse(readFileSync(settingsPath, "utf8"));
     const plugins = raw?.plugins ?? {};
     const result: Array<{ pluginName: string; marketplace: string }> = [];
     for (const [key, enabled] of Object.entries(plugins)) {
@@ -155,8 +155,8 @@ function discoverPluginCommands(): string[] {
         .filter((e) => e.isDirectory())
         .map((e) => e.name);
       if (versions.length === 0) continue;
-      // Use last entry (sorted lexically, latest hash is fine)
-      const latestVersion = versions[versions.length - 1]!;
+      // Use last entry after sorting lexically (latest hash is fine)
+      const latestVersion = versions.sort()[versions.length - 1]!;
       const versionDir = join(pluginCacheDir, latestVersion);
 
       // Read commands/ directory

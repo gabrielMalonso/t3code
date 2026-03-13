@@ -1,3 +1,4 @@
+import { normalizeSlashCommandName } from "@t3tools/shared/strings";
 import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
 
 export type ComposerTriggerKind = "path" | "slash-command" | "slash-model" | "skill";
@@ -12,9 +13,7 @@ export interface ComposerTrigger {
 
 const SLASH_COMMANDS: readonly ComposerSlashCommand[] = ["model", "plan", "default"];
 
-export function normalizeComposerSkillName(skill: string): string {
-  return skill.trim().replace(/^\/+/, "");
-}
+export const normalizeComposerSkillName = normalizeSlashCommandName;
 
 function matchesComposerSkillQuery(skill: string, query: string): boolean {
   const normalizedSkill = normalizeComposerSkillName(skill).toLowerCase();

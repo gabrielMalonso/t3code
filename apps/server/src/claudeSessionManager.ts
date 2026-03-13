@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { appendFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { updateDiscoveredSkillsCache } from "./skillsCache";
+import { normalizeSlashCommandName } from "@t3tools/shared/strings";
 
 import { query, type SDKMessage, type SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
 import {
@@ -20,23 +20,6 @@ import {
 } from "@t3tools/contracts";
 
 const APPROVAL_TIMEOUT_MS = 120_000;
-const CLAUDE_COMMANDS_DEBUG_LOG_PATH = path.join(
-  process.cwd(),
-  ".context/claude-commands-debug.log",
-);
-
-function appendClaudeCommandsDebug(entry: Record<string, unknown>): void {
-  try {
-    mkdirSync(path.dirname(CLAUDE_COMMANDS_DEBUG_LOG_PATH), { recursive: true });
-    appendFileSync(
-      CLAUDE_COMMANDS_DEBUG_LOG_PATH,
-      `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`,
-      "utf8",
-    );
-  } catch {
-    // Ignore debug logging failures.
-  }
-}
 
 /**
  * When running inside an Electron asar bundle (ELECTRON_RUN_AS_NODE=1),
@@ -127,9 +110,6 @@ function toProviderSession(s: MutableSession): ProviderSession {
   };
 }
 
-function normalizeSlashCommandName(value: string): string {
-  return value.trim().replace(/^\/+/, "");
-}
 
 function readStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
@@ -343,15 +323,6 @@ export class ClaudeSessionManager extends EventEmitter {
           : "default";
 
     context.stderrChunks = [];
-    appendClaudeCommandsDebug({
-      phase: "spawnQuery",
-      threadId,
-      cwd: cwd ?? null,
-      model: model ?? context.mutableSession.model ?? "claude-sonnet-4-6",
-      interactionMode: interactionMode ?? null,
-      runtimeMode: context.mutableSession.runtimeMode,
-      hasResumeSession: context.sdkSessionId !== null,
-    });
 
     const q = query({
       prompt,
@@ -496,22 +467,11 @@ export class ClaudeSessionManager extends EventEmitter {
     context: ClaudeSessionContext,
     q: ReturnType<typeof query>,
   ): void {
-    appendClaudeCommandsDebug({
-      phase: "discoverSupportedCommands:start",
-      threadId,
-    });
-
     // supportedCommands() internally does: (await this.initialization).commands
     // Both methods depend on the same initialization promise.
     q.supportedCommands()
       .then((commands) => {
         if (context.stopping || context.queryInstance !== q) {
-          appendClaudeCommandsDebug({
-            phase: "discoverSupportedCommands:aborted",
-            threadId,
-            stopping: context.stopping,
-            queryInstanceChanged: context.queryInstance !== q,
-          });
           return;
         }
 
@@ -523,14 +483,6 @@ export class ClaudeSessionManager extends EventEmitter {
         const skills = uniqueStrings(
           commandNames.map(normalizeSlashCommandName).filter((name) => name.length > 0),
         );
-
-        appendClaudeCommandsDebug({
-          phase: "discoverSupportedCommands:results",
-          threadId,
-          commandCount: commands?.length ?? 0,
-          commandNames,
-          skills,
-        });
 
         if (skills.length === 0) {
           return;
@@ -546,11 +498,6 @@ export class ClaudeSessionManager extends EventEmitter {
         });
       })
       .catch((err) => {
-        appendClaudeCommandsDebug({
-          phase: "discoverSupportedCommands:error",
-          threadId,
-          error: String(err),
-        });
         console.error("[ClaudeSessionManager] supportedCommands() failed:", String(err));
       });
   }
@@ -571,15 +518,6 @@ export class ClaudeSessionManager extends EventEmitter {
       // SDKSystemMessage has required fields: skills: string[], slash_commands: string[]
       const systemSkills = readStringArray(systemMsg.skills);
       const systemSlashCommands = readStringArray(systemMsg.slash_commands);
-
-      appendClaudeCommandsDebug({
-        phase: "emitSdkMessage:system",
-        threadId,
-        sessionId:
-          typeof systemMsg.session_id === "string" ? systemMsg.session_id : context.sdkSessionId,
-        slashCommands: systemSlashCommands,
-        skills: systemSkills,
-      });
 
       // Emit skills immediately if the system message contains them
       if (systemSkills.length > 0 || systemSlashCommands.length > 0) {
