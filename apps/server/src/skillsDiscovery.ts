@@ -1,3 +1,4 @@
+import type { ProviderKind } from "@t3tools/contracts";
 import { normalizeSlashCommandName } from "@t3tools/shared/strings";
 import { updateDiscoveredSkillsCache } from "./skillsCache";
 
@@ -40,6 +41,7 @@ export function toolNameToRequestType(
  */
 export function discoverSupportedCommands(
   queryInstance: { supportedCommands: () => Promise<Array<{ name?: string }>> },
+  provider: ProviderKind,
   cwd: string | undefined,
   onSkillsDiscovered: (skills: string[], slashCommands: string[]) => void,
 ): void {
@@ -59,7 +61,7 @@ export function discoverSupportedCommands(
       }
 
       if (cwd) {
-        updateDiscoveredSkillsCache(cwd, skills);
+        updateDiscoveredSkillsCache(cwd, provider, skills);
       }
 
       onSkillsDiscovered(skills, commandNames);

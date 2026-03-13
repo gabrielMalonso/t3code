@@ -45,6 +45,13 @@ export type ServerProviderStatus = typeof ServerProviderStatus.Type;
 
 const ServerProviderStatuses = Schema.Array(ServerProviderStatus);
 
+export const ServerAvailableSkillsByProvider = Schema.Struct({
+  codex: Schema.Array(Schema.String),
+  claudeCode: Schema.Array(Schema.String),
+  cursor: Schema.Array(Schema.String),
+});
+export type ServerAvailableSkillsByProvider = typeof ServerAvailableSkillsByProvider.Type;
+
 export const ServerConfig = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   keybindingsConfigPath: TrimmedNonEmptyString,
@@ -52,7 +59,7 @@ export const ServerConfig = Schema.Struct({
   issues: ServerConfigIssues,
   providers: ServerProviderStatuses,
   availableEditors: Schema.Array(EditorId),
-  availableSkills: Schema.optional(Schema.Array(Schema.String)),
+  availableSkillsByProvider: ServerAvailableSkillsByProvider,
 });
 export type ServerConfig = typeof ServerConfig.Type;
 

@@ -7,9 +7,6 @@
  * @module Server
  */
 import http from "node:http";
-import { readdirSync, readFileSync } from "node:fs";
-import { join, basename, extname } from "node:path";
-import { homedir } from "node:os";
 import type { Duplex } from "node:stream";
 
 import Mime from "@effect/platform-node/Mime";
@@ -78,174 +75,10 @@ import {
 import { parseBase64DataUrl } from "./imageMime.ts";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService.ts";
 import { expandHomePath } from "./os-jank.ts";
+import { discoverAvailableSkillsByProvider } from "./providerSkillsDiscovery";
 import { makeServerPushBus } from "./wsServer/pushBus.ts";
 import { makeServerReadiness } from "./wsServer/readiness.ts";
 import { decodeJsonResult, formatSchemaError } from "@t3tools/shared/schemaJson";
-import { getDiscoveredSkillsCache } from "./skillsCache";
-
-/**
- * Read `.md` command files from a single commands directory.
- * Handles both flat files (name.md) and namespaced subdirs (namespace/name.md → namespace:name).
- */
-function readCommandDir(dir: string, commands: string[]): void {
-  try {
-    const entries = readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isFile() && extname(entry.name) === ".md") {
-        commands.push(basename(entry.name, ".md"));
-      }
-      if (entry.isDirectory()) {
-        try {
-          const subEntries = readdirSync(join(dir, entry.name), { withFileTypes: true });
-          for (const subEntry of subEntries) {
-            if (subEntry.isFile() && extname(subEntry.name) === ".md") {
-              commands.push(`${entry.name}:${basename(subEntry.name, ".md")}`);
-            }
-          }
-        } catch {
-          // Ignore unreadable subdirectories.
-        }
-      }
-    }
-  } catch {
-    // Ignore missing directories.
-  }
-}
-
-/**
- * Read enabled plugin names from ~/.claude/settings.json.
- */
-function readEnabledPlugins(): Array<{ pluginName: string; marketplace: string }> {
-  try {
-    const settingsPath = join(homedir(), ".claude", "settings.json");
-    const raw = JSON.parse(readFileSync(settingsPath, "utf8"));
-    const plugins = raw?.plugins ?? {};
-    const result: Array<{ pluginName: string; marketplace: string }> = [];
-    for (const [key, enabled] of Object.entries(plugins)) {
-      if (!enabled) continue;
-      // key format: "plugin-name@marketplace-name"
-      const atIndex = key.lastIndexOf("@");
-      if (atIndex > 0) {
-        result.push({
-          pluginName: key.slice(0, atIndex),
-          marketplace: key.slice(atIndex + 1),
-        });
-      }
-    }
-    return result;
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Discover commands from enabled Claude plugins.
- * Reads commands/ and skills/ directories from each enabled plugin's latest cached version.
- */
-function discoverPluginCommands(): string[] {
-  const commands: string[] = [];
-  const enabledPlugins = readEnabledPlugins();
-  const cacheBase = join(homedir(), ".claude", "plugins", "cache");
-
-  for (const { pluginName, marketplace } of enabledPlugins) {
-    const pluginCacheDir = join(cacheBase, marketplace, pluginName);
-    try {
-      // Pick the latest cached version (most recently modified directory)
-      const versions = readdirSync(pluginCacheDir, { withFileTypes: true })
-        .filter((e) => e.isDirectory())
-        .map((e) => e.name);
-      if (versions.length === 0) continue;
-      // Use last entry after sorting lexically (latest hash is fine)
-      const latestVersion = versions.sort()[versions.length - 1]!;
-      const versionDir = join(pluginCacheDir, latestVersion);
-
-      // Read commands/ directory
-      readCommandDir(join(versionDir, "commands"), commands);
-
-      // Read skills/ directory (skills/<skill-name>/SKILL.md → plugin-name:skill-name)
-      try {
-        const skillDirs = readdirSync(join(versionDir, "skills"), { withFileTypes: true });
-        for (const skillDir of skillDirs) {
-          if (skillDir.isDirectory()) {
-            commands.push(`${pluginName}:${skillDir.name}`);
-          }
-        }
-      } catch {
-        // No skills directory.
-      }
-
-      // Read agents/ directory (agents/<agent-name>.md → plugin-name:agent-name)
-      try {
-        const agentFiles = readdirSync(join(versionDir, "agents"), { withFileTypes: true });
-        for (const agentFile of agentFiles) {
-          if (agentFile.isFile() && extname(agentFile.name) === ".md") {
-            commands.push(`${pluginName}:${basename(agentFile.name, ".md")}`);
-          }
-        }
-      } catch {
-        // No agents directory.
-      }
-    } catch {
-      // Plugin not cached.
-    }
-  }
-
-  return commands;
-}
-
-/**
- * Discover skills from a given skills directory.
- * Each subdirectory containing a SKILL.md is a registered skill.
- */
-function discoverSkillsFromDir(skillsDir: string): string[] {
-  const skills: string[] = [];
-  try {
-    const entries = readdirSync(skillsDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      try {
-        const files = readdirSync(join(skillsDir, entry.name));
-        if (files.some((f) => f.toUpperCase() === "SKILL.MD")) {
-          skills.push(entry.name);
-        }
-      } catch {
-        // Ignore unreadable skill directories.
-      }
-    }
-  } catch {
-    // No skills directory.
-  }
-  return skills;
-}
-
-/**
- * Discover available Claude commands from the filesystem.
- * Reads: user commands, user skills, project commands, enabled plugin commands,
- * then merges with any SDK-discovered skills cached from previous sessions.
- */
-function discoverCommandsFromFilesystem(projectCwd: string, extraProjectCwds?: string[]): string[] {
-  const commands: string[] = [];
-
-  // 1. User-level custom commands (~/.claude/commands/)
-  readCommandDir(join(homedir(), ".claude", "commands"), commands);
-
-  // 2. User-level skills (~/.claude/skills/<name>/SKILL.md)
-  commands.push(...discoverSkillsFromDir(join(homedir(), ".claude", "skills")));
-
-  // 3. Project-level custom commands and skills (server cwd + any extra project cwds)
-  const allCwds = [projectCwd, ...(extraProjectCwds ?? [])];
-  for (const cwd of allCwds) {
-    readCommandDir(join(cwd, ".claude", "commands"), commands);
-    commands.push(...discoverSkillsFromDir(join(cwd, ".claude", "skills")));
-  }
-
-  // 4. Enabled plugin commands
-  commands.push(...discoverPluginCommands());
-
-  // 5. Merge with any previously cached SDK-discovered skills
-  const cached = getDiscoveredSkillsCache(projectCwd);
-  return [...new Set([...commands, ...cached])];
-}
 
 /**
  * ServerShape - Service API for server lifecycle control.
@@ -1053,7 +886,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
           issues: keybindingsConfig.issues,
           providers: providerStatuses,
           availableEditors,
-          availableSkills: discoverCommandsFromFilesystem(cwd, projectCwds),
+          availableSkillsByProvider: discoverAvailableSkillsByProvider(cwd, projectCwds),
         };
       }
 
