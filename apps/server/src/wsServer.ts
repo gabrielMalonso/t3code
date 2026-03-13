@@ -194,12 +194,11 @@ function discoverPluginCommands(): string[] {
 }
 
 /**
- * Discover user-level skills from ~/.claude/skills/.
+ * Discover skills from a given skills directory.
  * Each subdirectory containing a SKILL.md is a registered skill.
  */
-function discoverUserSkills(): string[] {
+function discoverSkillsFromDir(skillsDir: string): string[] {
   const skills: string[] = [];
-  const skillsDir = join(homedir(), ".claude", "skills");
   try {
     const entries = readdirSync(skillsDir, { withFileTypes: true });
     for (const entry of entries) {
@@ -231,12 +230,13 @@ function discoverCommandsFromFilesystem(projectCwd: string, extraProjectCwds?: s
   readCommandDir(join(homedir(), ".claude", "commands"), commands);
 
   // 2. User-level skills (~/.claude/skills/<name>/SKILL.md)
-  commands.push(...discoverUserSkills());
+  commands.push(...discoverSkillsFromDir(join(homedir(), ".claude", "skills")));
 
-  // 3. Project-level custom commands (server cwd + any extra project cwds)
+  // 3. Project-level custom commands and skills (server cwd + any extra project cwds)
   const allCwds = [projectCwd, ...(extraProjectCwds ?? [])];
   for (const cwd of allCwds) {
     readCommandDir(join(cwd, ".claude", "commands"), commands);
+    commands.push(...discoverSkillsFromDir(join(cwd, ".claude", "skills")));
   }
 
   // 4. Enabled plugin commands
