@@ -452,6 +452,7 @@ const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     appId: "com.t3tools.t3code",
     productName,
     artifactName: "T3-Code-${version}-${arch}.${ext}",
+    asarUnpack: ["node_modules/@anthropic-ai/claude-agent-sdk/**"],
     directories: {
       buildResources: "apps/desktop/resources",
     },

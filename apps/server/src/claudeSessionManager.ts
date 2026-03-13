@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 
-import { query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { query, type SDKMessage, type SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
 import {
   ApprovalRequestId,
   EventId,
@@ -16,6 +17,21 @@ import {
 } from "@t3tools/contracts";
 
 const APPROVAL_TIMEOUT_MS = 120_000;
+
+/**
+ * When running inside an Electron asar bundle (ELECTRON_RUN_AS_NODE=1),
+ * child_process.spawn cannot access files inside `app.asar`.
+ * The `asarUnpack` electron-builder config extracts files to `app.asar.unpacked/`,
+ * but plain Node.js doesn't redirect automatically. This helper rewrites paths.
+ */
+const fixAsarPath = (s: string) => s.replaceAll(".asar/", ".asar.unpacked/");
+const RUNNING_INSIDE_ASAR = (() => {
+  try {
+    return require.resolve("@anthropic-ai/claude-agent-sdk").includes(".asar/");
+  } catch {
+    return false;
+  }
+})();
 
 interface MutableSession {
   provider: "claudeCode";
@@ -44,6 +60,7 @@ interface ClaudeSessionContext {
   >;
   stopping: boolean;
   activeTurnId: TurnId | null;
+  stderrChunks: string[];
 }
 
 export interface ClaudeProviderEvent {
@@ -122,6 +139,7 @@ export class ClaudeSessionManager extends EventEmitter {
       pendingApprovals: new Map(),
       stopping: false,
       activeTurnId: null,
+      stderrChunks: [],
     };
 
     this.sessions.set(input.threadId, context);
@@ -287,6 +305,8 @@ export class ClaudeSessionManager extends EventEmitter {
           ? "bypassPermissions"
           : "default";
 
+    context.stderrChunks = [];
+
     const q = query({
       prompt,
       options: {
@@ -298,6 +318,39 @@ export class ClaudeSessionManager extends EventEmitter {
         permissionMode: effectivePermission as "default" | "bypassPermissions" | "plan",
         maxTurns: 200,
         ...(context.sdkSessionId ? { resume: context.sdkSessionId } : {}),
+        stderr: (chunk: string) => {
+          context.stderrChunks.push(chunk);
+        },
+        ...(RUNNING_INSIDE_ASAR
+          ? {
+              spawnClaudeCodeProcess: (config: SpawnOptions) => {
+                const child = spawn(fixAsarPath(config.command), config.args.map(fixAsarPath), {
+                  cwd: config.cwd,
+                  stdio: ["pipe", "pipe", "pipe"],
+                  signal: config.signal,
+                  env: config.env,
+                  windowsHide: true,
+                });
+                child.stderr?.on("data", (chunk: Buffer) => {
+                  context.stderrChunks.push(chunk.toString());
+                });
+                return {
+                  stdin: child.stdin,
+                  stdout: child.stdout,
+                  get killed() {
+                    return child.killed;
+                  },
+                  get exitCode() {
+                    return child.exitCode;
+                  },
+                  kill: child.kill.bind(child),
+                  on: child.on.bind(child),
+                  once: child.once.bind(child),
+                  off: child.off.bind(child),
+                };
+              },
+            }
+          : {}),
         canUseTool: async (
           toolName: string,
           toolInput: Record<string, unknown>,
@@ -353,8 +406,10 @@ export class ClaudeSessionManager extends EventEmitter {
     // Consume the async generator in the background
     this.consumeMessages(context, q).catch((error) => {
       if (!context.stopping) {
-        this.emitEvent(threadId, "runtime.error", String(error), {
-          payload: { message: String(error), class: "provider_error" },
+        const stderr = context.stderrChunks.join("").trim();
+        const errorMsg = stderr ? `${String(error)}\n--- stderr ---\n${stderr}` : String(error);
+        this.emitEvent(threadId, "runtime.error", errorMsg, {
+          payload: { message: errorMsg, class: "provider_error" },
         });
       }
     });
@@ -373,8 +428,10 @@ export class ClaudeSessionManager extends EventEmitter {
       }
     } catch (error) {
       if (!context.stopping) {
-        this.emitEvent(threadId, "runtime.error", String(error), {
-          payload: { message: String(error), class: "provider_error" },
+        const stderr = context.stderrChunks.join("").trim();
+        const errorMsg = stderr ? `${String(error)}\n--- stderr ---\n${stderr}` : String(error);
+        this.emitEvent(threadId, "runtime.error", errorMsg, {
+          payload: { message: errorMsg, class: "provider_error" },
         });
       }
     } finally {
