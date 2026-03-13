@@ -57,6 +57,7 @@ const ClaudeCodeProviderStartOptions = Schema.Struct({
   permissionMode: Schema.optional(
     Schema.Literals(["default", "acceptEdits", "bypassPermissions", "dontAsk", "plan"]),
   ),
+  maxThinkingTokens: Schema.optional(Schema.Number),
 });
 
 export const ProviderStartOptions = Schema.Struct({

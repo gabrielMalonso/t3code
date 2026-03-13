@@ -27,7 +27,7 @@ export const ORCHESTRATION_WS_CHANNELS = {
   domainEvent: "orchestration.domainEvent",
 } as const;
 
-export const ProviderKind = Schema.Literals(["codex", "claudeCode"]);
+export const ProviderKind = Schema.Literals(["codex", "claudeCode", "cursor"]);
 export type ProviderKind = typeof ProviderKind.Type;
 export const ProviderApprovalPolicy = Schema.Literals([
   "untrusted",
@@ -52,6 +52,7 @@ const ClaudeCodeProviderStartOptions = Schema.Struct({
   permissionMode: Schema.optional(
     Schema.Literals(["default", "acceptEdits", "bypassPermissions", "dontAsk", "plan"]),
   ),
+  maxThinkingTokens: Schema.optional(Schema.Number),
 });
 const ProviderStartOptions = Schema.Struct({
   codex: Schema.optional(CodexProviderStartOptions),
