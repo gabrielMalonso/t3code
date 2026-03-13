@@ -1735,6 +1735,7 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
             queryRuntimeWithCommands as {
               supportedCommands: () => Promise<Array<{ name?: string }>>;
             },
+            PROVIDER,
             input.cwd,
             (skills, slashCommands) => {
               if (context.stopped) return;
