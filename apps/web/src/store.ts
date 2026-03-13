@@ -192,7 +192,9 @@ function toLegacySessionStatus(
 }
 
 function normalizeProviderName(providerName: string | null): ProviderKind | null {
-  return providerName === "codex" || providerName === "claudeCode" ? providerName : null;
+  return providerName === "codex" || providerName === "claudeCode" || providerName === "cursor"
+    ? providerName
+    : null;
 }
 
 const CODEX_MODEL_SLUGS = new Set<string>(getModelOptions("codex").map((option) => option.slug));

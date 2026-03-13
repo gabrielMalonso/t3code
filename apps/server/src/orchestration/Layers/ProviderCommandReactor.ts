@@ -12,7 +12,7 @@ import {
   type RuntimeMode,
   type TurnId,
 } from "@t3tools/contracts";
-import { Cache, Cause, Duration, Effect, Layer, Option, Queue, Schema, Stream } from "effect";
+import { Cache, Cause, Duration, Effect, Layer, Option, Schema, Stream } from "effect";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import { inferProviderFromModel } from "@t3tools/shared/model";
 
@@ -207,7 +207,9 @@ const make = Effect.gen(function* () {
 
     const desiredRuntimeMode = thread.runtimeMode;
     const currentProvider: ProviderKind | undefined =
-      thread.session?.providerName === "codex" || thread.session?.providerName === "claudeCode"
+      thread.session?.providerName === "codex" ||
+      thread.session?.providerName === "claudeCode" ||
+      thread.session?.providerName === "cursor"
         ? thread.session.providerName
         : undefined;
     const desiredModel = options?.model ?? thread.model;
