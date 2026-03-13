@@ -584,9 +584,7 @@ export class ClaudeSessionManager extends EventEmitter {
       // Emit skills immediately if the system message contains them
       if (systemSkills.length > 0 || systemSlashCommands.length > 0) {
         const mergedNames = uniqueStrings([...systemSlashCommands, ...systemSkills]);
-        const skills = mergedNames
-          .map(normalizeSlashCommandName)
-          .filter((name) => name.length > 0);
+        const skills = mergedNames.map(normalizeSlashCommandName).filter((name) => name.length > 0);
         if (skills.length > 0) {
           this.emitEvent(threadId, "session/skills-discovered", undefined, {
             payload: { skills, slashCommands: mergedNames },

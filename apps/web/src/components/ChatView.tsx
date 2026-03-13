@@ -3091,9 +3091,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         setPrompt(next.text);
       }
       setComposerCursor(next.cursor);
-      setComposerTrigger(
-        detectComposerTrigger(next.text, next.cursor, sessionSkillsRef.current),
-      );
+      setComposerTrigger(detectComposerTrigger(next.text, next.cursor, sessionSkillsRef.current));
       window.requestAnimationFrame(() => {
         composerEditorRef.current?.focusAt(next.cursor);
       });
