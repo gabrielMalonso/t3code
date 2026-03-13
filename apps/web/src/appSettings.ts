@@ -159,10 +159,12 @@ export function useAppSettings() {
 
   const updateSettings = useCallback(
     (patch: Partial<AppSettings>) => {
-      setSettings((prev) => normalizeAppSettings({
-        ...prev,
-        ...patch,
-      }));
+      setSettings((prev) =>
+        normalizeAppSettings({
+          ...prev,
+          ...patch,
+        }),
+      );
     },
     [setSettings],
   );

@@ -36,7 +36,18 @@ import {
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
-import { Cause, DateTime, Deferred, Duration, Effect, Layer, Queue, Random, Ref, Stream } from "effect";
+import {
+  Cause,
+  DateTime,
+  Deferred,
+  Duration,
+  Effect,
+  Layer,
+  Queue,
+  Random,
+  Ref,
+  Stream,
+} from "effect";
 
 import {
   ProviderAdapterProcessError,
@@ -393,11 +404,7 @@ function toSessionError(
   return undefined;
 }
 
-function toRequestError(
-  threadId: ThreadId,
-  method: string,
-  cause: unknown,
-): ProviderAdapterError {
+function toRequestError(threadId: ThreadId, method: string, cause: unknown): ProviderAdapterError {
   const sessionError = toSessionError(threadId, cause);
   if (sessionError) {
     return sessionError;
@@ -539,40 +546,42 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
         const observedAt = new Date().toISOString();
         const itemId = sdkNativeItemId(message);
 
-        yield* nativeEventLogger
-          .write(
-            {
-              observedAt,
-              event: {
-                id:
-                  "uuid" in message && typeof message.uuid === "string"
-                    ? message.uuid
-                    : crypto.randomUUID(),
-                kind: "notification",
-                provider: PROVIDER,
-                createdAt: observedAt,
-                method: sdkNativeMethod(message),
-                ...(typeof message.session_id === "string"
-                  ? { providerThreadId: message.session_id }
-                  : {}),
-                ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
-                ...(itemId ? { itemId: ProviderItemId.makeUnsafe(itemId) } : {}),
-                payload: message,
-              },
+        yield* nativeEventLogger.write(
+          {
+            observedAt,
+            event: {
+              id:
+                "uuid" in message && typeof message.uuid === "string"
+                  ? message.uuid
+                  : crypto.randomUUID(),
+              kind: "notification",
+              provider: PROVIDER,
+              createdAt: observedAt,
+              method: sdkNativeMethod(message),
+              ...(typeof message.session_id === "string"
+                ? { providerThreadId: message.session_id }
+                : {}),
+              ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+              ...(itemId ? { itemId: ProviderItemId.makeUnsafe(itemId) } : {}),
+              payload: message,
             },
-            null,
-          );
+          },
+          null,
+        );
       });
 
     const snapshotThread = (
       context: ClaudeSessionContext,
-    ): Effect.Effect<{
-      threadId: ThreadId;
-      turns: ReadonlyArray<{
-        id: TurnId;
-        items: ReadonlyArray<unknown>;
-      }>;
-    }, ProviderAdapterValidationError> =>
+    ): Effect.Effect<
+      {
+        threadId: ThreadId;
+        turns: ReadonlyArray<{
+          id: TurnId;
+          items: ReadonlyArray<unknown>;
+        }>;
+      },
+      ProviderAdapterValidationError
+    > =>
       Effect.gen(function* () {
         const threadId = context.session.threadId;
         if (!threadId) {
@@ -1530,7 +1539,9 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
                 provider: PROVIDER,
                 createdAt: requestedStamp.createdAt,
                 threadId: context.session.threadId,
-                ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+                ...(context.turnState
+                  ? { turnId: asCanonicalTurnId(context.turnState.turnId) }
+                  : {}),
                 requestId: asRuntimeRequestId(requestId),
                 payload: {
                   requestType,
@@ -1545,7 +1556,9 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
                   ...(context.session.threadId
                     ? { providerThreadId: context.session.threadId }
                     : {}),
-                  ...(context.turnState ? { providerTurnId: String(context.turnState.turnId) } : {}),
+                  ...(context.turnState
+                    ? { providerTurnId: String(context.turnState.turnId) }
+                    : {}),
                   providerRequestId: requestId,
                 },
                 raw: {
@@ -1587,7 +1600,9 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
                 provider: PROVIDER,
                 createdAt: resolvedStamp.createdAt,
                 threadId: context.session.threadId,
-                ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+                ...(context.turnState
+                  ? { turnId: asCanonicalTurnId(context.turnState.turnId) }
+                  : {}),
                 requestId: asRuntimeRequestId(requestId),
                 payload: {
                   requestType,
@@ -1597,7 +1612,9 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
                   ...(context.session.threadId
                     ? { providerThreadId: context.session.threadId }
                     : {}),
-                  ...(context.turnState ? { providerTurnId: String(context.turnState.turnId) } : {}),
+                  ...(context.turnState
+                    ? { providerTurnId: String(context.turnState.turnId) }
+                    : {}),
                   providerRequestId: requestId,
                 },
                 raw: {
@@ -1715,7 +1732,9 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
         };
         if (typeof queryRuntimeWithCommands.supportedCommands === "function") {
           discoverSupportedCommands(
-            queryRuntimeWithCommands as { supportedCommands: () => Promise<Array<{ name?: string }>> },
+            queryRuntimeWithCommands as {
+              supportedCommands: () => Promise<Array<{ name?: string }>>;
+            },
             input.cwd,
             (skills, slashCommands) => {
               if (context.stopped) return;
