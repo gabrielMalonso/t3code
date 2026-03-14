@@ -1,4 +1,4 @@
-import { MessageId, ThreadId } from "@t3tools/contracts";
+import { MessageId, SubThreadId, ThreadId } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
@@ -31,6 +31,7 @@ layer("ProjectionThreadMessageRepository", (it) => {
       yield* repository.upsert({
         messageId,
         threadId,
+        subThreadId: SubThreadId.makeUnsafe("sub-thread-default"),
         turnId: null,
         role: "user",
         text: "initial",
@@ -43,6 +44,7 @@ layer("ProjectionThreadMessageRepository", (it) => {
       yield* repository.upsert({
         messageId,
         threadId,
+        subThreadId: SubThreadId.makeUnsafe("sub-thread-default"),
         turnId: null,
         role: "user",
         text: "updated",
@@ -68,6 +70,7 @@ layer("ProjectionThreadMessageRepository", (it) => {
       yield* repository.upsert({
         messageId,
         threadId,
+        subThreadId: SubThreadId.makeUnsafe("sub-thread-default"),
         turnId: null,
         role: "assistant",
         text: "with attachment",
@@ -88,6 +91,7 @@ layer("ProjectionThreadMessageRepository", (it) => {
       yield* repository.upsert({
         messageId,
         threadId,
+        subThreadId: SubThreadId.makeUnsafe("sub-thread-default"),
         turnId: null,
         role: "assistant",
         text: "cleared",

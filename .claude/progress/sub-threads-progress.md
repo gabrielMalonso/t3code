@@ -48,8 +48,16 @@
 
 ### Wave 5: Client — Routing e Tab Bar
 
-- Status: PENDENTE
+- Status: CONCLUIDO
 - Tarefas: 5.1-5.7
+- Step 5.1: Nova rota _chat.$threadId.$subThreadId.tsx criada com ChatView recebendo ambos params, SubThreadTabBar integrado, callbacks wired para commands (create/select/rename/close sub-thread)
+- Step 5.2: _chat.$threadId.tsx convertida em redirect que resolve activeSubThreadId e navega para /$threadId/$subThreadId. Draft threads renderizados inline com DraftThreadFallback. Search params preservados no redirect.
+- Step 5.3: SubThreadTabBar.tsx criado em components/chat/ com tabs horizontais, botao +, inline editing (double-click), context menu (Rename/Close), botao X, warning de sessoes multiplas
+- Step 5.4: TabBar integrado na rota sub-thread, callbacks wired para dispatchCommand (thread.sub-thread.create, thread.active-sub-thread.set, thread.sub-thread.meta.update, thread.sub-thread.delete). newSubThreadId() adicionado em lib/utils.ts
+- Step 5.5: Sidebar atualizado para navegar com /$threadId/$subThreadId via getActiveSubThread() em handleThreadClick, focusMostRecentThreadForProject, keyboard nav, e delete fallback. Outros navigate calls usam redirect via /$threadId
+- Step 5.6: Warning visual com AlertTriangleIcon + Tooltip quando >1 sub-thread tem sessao ativa (status !== "closed")
+- Step 5.7: Validacao: fmt OK, lint OK (0 errors), web typecheck OK, web tests 437/437 OK. Server production code typecheck OK. Server test files precisam de atualizacao de mocks (thread schema antigo -> subThreads[]), parcialmente feito (projector.test.ts, ProjectionThreadMessages.test.ts, CheckpointDiffQuery.test.ts, commandInvariants.test.ts atualizados)
+- Bonus: Corrigidos erros em codigo de producao do server (CheckpointDiffQuery.ts, CheckpointReactor.ts, ProviderRuntimeIngestion.ts, ProviderCommandReactor.ts, ProjectionPipeline.ts) que acessavam thread.checkpoints/session/messages diretamente - migrados para resolveActiveSubThread(thread)
 
 ## Descobertas dos Subagentes
 
@@ -70,3 +78,4 @@
 - Steps 1.2-1.8: OrchestrationSubThread criado, OrchestrationThread refatorado (campos movidos para SubThread, adicionados subThreads + activeSubThreadId), subThreadId adicionado em 15 payloads e 16 commands, 4 novos commands (sub-thread.create/delete/meta.update, active-sub-thread.set), 4 novos events (sub-thread-created/deleted/meta-updated, active-sub-thread-set). Contracts typecheck OK.
 - Wave 2 (Steps 2.1-2.9): Server decider e projector atualizados. Decider: thread.create emite 2 events, 4 novos command cases, subThreadId forwarding em 15 commands. Projector: updateSubThread helper, 4 novos event handlers, 8 handlers existentes migrados para updateSubThread. Validacao: fmt/lint/typecheck OK nos arquivos Wave 2.
 - Wave 4 (Steps 4.1-4.6): Client types e store atualizados. SubThread interface criada, Thread refatorada, getActiveSubThread helper. syncServerReadModel mapeia sub-threads. 11 arquivos de componentes atualizados. fmt/lint/typecheck OK para @t3tools/web. Testes unitarios passam (store 7/7, worktreeCleanup 9/9).
+- Wave 5 (Steps 5.1-5.7): Client routing e tab bar implementados. Nova rota /$threadId/$subThreadId com SubThreadTabBar. Rota /$threadId convertida em redirect. Sidebar navega diretamente para sub-thread. routeTree.gen.ts auto-regenerada pelo TanStack Router plugin. Server production code migrado para resolveActiveSubThread() pattern. Server test mocks parcialmente atualizados.

@@ -395,10 +395,18 @@ export default function Sidebar() {
         })[0];
       if (!latestThread) return;
 
-      void navigate({
-        to: "/$threadId",
-        params: { threadId: latestThread.id },
-      });
+      const activeSubThread = getActiveSubThread(latestThread);
+      if (activeSubThread) {
+        void navigate({
+          to: "/$threadId/$subThreadId",
+          params: { threadId: latestThread.id, subThreadId: activeSubThread.id },
+        });
+      } else {
+        void navigate({
+          to: "/$threadId",
+          params: { threadId: latestThread.id },
+        });
+      }
     },
     [navigate, threads],
   );
@@ -622,11 +630,21 @@ export default function Sidebar() {
       clearTerminalState(threadId);
       if (shouldNavigateToFallback) {
         if (fallbackThreadId) {
-          void navigate({
-            to: "/$threadId",
-            params: { threadId: fallbackThreadId },
-            replace: true,
-          });
+          const fallbackThread = threads.find((t) => t.id === fallbackThreadId);
+          const fallbackSubThread = fallbackThread ? getActiveSubThread(fallbackThread) : undefined;
+          if (fallbackSubThread) {
+            void navigate({
+              to: "/$threadId/$subThreadId",
+              params: { threadId: fallbackThreadId, subThreadId: fallbackSubThread.id },
+              replace: true,
+            });
+          } else {
+            void navigate({
+              to: "/$threadId",
+              params: { threadId: fallbackThreadId },
+              replace: true,
+            });
+          }
         } else {
           void navigate({ to: "/", replace: true });
         }
@@ -808,10 +826,19 @@ export default function Sidebar() {
         clearSelection();
       }
       setSelectionAnchor(threadId);
-      void navigate({
-        to: "/$threadId",
-        params: { threadId },
-      });
+      const clickedThread = threads.find((t) => t.id === threadId);
+      const activeSubThread = clickedThread ? getActiveSubThread(clickedThread) : undefined;
+      if (activeSubThread) {
+        void navigate({
+          to: "/$threadId/$subThreadId",
+          params: { threadId, subThreadId: activeSubThread.id },
+        });
+      } else {
+        void navigate({
+          to: "/$threadId",
+          params: { threadId },
+        });
+      }
     },
     [
       clearSelection,
@@ -819,6 +846,7 @@ export default function Sidebar() {
       rangeSelectTo,
       selectedThreadIds.size,
       setSelectionAnchor,
+      threads,
       toggleThreadSelection,
     ],
   );
@@ -1431,10 +1459,21 @@ export default function Sidebar() {
                                           clearSelection();
                                         }
                                         setSelectionAnchor(thread.id);
-                                        void navigate({
-                                          to: "/$threadId",
-                                          params: { threadId: thread.id },
-                                        });
+                                        const subThread = getActiveSubThread(thread);
+                                        if (subThread) {
+                                          void navigate({
+                                            to: "/$threadId/$subThreadId",
+                                            params: {
+                                              threadId: thread.id,
+                                              subThreadId: subThread.id,
+                                            },
+                                          });
+                                        } else {
+                                          void navigate({
+                                            to: "/$threadId",
+                                            params: { threadId: thread.id },
+                                          });
+                                        }
                                       }}
                                       onContextMenu={(event) => {
                                         event.preventDefault();

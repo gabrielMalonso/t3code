@@ -2,6 +2,7 @@ import {
   CommandId,
   EventId,
   ProjectId,
+  SubThreadId,
   ThreadId,
   type OrchestrationEvent,
 } from "@t3tools/contracts";
@@ -37,60 +38,159 @@ function makeEvent(input: {
   } as OrchestrationEvent;
 }
 
+const DEFAULT_SUB_THREAD_ID = SubThreadId.makeUnsafe("sub-thread-default");
+
+/**
+ * Helper: creates a thread.sub-thread-created event that mirrors the decider behavior.
+ */
+function makeSubThreadCreatedEvent(input: {
+  sequence: number;
+  threadId: string;
+  subThreadId?: string;
+  model: string;
+  occurredAt: string;
+  commandId: string;
+}): OrchestrationEvent {
+  return makeEvent({
+    sequence: input.sequence,
+    type: "thread.sub-thread-created",
+    aggregateKind: "thread",
+    aggregateId: input.threadId,
+    occurredAt: input.occurredAt,
+    commandId: input.commandId,
+    payload: {
+      threadId: input.threadId,
+      subThreadId: input.subThreadId ?? DEFAULT_SUB_THREAD_ID,
+      title: "Main",
+      model: input.model,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      createdAt: input.occurredAt,
+      updatedAt: input.occurredAt,
+    },
+  });
+}
+
+/**
+ * Helper: creates a thread.active-sub-thread-set event.
+ */
+function makeActiveSubThreadSetEvent(input: {
+  sequence: number;
+  threadId: string;
+  subThreadId?: string;
+  occurredAt: string;
+  commandId: string;
+}): OrchestrationEvent {
+  return makeEvent({
+    sequence: input.sequence,
+    type: "thread.active-sub-thread-set",
+    aggregateKind: "thread",
+    aggregateId: input.threadId,
+    occurredAt: input.occurredAt,
+    commandId: input.commandId,
+    payload: {
+      threadId: input.threadId,
+      subThreadId: input.subThreadId ?? DEFAULT_SUB_THREAD_ID,
+    },
+  });
+}
+
+/**
+ * Helper: applies thread.created + thread.sub-thread-created + thread.active-sub-thread-set
+ * to a read model and returns the result. Mirrors the decider behavior for thread.create.
+ */
+async function applyThreadCreation(
+  model: ReturnType<typeof createEmptyReadModel>,
+  input: {
+    baseSequence: number;
+    threadId: string;
+    projectId: string;
+    title: string;
+    modelSlug: string;
+    occurredAt: string;
+    commandId: string;
+    subThreadId?: string;
+  },
+): Promise<ReturnType<typeof createEmptyReadModel>> {
+  const afterCreate = await Effect.runPromise(
+    projectEvent(
+      model,
+      makeEvent({
+        sequence: input.baseSequence,
+        type: "thread.created",
+        aggregateKind: "thread",
+        aggregateId: input.threadId,
+        occurredAt: input.occurredAt,
+        commandId: input.commandId,
+        payload: {
+          threadId: input.threadId,
+          projectId: input.projectId,
+          title: input.title,
+          model: input.modelSlug,
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt: input.occurredAt,
+          updatedAt: input.occurredAt,
+        },
+      }),
+    ),
+  );
+  const afterSubThread = await Effect.runPromise(
+    projectEvent(
+      afterCreate,
+      makeSubThreadCreatedEvent({
+        sequence: input.baseSequence + 1,
+        threadId: input.threadId,
+        subThreadId: input.subThreadId,
+        model: input.modelSlug,
+        occurredAt: input.occurredAt,
+        commandId: `${input.commandId}-sub`,
+      }),
+    ),
+  );
+  return Effect.runPromise(
+    projectEvent(
+      afterSubThread,
+      makeActiveSubThreadSetEvent({
+        sequence: input.baseSequence + 2,
+        threadId: input.threadId,
+        subThreadId: input.subThreadId,
+        occurredAt: input.occurredAt,
+        commandId: `${input.commandId}-active`,
+      }),
+    ),
+  );
+}
+
 describe("orchestration projector", () => {
   it("applies thread.created events", async () => {
     const now = new Date().toISOString();
     const model = createEmptyReadModel(now);
 
-    const next = await Effect.runPromise(
-      projectEvent(
-        model,
-        makeEvent({
-          sequence: 1,
-          type: "thread.created",
-          aggregateKind: "thread",
-          aggregateId: "thread-1",
-          occurredAt: now,
-          commandId: "cmd-thread-create",
-          payload: {
-            threadId: "thread-1",
-            projectId: "project-1",
-            title: "demo",
-            model: "gpt-5-codex",
-            runtimeMode: "full-access",
-            branch: null,
-            worktreePath: null,
-            createdAt: now,
-            updatedAt: now,
-          },
-        }),
-      ),
-    );
+    const next = await applyThreadCreation(model, {
+      baseSequence: 1,
+      threadId: "thread-1",
+      projectId: "project-1",
+      title: "demo",
+      modelSlug: "gpt-5-codex",
+      occurredAt: now,
+      commandId: "cmd-thread-create",
+    });
 
-    expect(next.snapshotSequence).toBe(1);
-    expect(next.threads).toEqual([
-      {
-        id: "thread-1",
-        projectId: "project-1",
-        title: "demo",
-        model: "gpt-5-codex",
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        branch: null,
-        worktreePath: null,
-        sourceThreadId: null,
-        implementationThreadId: null,
-        latestTurn: null,
-        createdAt: now,
-        updatedAt: now,
-        deletedAt: null,
-        messages: [],
-        proposedPlans: [],
-        activities: [],
-        checkpoints: [],
-        session: null,
-      },
-    ]);
+    expect(next.snapshotSequence).toBe(3);
+    const thread = next.threads[0];
+    expect(thread).toBeDefined();
+    expect(thread?.id).toBe("thread-1");
+    expect(thread?.projectId).toBe("project-1");
+    expect(thread?.title).toBe("demo");
+    expect(thread?.subThreads).toHaveLength(1);
+    expect(thread?.activeSubThreadId).toBe(DEFAULT_SUB_THREAD_ID);
+    const sub = thread?.subThreads[0];
+    expect(sub?.model).toBe("gpt-5-codex");
+    expect(sub?.runtimeMode).toBe("full-access");
+    expect(sub?.messages).toEqual([]);
+    expect(sub?.session).toBeNull();
   });
 
   it("fails when event payload cannot be decoded by runtime schema", async () => {
@@ -158,36 +258,21 @@ describe("orchestration projector", () => {
     const startedAt = "2026-02-23T08:00:05.000Z";
     const model = createEmptyReadModel(createdAt);
 
-    const afterCreate = await Effect.runPromise(
-      projectEvent(
-        model,
-        makeEvent({
-          sequence: 1,
-          type: "thread.created",
-          aggregateKind: "thread",
-          aggregateId: "thread-1",
-          occurredAt: createdAt,
-          commandId: "cmd-create",
-          payload: {
-            threadId: "thread-1",
-            projectId: "project-1",
-            title: "demo",
-            model: "gpt-5.3-codex",
-            runtimeMode: "full-access",
-            branch: null,
-            worktreePath: null,
-            createdAt,
-            updatedAt: createdAt,
-          },
-        }),
-      ),
-    );
+    const afterCreate = await applyThreadCreation(model, {
+      baseSequence: 1,
+      threadId: "thread-1",
+      projectId: "project-1",
+      title: "demo",
+      modelSlug: "gpt-5.3-codex",
+      occurredAt: createdAt,
+      commandId: "cmd-create",
+    });
 
     const afterRunning = await Effect.runPromise(
       projectEvent(
         afterCreate,
         makeEvent({
-          sequence: 2,
+          sequence: 10,
           type: "thread.session-set",
           aggregateKind: "thread",
           aggregateId: "thread-1",
@@ -211,9 +296,9 @@ describe("orchestration projector", () => {
       ),
     );
 
-    const thread = afterRunning.threads[0];
-    expect(thread?.latestTurn?.turnId).toBe("turn-1");
-    expect(thread?.session?.status).toBe("running");
+    const sub = afterRunning.threads[0]?.subThreads[0];
+    expect(sub?.latestTurn?.turnId).toBe("turn-1");
+    expect(sub?.session?.status).toBe("running");
   });
 
   it("updates canonical thread runtime mode from thread.runtime-mode-set", async () => {
@@ -221,36 +306,21 @@ describe("orchestration projector", () => {
     const updatedAt = "2026-02-23T08:00:05.000Z";
     const model = createEmptyReadModel(createdAt);
 
-    const afterCreate = await Effect.runPromise(
-      projectEvent(
-        model,
-        makeEvent({
-          sequence: 1,
-          type: "thread.created",
-          aggregateKind: "thread",
-          aggregateId: "thread-1",
-          occurredAt: createdAt,
-          commandId: "cmd-create",
-          payload: {
-            threadId: "thread-1",
-            projectId: "project-1",
-            title: "demo",
-            model: "gpt-5.3-codex",
-            runtimeMode: "full-access",
-            branch: null,
-            worktreePath: null,
-            createdAt,
-            updatedAt: createdAt,
-          },
-        }),
-      ),
-    );
+    const afterCreate = await applyThreadCreation(model, {
+      baseSequence: 1,
+      threadId: "thread-1",
+      projectId: "project-1",
+      title: "demo",
+      modelSlug: "gpt-5.3-codex",
+      occurredAt: createdAt,
+      commandId: "cmd-create",
+    });
 
     const afterUpdate = await Effect.runPromise(
       projectEvent(
         afterCreate,
         makeEvent({
-          sequence: 2,
+          sequence: 10,
           type: "thread.runtime-mode-set",
           aggregateKind: "thread",
           aggregateId: "thread-1",
@@ -265,7 +335,7 @@ describe("orchestration projector", () => {
       ),
     );
 
-    expect(afterUpdate.threads[0]?.runtimeMode).toBe("approval-required");
+    expect(afterUpdate.threads[0]?.subThreads[0]?.runtimeMode).toBe("approval-required");
     expect(afterUpdate.threads[0]?.updatedAt).toBe(updatedAt);
   });
 
@@ -275,36 +345,21 @@ describe("orchestration projector", () => {
     const completeAt = "2026-02-23T09:00:03.500Z";
     const model = createEmptyReadModel(createdAt);
 
-    const afterCreate = await Effect.runPromise(
-      projectEvent(
-        model,
-        makeEvent({
-          sequence: 1,
-          type: "thread.created",
-          aggregateKind: "thread",
-          aggregateId: "thread-1",
-          occurredAt: createdAt,
-          commandId: "cmd-create",
-          payload: {
-            threadId: "thread-1",
-            projectId: "project-1",
-            title: "demo",
-            model: "gpt-5.3-codex",
-            runtimeMode: "full-access",
-            branch: null,
-            worktreePath: null,
-            createdAt,
-            updatedAt: createdAt,
-          },
-        }),
-      ),
-    );
+    const afterCreate = await applyThreadCreation(model, {
+      baseSequence: 1,
+      threadId: "thread-1",
+      projectId: "project-1",
+      title: "demo",
+      modelSlug: "gpt-5.3-codex",
+      occurredAt: createdAt,
+      commandId: "cmd-create",
+    });
 
     const afterDelta = await Effect.runPromise(
       projectEvent(
         afterCreate,
         makeEvent({
-          sequence: 2,
+          sequence: 10,
           type: "thread.message-sent",
           aggregateKind: "thread",
           aggregateId: "thread-1",
@@ -328,7 +383,7 @@ describe("orchestration projector", () => {
       projectEvent(
         afterDelta,
         makeEvent({
-          sequence: 3,
+          sequence: 11,
           type: "thread.message-sent",
           aggregateKind: "thread",
           aggregateId: "thread-1",
@@ -348,7 +403,7 @@ describe("orchestration projector", () => {
       ),
     );
 
-    const message = afterComplete.threads[0]?.messages[0];
+    const message = afterComplete.threads[0]?.subThreads[0]?.messages[0];
     expect(message?.id).toBe("assistant:msg-1");
     expect(message?.text).toBe("hello");
     expect(message?.streaming).toBe(false);
@@ -359,34 +414,19 @@ describe("orchestration projector", () => {
     const createdAt = "2026-02-23T10:00:00.000Z";
     const model = createEmptyReadModel(createdAt);
 
-    const afterCreate = await Effect.runPromise(
-      projectEvent(
-        model,
-        makeEvent({
-          sequence: 1,
-          type: "thread.created",
-          aggregateKind: "thread",
-          aggregateId: "thread-1",
-          occurredAt: createdAt,
-          commandId: "cmd-create",
-          payload: {
-            threadId: "thread-1",
-            projectId: "project-1",
-            title: "demo",
-            model: "gpt-5.3-codex",
-            runtimeMode: "full-access",
-            branch: null,
-            worktreePath: null,
-            createdAt,
-            updatedAt: createdAt,
-          },
-        }),
-      ),
-    );
+    const afterCreate = await applyThreadCreation(model, {
+      baseSequence: 1,
+      threadId: "thread-1",
+      projectId: "project-1",
+      title: "demo",
+      modelSlug: "gpt-5.3-codex",
+      occurredAt: createdAt,
+      commandId: "cmd-create",
+    });
 
     const events: ReadonlyArray<OrchestrationEvent> = [
       makeEvent({
-        sequence: 2,
+        sequence: 10,
         type: "thread.message-sent",
         aggregateKind: "thread",
         aggregateId: "thread-1",
@@ -404,7 +444,7 @@ describe("orchestration projector", () => {
         },
       }),
       makeEvent({
-        sequence: 3,
+        sequence: 11,
         type: "thread.message-sent",
         aggregateKind: "thread",
         aggregateId: "thread-1",
@@ -422,7 +462,7 @@ describe("orchestration projector", () => {
         },
       }),
       makeEvent({
-        sequence: 4,
+        sequence: 12,
         type: "thread.turn-diff-completed",
         aggregateKind: "thread",
         aggregateId: "thread-1",
@@ -440,7 +480,7 @@ describe("orchestration projector", () => {
         },
       }),
       makeEvent({
-        sequence: 5,
+        sequence: 13,
         type: "thread.activity-appended",
         aggregateKind: "thread",
         aggregateId: "thread-1",
@@ -460,7 +500,7 @@ describe("orchestration projector", () => {
         },
       }),
       makeEvent({
-        sequence: 6,
+        sequence: 14,
         type: "thread.message-sent",
         aggregateKind: "thread",
         aggregateId: "thread-1",
@@ -478,7 +518,7 @@ describe("orchestration projector", () => {
         },
       }),
       makeEvent({
-        sequence: 7,
+        sequence: 15,
         type: "thread.message-sent",
         aggregateKind: "thread",
         aggregateId: "thread-1",
@@ -496,7 +536,7 @@ describe("orchestration projector", () => {
         },
       }),
       makeEvent({
-        sequence: 8,
+        sequence: 16,
         type: "thread.turn-diff-completed",
         aggregateKind: "thread",
         aggregateId: "thread-1",
@@ -514,7 +554,7 @@ describe("orchestration projector", () => {
         },
       }),
       makeEvent({
-        sequence: 9,
+        sequence: 17,
         type: "thread.activity-appended",
         aggregateKind: "thread",
         aggregateId: "thread-1",
@@ -534,7 +574,7 @@ describe("orchestration projector", () => {
         },
       }),
       makeEvent({
-        sequence: 10,
+        sequence: 18,
         type: "thread.reverted",
         aggregateKind: "thread",
         aggregateId: "thread-1",
@@ -553,52 +593,35 @@ describe("orchestration projector", () => {
       Promise.resolve(afterCreate),
     );
 
-    const thread = afterRevert.threads[0];
-    expect(thread?.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual(
-      [
-        { role: "user", text: "First edit" },
-        { role: "assistant", text: "Updated README to v2.\n" },
-      ],
-    );
+    const sub = afterRevert.threads[0]?.subThreads[0];
+    expect(sub?.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: "user", text: "First edit" },
+      { role: "assistant", text: "Updated README to v2.\n" },
+    ]);
     expect(
-      thread?.activities.map((activity) => ({ id: activity.id, turnId: activity.turnId })),
+      sub?.activities.map((activity) => ({ id: activity.id, turnId: activity.turnId })),
     ).toEqual([{ id: "activity-1", turnId: "turn-1" }]);
-    expect(thread?.checkpoints.map((checkpoint) => checkpoint.checkpointTurnCount)).toEqual([1]);
-    expect(thread?.latestTurn?.turnId).toBe("turn-1");
+    expect(sub?.checkpoints.map((checkpoint) => checkpoint.checkpointTurnCount)).toEqual([1]);
+    expect(sub?.latestTurn?.turnId).toBe("turn-1");
   });
 
   it("does not fallback-retain messages tied to removed turn IDs", async () => {
     const createdAt = "2026-02-26T12:00:00.000Z";
     const model = createEmptyReadModel(createdAt);
 
-    const afterCreate = await Effect.runPromise(
-      projectEvent(
-        model,
-        makeEvent({
-          sequence: 1,
-          type: "thread.created",
-          aggregateKind: "thread",
-          aggregateId: "thread-revert",
-          occurredAt: createdAt,
-          commandId: "cmd-create-revert",
-          payload: {
-            threadId: "thread-revert",
-            projectId: "project-1",
-            title: "demo",
-            model: "gpt-5.3-codex",
-            runtimeMode: "full-access",
-            branch: null,
-            worktreePath: null,
-            createdAt,
-            updatedAt: createdAt,
-          },
-        }),
-      ),
-    );
+    const afterCreate = await applyThreadCreation(model, {
+      baseSequence: 1,
+      threadId: "thread-revert",
+      projectId: "project-1",
+      title: "demo",
+      modelSlug: "gpt-5.3-codex",
+      occurredAt: createdAt,
+      commandId: "cmd-create-revert",
+    });
 
     const events: ReadonlyArray<OrchestrationEvent> = [
       makeEvent({
-        sequence: 2,
+        sequence: 10,
         type: "thread.turn-diff-completed",
         aggregateKind: "thread",
         aggregateId: "thread-revert",
@@ -616,7 +639,7 @@ describe("orchestration projector", () => {
         },
       }),
       makeEvent({
-        sequence: 3,
+        sequence: 11,
         type: "thread.message-sent",
         aggregateKind: "thread",
         aggregateId: "thread-revert",
@@ -634,7 +657,7 @@ describe("orchestration projector", () => {
         },
       }),
       makeEvent({
-        sequence: 4,
+        sequence: 12,
         type: "thread.turn-diff-completed",
         aggregateKind: "thread",
         aggregateId: "thread-revert",
@@ -652,7 +675,7 @@ describe("orchestration projector", () => {
         },
       }),
       makeEvent({
-        sequence: 5,
+        sequence: 13,
         type: "thread.message-sent",
         aggregateKind: "thread",
         aggregateId: "thread-revert",
@@ -670,7 +693,7 @@ describe("orchestration projector", () => {
         },
       }),
       makeEvent({
-        sequence: 6,
+        sequence: 14,
         type: "thread.message-sent",
         aggregateKind: "thread",
         aggregateId: "thread-revert",
@@ -688,7 +711,7 @@ describe("orchestration projector", () => {
         },
       }),
       makeEvent({
-        sequence: 7,
+        sequence: 15,
         type: "thread.reverted",
         aggregateKind: "thread",
         aggregateId: "thread-revert",
@@ -707,9 +730,9 @@ describe("orchestration projector", () => {
       Promise.resolve(afterCreate),
     );
 
-    const thread = afterRevert.threads[0];
+    const sub = afterRevert.threads[0]?.subThreads[0];
     expect(
-      thread?.messages.map((message) => ({
+      sub?.messages.map((message) => ({
         id: message.id,
         role: message.role,
         turnId: message.turnId,
@@ -721,36 +744,21 @@ describe("orchestration projector", () => {
     const createdAt = "2026-03-01T10:00:00.000Z";
     const model = createEmptyReadModel(createdAt);
 
-    const afterCreate = await Effect.runPromise(
-      projectEvent(
-        model,
-        makeEvent({
-          sequence: 1,
-          type: "thread.created",
-          aggregateKind: "thread",
-          aggregateId: "thread-capped",
-          occurredAt: createdAt,
-          commandId: "cmd-create-capped",
-          payload: {
-            threadId: "thread-capped",
-            projectId: "project-1",
-            title: "capped",
-            model: "gpt-5-codex",
-            runtimeMode: "full-access",
-            branch: null,
-            worktreePath: null,
-            createdAt,
-            updatedAt: createdAt,
-          },
-        }),
-      ),
-    );
+    const afterCreate = await applyThreadCreation(model, {
+      baseSequence: 1,
+      threadId: "thread-capped",
+      projectId: "project-1",
+      title: "capped",
+      modelSlug: "gpt-5-codex",
+      occurredAt: createdAt,
+      commandId: "cmd-create-capped",
+    });
 
     const messageEvents: ReadonlyArray<OrchestrationEvent> = Array.from(
       { length: 2_100 },
       (_, index) =>
         makeEvent({
-          sequence: index + 2,
+          sequence: index + 10,
           type: "thread.message-sent",
           aggregateKind: "thread",
           aggregateId: "thread-capped",
@@ -780,7 +788,7 @@ describe("orchestration projector", () => {
       { length: 600 },
       (_, index) =>
         makeEvent({
-          sequence: index + 2_102,
+          sequence: index + 2_200,
           type: "thread.turn-diff-completed",
           aggregateKind: "thread",
           aggregateId: "thread-capped",
@@ -806,12 +814,12 @@ describe("orchestration projector", () => {
       Promise.resolve(afterMessages),
     );
 
-    const thread = finalState.threads[0];
-    expect(thread?.messages).toHaveLength(2_000);
-    expect(thread?.messages[0]?.id).toBe("msg-100");
-    expect(thread?.messages.at(-1)?.id).toBe("msg-2099");
-    expect(thread?.checkpoints).toHaveLength(500);
-    expect(thread?.checkpoints[0]?.turnId).toBe("turn-100");
-    expect(thread?.checkpoints.at(-1)?.turnId).toBe("turn-599");
+    const sub = finalState.threads[0]?.subThreads[0];
+    expect(sub?.messages).toHaveLength(2_000);
+    expect(sub?.messages[0]?.id).toBe("msg-100");
+    expect(sub?.messages.at(-1)?.id).toBe("msg-2099");
+    expect(sub?.checkpoints).toHaveLength(500);
+    expect(sub?.checkpoints[0]?.turnId).toBe("turn-100");
+    expect(sub?.checkpoints.at(-1)?.turnId).toBe("turn-599");
   });
 });

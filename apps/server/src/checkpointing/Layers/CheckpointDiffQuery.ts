@@ -50,7 +50,11 @@ const make = Effect.gen(function* () {
         });
       }
 
-      const maxTurnCount = thread.checkpoints.reduce(
+      const activeSubThread =
+        thread.subThreads.find((s) => s.id === thread.activeSubThreadId) ?? thread.subThreads[0];
+      const checkpoints = activeSubThread?.checkpoints ?? [];
+
+      const maxTurnCount = checkpoints.reduce(
         (max, checkpoint) => Math.max(max, checkpoint.checkpointTurnCount),
         0,
       );
@@ -76,9 +80,8 @@ const make = Effect.gen(function* () {
       const fromCheckpointRef =
         input.fromTurnCount === 0
           ? checkpointRefForThreadTurn(input.threadId, 0)
-          : thread.checkpoints.find(
-              (checkpoint) => checkpoint.checkpointTurnCount === input.fromTurnCount,
-            )?.checkpointRef;
+          : checkpoints.find((checkpoint) => checkpoint.checkpointTurnCount === input.fromTurnCount)
+              ?.checkpointRef;
       if (!fromCheckpointRef) {
         return yield* new CheckpointUnavailableError({
           threadId: input.threadId,
@@ -87,7 +90,7 @@ const make = Effect.gen(function* () {
         });
       }
 
-      const toCheckpointRef = thread.checkpoints.find(
+      const toCheckpointRef = checkpoints.find(
         (checkpoint) => checkpoint.checkpointTurnCount === input.toTurnCount,
       )?.checkpointRef;
       if (!toCheckpointRef) {

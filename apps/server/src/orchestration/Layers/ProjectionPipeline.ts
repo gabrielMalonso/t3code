@@ -597,7 +597,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
               interaction_mode = excluded.interaction_mode,
               created_at = excluded.created_at,
               updated_at = excluded.updated_at
-          `;
+          `.pipe(Effect.mapError(toPersistenceSqlError("ProjectionPipeline.subThreadCreated")));
           // Also set active sub-thread if this is the first one
           const threadRow = yield* projectionThreadRepository.getById({
             threadId: event.payload.threadId,
@@ -618,7 +618,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             SET deleted_at = ${event.payload.deletedAt},
                 updated_at = ${event.payload.deletedAt}
             WHERE sub_thread_id = ${event.payload.subThreadId}
-          `;
+          `.pipe(Effect.mapError(toPersistenceSqlError("ProjectionPipeline.subThreadDeleted")));
           return;
         }
 
@@ -638,7 +638,9 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
                 model = COALESCE(${event.payload.model ?? null}, model),
                 updated_at = ${event.payload.updatedAt}
               WHERE sub_thread_id = ${event.payload.subThreadId}
-            `;
+            `.pipe(
+              Effect.mapError(toPersistenceSqlError("ProjectionPipeline.subThreadMetaUpdated")),
+            );
           }
           return;
         }

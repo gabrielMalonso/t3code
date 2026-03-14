@@ -42,6 +42,10 @@ function toTurnId(value: string | undefined): TurnId | null {
   return value === undefined ? null : TurnId.makeUnsafe(String(value));
 }
 
+function resolveActiveSubThread(thread: OrchestrationThread): OrchestrationSubThread | undefined {
+  return thread.subThreads.find((s) => s.id === thread.activeSubThreadId) ?? thread.subThreads[0];
+}
+
 function sameId(left: string | null | undefined, right: string | null | undefined): boolean {
   if (left === null || left === undefined || right === null || right === undefined) {
     return false;
@@ -484,7 +488,7 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const currentTurnCount = thread.checkpoints.reduce(
+    const currentTurnCount = (resolveActiveSubThread(thread)?.checkpoints ?? []).reduce(
       (maxTurnCount, checkpoint) => Math.max(maxTurnCount, checkpoint.checkpointTurnCount),
       0,
     );
@@ -543,7 +547,7 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const currentTurnCount = thread.checkpoints.reduce(
+    const currentTurnCount = (resolveActiveSubThread(thread)?.checkpoints ?? []).reduce(
       (maxTurnCount, checkpoint) => Math.max(maxTurnCount, checkpoint.checkpointTurnCount),
       0,
     );
@@ -606,7 +610,7 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const currentTurnCount = thread.checkpoints.reduce(
+    const currentTurnCount = (resolveActiveSubThread(thread)?.checkpoints ?? []).reduce(
       (maxTurnCount, checkpoint) => Math.max(maxTurnCount, checkpoint.checkpointTurnCount),
       0,
     );
@@ -624,7 +628,7 @@ const make = Effect.gen(function* () {
     const targetCheckpointRef =
       event.payload.turnCount === 0
         ? checkpointRefForThreadTurn(event.payload.threadId, 0)
-        : thread.checkpoints.find(
+        : (resolveActiveSubThread(thread)?.checkpoints ?? []).find(
             (checkpoint) => checkpoint.checkpointTurnCount === event.payload.turnCount,
           )?.checkpointRef;
 
@@ -665,7 +669,7 @@ const make = Effect.gen(function* () {
       });
     }
 
-    const staleCheckpointRefs = thread.checkpoints
+    const staleCheckpointRefs = (resolveActiveSubThread(thread)?.checkpoints ?? [])
       .filter((checkpoint) => checkpoint.checkpointTurnCount > event.payload.turnCount)
       .map((checkpoint) => checkpoint.checkpointRef);
 

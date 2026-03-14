@@ -7,6 +7,7 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   EventId,
   MessageId,
+  type OrchestrationThread,
   ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -31,6 +32,9 @@ const asProjectId = (value: string): ProjectId => ProjectId.makeUnsafe(value);
 const asEventId = (value: string): EventId => EventId.makeUnsafe(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId =>
   ApprovalRequestId.makeUnsafe(value);
+
+/** Returns the first (default) sub-thread of a thread. */
+const sub = (thread: OrchestrationThread) => thread.subThreads[0]!;
 
 const PROJECT_ID = asProjectId("project-1");
 const THREAD_ID = ThreadId.makeUnsafe("thread-1");
@@ -211,14 +215,14 @@ it.live("runs a single turn end-to-end and persists checkpoint state in sqlite +
       const thread = yield* harness.waitForThread(
         THREAD_ID,
         (entry) =>
-          entry.session?.status === "ready" &&
-          entry.messages.some(
+          sub(entry).session?.status === "ready" &&
+          sub(entry).messages.some(
             (message) => message.role === "assistant" && message.streaming === false,
           ) &&
-          entry.checkpoints.length === 1,
+          sub(entry).checkpoints.length === 1,
       );
-      assert.equal(thread.checkpoints[0]?.status, "ready");
-      assert.equal(thread.checkpoints[0]?.checkpointTurnCount, 1);
+      assert.equal(sub(thread).checkpoints[0]?.status, "ready");
+      assert.equal(sub(thread).checkpoints[0]?.checkpointTurnCount, 1);
 
       const checkpointRows = yield* harness.checkpointRepository.listByThreadId({
         threadId: THREAD_ID,
@@ -287,14 +291,14 @@ it.live.skipIf(!process.env.CODEX_BINARY_PATH)(
         const firstThread = yield* harness.waitForThread(
           THREAD_ID,
           (entry) =>
-            entry.session?.status === "ready" &&
-            entry.session.providerName === "codex" &&
-            entry.messages.some(
+            sub(entry).session?.status === "ready" &&
+            sub(entry).session?.providerName === "codex" &&
+            sub(entry).messages.some(
               (message) => message.role === "assistant" && message.streaming === false,
             ),
           180_000,
         );
-        assert.equal(firstThread.session?.threadId, "thread-1");
+        assert.equal(sub(firstThread).session?.threadId, "thread-1");
 
         yield* harness.engine.dispatch({
           type: "thread.turn.start",
@@ -314,15 +318,15 @@ it.live.skipIf(!process.env.CODEX_BINARY_PATH)(
         const secondThread = yield* harness.waitForThread(
           THREAD_ID,
           (entry) =>
-            entry.session?.status === "ready" &&
-            entry.session.providerName === "codex" &&
-            entry.session.runtimeMode === "approval-required" &&
-            entry.messages.some(
+            sub(entry).session?.status === "ready" &&
+            sub(entry).session?.providerName === "codex" &&
+            sub(entry).session?.runtimeMode === "approval-required" &&
+            sub(entry).messages.some(
               (message) => message.role === "assistant" && message.text.includes("BETA"),
             ),
           180_000,
         );
-        assert.equal(secondThread.session?.threadId, "thread-1");
+        assert.equal(sub(secondThread).session?.threadId, "thread-1");
       }),
     ),
 );
@@ -394,7 +398,8 @@ it.live("runs multi-turn file edits and persists checkpoint diffs", () =>
 
       yield* harness.waitForThread(
         THREAD_ID,
-        (entry) => entry.checkpoints.length === 1 && entry.session?.threadId === "thread-1",
+        (entry) =>
+          sub(entry).checkpoints.length === 1 && sub(entry).session?.threadId === "thread-1",
       );
 
       yield* harness.adapterHarness!.queueTurnResponse(THREAD_ID, {
@@ -452,11 +457,11 @@ it.live("runs multi-turn file edits and persists checkpoint diffs", () =>
       const secondTurnThread = yield* harness.waitForThread(
         THREAD_ID,
         (entry) =>
-          entry.latestTurn?.turnId === "turn-2" &&
-          entry.checkpoints.length === 2 &&
-          entry.checkpoints.some((checkpoint) => checkpoint.checkpointTurnCount === 2),
+          sub(entry).latestTurn?.turnId === "turn-2" &&
+          sub(entry).checkpoints.length === 2 &&
+          sub(entry).checkpoints.some((checkpoint) => checkpoint.checkpointTurnCount === 2),
       );
-      const secondCheckpoint = secondTurnThread.checkpoints.find(
+      const secondCheckpoint = sub(secondTurnThread).checkpoints.find(
         (checkpoint) => checkpoint.checkpointTurnCount === 2,
       );
       assert.equal(
@@ -548,10 +553,10 @@ it.live("tracks approval requests and resolves pending approvals on user respons
       });
 
       const thread = yield* harness.waitForThread(THREAD_ID, (entry) =>
-        entry.activities.some((activity) => activity.kind === "approval.requested"),
+        sub(entry).activities.some((activity) => activity.kind === "approval.requested"),
       );
       assert.equal(
-        thread.activities.some((activity) => activity.kind === "approval.requested"),
+        sub(thread).activities.some((activity) => activity.kind === "approval.requested"),
         true,
       );
 
@@ -644,13 +649,13 @@ it.live("records failed turn runtime state and checkpoint status as error", () =
       const thread = yield* harness.waitForThread(
         THREAD_ID,
         (entry) =>
-          entry.session?.status === "error" &&
-          entry.session?.lastError === "Sandbox command failed." &&
-          entry.activities.some((activity) => activity.kind === "runtime.error") &&
-          entry.checkpoints.length === 1,
+          sub(entry).session?.status === "error" &&
+          sub(entry).session?.lastError === "Sandbox command failed." &&
+          sub(entry).activities.some((activity) => activity.kind === "runtime.error") &&
+          sub(entry).checkpoints.length === 1,
       );
-      assert.equal(thread.session?.status, "error");
-      assert.equal(thread.checkpoints[0]?.status, "error");
+      assert.equal(sub(thread).session?.status, "error");
+      assert.equal(sub(thread).checkpoints[0]?.status, "error");
 
       const checkpointRow = yield* harness.checkpointRepository.getByThreadAndTurnCount({
         threadId: THREAD_ID,
@@ -728,7 +733,8 @@ it.live("reverts to an earlier checkpoint and trims checkpoint projections + git
 
       yield* harness.waitForThread(
         THREAD_ID,
-        (entry) => entry.session?.threadId === "thread-1" && entry.checkpoints.length === 1,
+        (entry) =>
+          sub(entry).session?.threadId === "thread-1" && sub(entry).checkpoints.length === 1,
       );
 
       yield* harness.adapterHarness!.queueTurnResponse(THREAD_ID, {
@@ -787,9 +793,9 @@ it.live("reverts to an earlier checkpoint and trims checkpoint projections + git
       yield* harness.waitForThread(
         THREAD_ID,
         (entry) =>
-          entry.latestTurn?.turnId === "turn-2" &&
-          entry.checkpoints.length === 2 &&
-          entry.activities.some((activity) => activity.turnId === "turn-2"),
+          sub(entry).latestTurn?.turnId === "turn-2" &&
+          sub(entry).checkpoints.length === 2 &&
+          sub(entry).activities.some((activity) => activity.turnId === "turn-2"),
         8000,
       );
 
@@ -805,28 +811,29 @@ it.live("reverts to an earlier checkpoint and trims checkpoint projections + git
       const revertedThread = yield* harness.waitForThread(
         THREAD_ID,
         (entry) =>
-          entry.checkpoints.length === 1 && entry.checkpoints[0]?.checkpointTurnCount === 1,
+          sub(entry).checkpoints.length === 1 &&
+          sub(entry).checkpoints[0]?.checkpointTurnCount === 1,
       );
-      assert.equal(revertedThread.checkpoints[0]?.checkpointTurnCount, 1);
+      assert.equal(sub(revertedThread).checkpoints[0]?.checkpointTurnCount, 1);
       assert.deepEqual(
-        revertedThread.messages.map((message) => ({ role: message.role, text: message.text })),
+        sub(revertedThread).messages.map((message) => ({ role: message.role, text: message.text })),
         [
           { role: "user", text: "First edit" },
           { role: "assistant", text: "Updated README to v2.\n" },
         ],
       );
       assert.equal(
-        revertedThread.activities.some((activity) => activity.turnId === "turn-2"),
+        sub(revertedThread).activities.some((activity) => activity.turnId === "turn-2"),
         false,
       );
       assert.equal(
-        revertedThread.activities.some(
+        sub(revertedThread).activities.some(
           (activity) => activity.turnId === "turn-1" && activity.kind === "tool.started",
         ),
         true,
       );
       assert.equal(
-        revertedThread.activities.some(
+        sub(revertedThread).activities.some(
           (activity) => activity.turnId === "turn-1" && activity.kind === "tool.completed",
         ),
         true,
@@ -862,14 +869,14 @@ it.live(
         });
 
         const thread = yield* harness.waitForThread(THREAD_ID, (entry) =>
-          entry.activities.some(
+          sub(entry).activities.some(
             (activity) =>
               activity.kind === "checkpoint.revert.failed" &&
               typeof activity.payload === "object" &&
               activity.payload !== null,
           ),
         );
-        const failureActivity = thread.activities.find(
+        const failureActivity = sub(thread).activities.find(
           (activity) => activity.kind === "checkpoint.revert.failed",
         );
         assert.equal(failureActivity !== undefined, true);

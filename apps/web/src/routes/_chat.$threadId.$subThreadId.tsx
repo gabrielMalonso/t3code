@@ -1,68 +1,7 @@
-import { ThreadId } from "@t3tools/contracts";
+import { type SubThreadId, ThreadId } from "@t3tools/contracts";
 import { createFileRoute, retainSearchParams, useNavigate } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { Suspense, lazy, type ReactNode, useCallback, useEffect, useState } from "react";
 
-import { useComposerDraftStore } from "../composerDraftStore";
-import { useStore } from "../store";
-import { getActiveSubThread } from "../types";
-
-/**
- * Redirect route: when navigating to /$threadId (without a subThreadId),
- * resolve the active sub-thread and redirect to /$threadId/$subThreadId.
- *
- * This ensures backward-compatible URLs still work and always land on the
- * correct sub-thread view.
- */
-function ChatThreadRedirectView() {
-  const threadsHydrated = useStore((store) => store.threadsHydrated);
-  const navigate = useNavigate();
-  const threadId = Route.useParams({
-    select: (params) => ThreadId.makeUnsafe(params.threadId),
-  });
-  const search = Route.useSearch();
-  const thread = useStore((store) => store.threads.find((t) => t.id === threadId));
-  const draftThreadExists = useComposerDraftStore((store) =>
-    Object.hasOwn(store.draftThreadsByThreadId, threadId),
-  );
-
-  useEffect(() => {
-    if (!threadsHydrated) return;
-
-    // If the thread doesn't exist (not a server thread and not a draft), go home
-    if (!thread && !draftThreadExists) {
-      void navigate({ to: "/", replace: true });
-      return;
-    }
-
-    if (thread) {
-      const activeSubThread = getActiveSubThread(thread);
-      if (activeSubThread) {
-        void navigate({
-          to: "/$threadId/$subThreadId",
-          params: { threadId, subThreadId: activeSubThread.id },
-          search,
-          replace: true,
-        });
-        return;
-      }
-    }
-  }, [draftThreadExists, navigate, search, thread, threadsHydrated, threadId]);
-
-  // For draft threads that haven't been created on the server yet, render them
-  // directly. Once the thread is created on the server (after first message send),
-  // the store will update, `thread` will be defined, and the effect above will
-  // redirect to the sub-thread URL.
-  if (!threadsHydrated) return null;
-  if (thread) return null; // Will redirect via the effect
-
-  // Draft thread: render inline with a lazy import of the original ChatView
-  // to avoid circular dependency issues.
-  return <DraftThreadFallback threadId={threadId} />;
-}
-
-// Minimal fallback for draft threads that haven't been promoted to server threads yet.
-// These threads don't have sub-threads — they just need the ChatView with their threadId.
-import { Suspense, lazy, type ReactNode, useCallback, useState } from "react";
 import ChatView from "../components/ChatView";
 import { DiffWorkerPoolProvider } from "../components/DiffWorkerPoolProvider";
 import {
@@ -71,14 +10,20 @@ import {
   DiffPanelShell,
   type DiffPanelMode,
 } from "../components/DiffPanelShell";
+import { useComposerDraftStore } from "../composerDraftStore";
 import {
   type DiffRouteSearch,
   parseDiffRouteSearch,
   stripDiffSearchParams,
 } from "../diffRouteSearch";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useStore } from "../store";
 import { Sheet, SheetPopup } from "../components/ui/sheet";
 import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
+import { getActiveSubThread } from "../types";
+import { SubThreadTabBar } from "../components/chat/SubThreadTabBar";
+import { readNativeApi } from "../nativeApi";
+import { newCommandId, newSubThreadId } from "../lib/utils";
 
 const DiffPanel = lazy(() => import("../components/DiffPanel"));
 const DIFF_INLINE_LAYOUT_MEDIA_QUERY = "(max-width: 1180px)";
@@ -219,29 +164,139 @@ const DiffPanelInlineSidebar = (props: {
   );
 };
 
-function DraftThreadFallback({ threadId }: { threadId: ThreadId }) {
+function ChatSubThreadRouteView() {
+  const threadsHydrated = useStore((store) => store.threadsHydrated);
   const navigate = useNavigate();
+  const { threadId, subThreadId } = Route.useParams({
+    select: (params) => ({
+      threadId: ThreadId.makeUnsafe(params.threadId),
+      subThreadId: params.subThreadId as SubThreadId,
+    }),
+  });
   const search = Route.useSearch();
+  const thread = useStore((store) => store.threads.find((t) => t.id === threadId));
+  const draftThreadExists = useComposerDraftStore((store) =>
+    Object.hasOwn(store.draftThreadsByThreadId, threadId),
+  );
+  const routeThreadExists = thread !== undefined || draftThreadExists;
   const diffOpen = search.diff === "1";
   const shouldUseDiffSheet = useMediaQuery(DIFF_INLINE_LAYOUT_MEDIA_QUERY);
   const [hasOpenedDiff, setHasOpenedDiff] = useState(diffOpen);
   const closeDiff = useCallback(() => {
     void navigate({
-      to: "/$threadId",
-      params: { threadId },
+      to: "/$threadId/$subThreadId",
+      params: { threadId, subThreadId },
       search: { diff: undefined },
     });
-  }, [navigate, threadId]);
+  }, [navigate, threadId, subThreadId]);
   const openDiff = useCallback(() => {
     void navigate({
-      to: "/$threadId",
-      params: { threadId },
+      to: "/$threadId/$subThreadId",
+      params: { threadId, subThreadId },
       search: (previous) => {
         const rest = stripDiffSearchParams(previous);
         return { ...rest, diff: "1" };
       },
     });
-  }, [navigate, threadId]);
+  }, [navigate, threadId, subThreadId]);
+
+  // --- Sub-thread tab bar callbacks ---
+  const handleSelectSubThread = useCallback(
+    (nextSubThreadId: SubThreadId) => {
+      const api = readNativeApi();
+      if (api && thread) {
+        void api.orchestration.dispatchCommand({
+          type: "thread.active-sub-thread.set",
+          commandId: newCommandId(),
+          threadId,
+          subThreadId: nextSubThreadId,
+        });
+      }
+      void navigate({
+        to: "/$threadId/$subThreadId",
+        params: { threadId, subThreadId: nextSubThreadId },
+      });
+    },
+    [navigate, thread, threadId],
+  );
+
+  const handleCreateSubThread = useCallback(() => {
+    const api = readNativeApi();
+    if (!api || !thread) return;
+    const activeSubThread = getActiveSubThread(thread);
+    const id = newSubThreadId();
+    const nextTitle = `Chat ${thread.subThreads.length + 1}`;
+    void api.orchestration.dispatchCommand({
+      type: "thread.sub-thread.create",
+      commandId: newCommandId(),
+      threadId,
+      subThreadId: id,
+      title: nextTitle,
+      model: activeSubThread?.model ?? "default",
+      runtimeMode: activeSubThread?.runtimeMode ?? "full-access",
+      interactionMode: activeSubThread?.interactionMode ?? "default",
+      createdAt: new Date().toISOString(),
+    });
+    void api.orchestration.dispatchCommand({
+      type: "thread.active-sub-thread.set",
+      commandId: newCommandId(),
+      threadId,
+      subThreadId: id,
+    });
+    void navigate({
+      to: "/$threadId/$subThreadId",
+      params: { threadId, subThreadId: id },
+    });
+  }, [navigate, thread, threadId]);
+
+  const handleRenameSubThread = useCallback(
+    (targetSubThreadId: SubThreadId, title: string) => {
+      const api = readNativeApi();
+      if (!api) return;
+      void api.orchestration.dispatchCommand({
+        type: "thread.sub-thread.meta.update",
+        commandId: newCommandId(),
+        threadId,
+        subThreadId: targetSubThreadId,
+        title,
+      });
+    },
+    [threadId],
+  );
+
+  const handleCloseSubThread = useCallback(
+    (targetSubThreadId: SubThreadId) => {
+      const api = readNativeApi();
+      if (!api || !thread) return;
+      if (thread.subThreads.length <= 1) return;
+
+      const isActive = targetSubThreadId === subThreadId;
+      void api.orchestration.dispatchCommand({
+        type: "thread.sub-thread.delete",
+        commandId: newCommandId(),
+        threadId,
+        subThreadId: targetSubThreadId,
+      });
+
+      if (isActive) {
+        const remaining = thread.subThreads.filter((s) => s.id !== targetSubThreadId);
+        const fallback = remaining[0];
+        if (fallback) {
+          void api.orchestration.dispatchCommand({
+            type: "thread.active-sub-thread.set",
+            commandId: newCommandId(),
+            threadId,
+            subThreadId: fallback.id,
+          });
+          void navigate({
+            to: "/$threadId/$subThreadId",
+            params: { threadId, subThreadId: fallback.id },
+          });
+        }
+      }
+    },
+    [navigate, subThreadId, thread, threadId],
+  );
 
   useEffect(() => {
     if (diffOpen) {
@@ -249,13 +304,41 @@ function DraftThreadFallback({ threadId }: { threadId: ThreadId }) {
     }
   }, [diffOpen]);
 
+  useEffect(() => {
+    if (!threadsHydrated) {
+      return;
+    }
+
+    if (!routeThreadExists) {
+      void navigate({ to: "/", replace: true });
+      return;
+    }
+  }, [navigate, routeThreadExists, threadsHydrated, threadId]);
+
+  if (!threadsHydrated || !routeThreadExists) {
+    return null;
+  }
+
   const shouldRenderDiffContent = diffOpen || hasOpenedDiff;
+
+  const tabBar = thread ? (
+    <SubThreadTabBar
+      threadId={threadId}
+      subThreads={thread.subThreads}
+      activeSubThreadId={subThreadId}
+      onSelectSubThread={handleSelectSubThread}
+      onCreateSubThread={handleCreateSubThread}
+      onRenameSubThread={handleRenameSubThread}
+      onCloseSubThread={handleCloseSubThread}
+    />
+  ) : null;
 
   if (!shouldUseDiffSheet) {
     return (
       <>
         <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-          <ChatView key={threadId} threadId={threadId} />
+          {tabBar}
+          <ChatView key={`${threadId}:${subThreadId}`} threadId={threadId} />
         </SidebarInset>
         <DiffPanelInlineSidebar
           diffOpen={diffOpen}
@@ -270,7 +353,8 @@ function DraftThreadFallback({ threadId }: { threadId: ThreadId }) {
   return (
     <>
       <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-        <ChatView key={threadId} threadId={threadId} />
+        {tabBar}
+        <ChatView key={`${threadId}:${subThreadId}`} threadId={threadId} />
       </SidebarInset>
       <DiffPanelSheet diffOpen={diffOpen} onCloseDiff={closeDiff}>
         {shouldRenderDiffContent ? <LazyDiffPanel mode="sheet" /> : null}
@@ -279,10 +363,10 @@ function DraftThreadFallback({ threadId }: { threadId: ThreadId }) {
   );
 }
 
-export const Route = createFileRoute("/_chat/$threadId")({
+export const Route = createFileRoute("/_chat/$threadId/$subThreadId")({
   validateSearch: (search) => parseDiffRouteSearch(search),
   search: {
     middlewares: [retainSearchParams<DiffRouteSearch>(["diff"])],
   },
-  component: ChatThreadRedirectView,
+  component: ChatSubThreadRouteView,
 });
