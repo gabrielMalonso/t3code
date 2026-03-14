@@ -10,6 +10,7 @@ import {
   NonNegativeInt,
   ProjectId,
   ProviderItemId,
+  SubThreadId,
   ThreadId,
   TrimmedNonEmptyString,
   TurnId,
@@ -261,19 +262,15 @@ export const OrchestrationLatestTurn = Schema.Struct({
 });
 export type OrchestrationLatestTurn = typeof OrchestrationLatestTurn.Type;
 
-export const OrchestrationThread = Schema.Struct({
-  id: ThreadId,
-  projectId: ProjectId,
+export const OrchestrationSubThread = Schema.Struct({
+  id: SubThreadId,
+  threadId: ThreadId,
   title: TrimmedNonEmptyString,
   model: TrimmedNonEmptyString,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode.pipe(
     Schema.withDecodingDefault(() => DEFAULT_PROVIDER_INTERACTION_MODE),
   ),
-  branch: Schema.NullOr(TrimmedNonEmptyString),
-  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
-  sourceThreadId: Schema.NullOr(ThreadId).pipe(Schema.withDecodingDefault(() => null)),
-  implementationThreadId: Schema.NullOr(ThreadId).pipe(Schema.withDecodingDefault(() => null)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -283,6 +280,22 @@ export const OrchestrationThread = Schema.Struct({
   activities: Schema.Array(OrchestrationThreadActivity),
   checkpoints: Schema.Array(OrchestrationCheckpointSummary),
   session: Schema.NullOr(OrchestrationSession),
+});
+export type OrchestrationSubThread = typeof OrchestrationSubThread.Type;
+
+export const OrchestrationThread = Schema.Struct({
+  id: ThreadId,
+  projectId: ProjectId,
+  title: TrimmedNonEmptyString,
+  branch: Schema.NullOr(TrimmedNonEmptyString),
+  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  sourceThreadId: Schema.NullOr(ThreadId).pipe(Schema.withDecodingDefault(() => null)),
+  implementationThreadId: Schema.NullOr(ThreadId).pipe(Schema.withDecodingDefault(() => null)),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+  deletedAt: Schema.NullOr(IsoDateTime),
+  subThreads: Schema.Array(OrchestrationSubThread),
+  activeSubThreadId: Schema.NullOr(SubThreadId).pipe(Schema.withDecodingDefault(() => null)),
 });
 export type OrchestrationThread = typeof OrchestrationThread.Type;
 
@@ -358,6 +371,7 @@ const ThreadRuntimeModeSetCommand = Schema.Struct({
   type: Schema.Literal("thread.runtime-mode.set"),
   commandId: CommandId,
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   runtimeMode: RuntimeMode,
   createdAt: IsoDateTime,
 });
@@ -366,6 +380,7 @@ const ThreadInteractionModeSetCommand = Schema.Struct({
   type: Schema.Literal("thread.interaction-mode.set"),
   commandId: CommandId,
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   interactionMode: ProviderInteractionMode,
   createdAt: IsoDateTime,
 });
@@ -374,6 +389,7 @@ export const ThreadTurnStartCommand = Schema.Struct({
   type: Schema.Literal("thread.turn.start"),
   commandId: CommandId,
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   message: Schema.Struct({
     messageId: MessageId,
     role: Schema.Literal("user"),
@@ -396,6 +412,7 @@ const ClientThreadTurnStartCommand = Schema.Struct({
   type: Schema.Literal("thread.turn.start"),
   commandId: CommandId,
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   message: Schema.Struct({
     messageId: MessageId,
     role: Schema.Literal("user"),
@@ -416,6 +433,7 @@ const ThreadTurnInterruptCommand = Schema.Struct({
   type: Schema.Literal("thread.turn.interrupt"),
   commandId: CommandId,
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   turnId: Schema.optional(TurnId),
   createdAt: IsoDateTime,
 });
@@ -424,6 +442,7 @@ const ThreadApprovalRespondCommand = Schema.Struct({
   type: Schema.Literal("thread.approval.respond"),
   commandId: CommandId,
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   requestId: ApprovalRequestId,
   decision: ProviderApprovalDecision,
   createdAt: IsoDateTime,
@@ -433,6 +452,7 @@ const ThreadUserInputRespondCommand = Schema.Struct({
   type: Schema.Literal("thread.user-input.respond"),
   commandId: CommandId,
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   requestId: ApprovalRequestId,
   answers: ProviderUserInputAnswers,
   createdAt: IsoDateTime,
@@ -442,6 +462,7 @@ const ThreadCheckpointRevertCommand = Schema.Struct({
   type: Schema.Literal("thread.checkpoint.revert"),
   commandId: CommandId,
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   turnCount: NonNegativeInt,
   createdAt: IsoDateTime,
 });
@@ -450,7 +471,45 @@ const ThreadSessionStopCommand = Schema.Struct({
   type: Schema.Literal("thread.session.stop"),
   commandId: CommandId,
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   createdAt: IsoDateTime,
+});
+
+const SubThreadCreateCommand = Schema.Struct({
+  type: Schema.Literal("thread.sub-thread.create"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  subThreadId: SubThreadId,
+  title: TrimmedNonEmptyString,
+  model: TrimmedNonEmptyString,
+  runtimeMode: RuntimeMode,
+  interactionMode: ProviderInteractionMode.pipe(
+    Schema.withDecodingDefault(() => DEFAULT_PROVIDER_INTERACTION_MODE),
+  ),
+  createdAt: IsoDateTime,
+});
+
+const SubThreadDeleteCommand = Schema.Struct({
+  type: Schema.Literal("thread.sub-thread.delete"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  subThreadId: SubThreadId,
+});
+
+const SubThreadMetaUpdateCommand = Schema.Struct({
+  type: Schema.Literal("thread.sub-thread.meta.update"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  subThreadId: SubThreadId,
+  title: Schema.optional(TrimmedNonEmptyString),
+  model: Schema.optional(TrimmedNonEmptyString),
+});
+
+const ThreadActiveSubThreadSetCommand = Schema.Struct({
+  type: Schema.Literal("thread.active-sub-thread.set"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  subThreadId: SubThreadId,
 });
 
 const DispatchableClientOrchestrationCommand = Schema.Union([
@@ -468,6 +527,10 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadUserInputRespondCommand,
   ThreadCheckpointRevertCommand,
   ThreadSessionStopCommand,
+  SubThreadCreateCommand,
+  SubThreadDeleteCommand,
+  SubThreadMetaUpdateCommand,
+  ThreadActiveSubThreadSetCommand,
 ]);
 export type DispatchableClientOrchestrationCommand =
   typeof DispatchableClientOrchestrationCommand.Type;
@@ -487,6 +550,10 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadUserInputRespondCommand,
   ThreadCheckpointRevertCommand,
   ThreadSessionStopCommand,
+  SubThreadCreateCommand,
+  SubThreadDeleteCommand,
+  SubThreadMetaUpdateCommand,
+  ThreadActiveSubThreadSetCommand,
 ]);
 export type ClientOrchestrationCommand = typeof ClientOrchestrationCommand.Type;
 
@@ -494,6 +561,7 @@ const ThreadSessionSetCommand = Schema.Struct({
   type: Schema.Literal("thread.session.set"),
   commandId: CommandId,
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   session: OrchestrationSession,
   createdAt: IsoDateTime,
 });
@@ -502,6 +570,7 @@ const ThreadMessageAssistantDeltaCommand = Schema.Struct({
   type: Schema.Literal("thread.message.assistant.delta"),
   commandId: CommandId,
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   messageId: MessageId,
   delta: Schema.String,
   turnId: Schema.optional(TurnId),
@@ -512,6 +581,7 @@ const ThreadMessageAssistantCompleteCommand = Schema.Struct({
   type: Schema.Literal("thread.message.assistant.complete"),
   commandId: CommandId,
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   messageId: MessageId,
   turnId: Schema.optional(TurnId),
   createdAt: IsoDateTime,
@@ -521,6 +591,7 @@ const ThreadProposedPlanUpsertCommand = Schema.Struct({
   type: Schema.Literal("thread.proposed-plan.upsert"),
   commandId: CommandId,
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   proposedPlan: OrchestrationProposedPlan,
   createdAt: IsoDateTime,
 });
@@ -529,6 +600,7 @@ const ThreadTurnDiffCompleteCommand = Schema.Struct({
   type: Schema.Literal("thread.turn.diff.complete"),
   commandId: CommandId,
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   turnId: TurnId,
   completedAt: IsoDateTime,
   checkpointRef: CheckpointRef,
@@ -543,6 +615,7 @@ const ThreadActivityAppendCommand = Schema.Struct({
   type: Schema.Literal("thread.activity.append"),
   commandId: CommandId,
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   activity: OrchestrationThreadActivity,
   createdAt: IsoDateTime,
 });
@@ -551,6 +624,7 @@ const ThreadRevertCompleteCommand = Schema.Struct({
   type: Schema.Literal("thread.revert.complete"),
   commandId: CommandId,
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   turnCount: NonNegativeInt,
   createdAt: IsoDateTime,
 });
@@ -593,6 +667,10 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.proposed-plan-upserted",
   "thread.turn-diff-completed",
   "thread.activity-appended",
+  "thread.sub-thread-created",
+  "thread.sub-thread-deleted",
+  "thread.sub-thread-meta-updated",
+  "thread.active-sub-thread-set",
 ]);
 export type OrchestrationEventType = typeof OrchestrationEventType.Type;
 
@@ -657,12 +735,14 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
 
 export const ThreadRuntimeModeSetPayload = Schema.Struct({
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   runtimeMode: RuntimeMode,
   updatedAt: IsoDateTime,
 });
 
 export const ThreadInteractionModeSetPayload = Schema.Struct({
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   interactionMode: ProviderInteractionMode.pipe(
     Schema.withDecodingDefault(() => DEFAULT_PROVIDER_INTERACTION_MODE),
   ),
@@ -671,6 +751,7 @@ export const ThreadInteractionModeSetPayload = Schema.Struct({
 
 export const ThreadMessageSentPayload = Schema.Struct({
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   messageId: MessageId,
   role: OrchestrationMessageRole,
   text: Schema.String,
@@ -683,6 +764,7 @@ export const ThreadMessageSentPayload = Schema.Struct({
 
 export const ThreadTurnStartRequestedPayload = Schema.Struct({
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   messageId: MessageId,
   provider: Schema.optional(ProviderKind),
   model: Schema.optional(TrimmedNonEmptyString),
@@ -698,12 +780,14 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
 
 export const ThreadTurnInterruptRequestedPayload = Schema.Struct({
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   turnId: Schema.optional(TurnId),
   createdAt: IsoDateTime,
 });
 
 export const ThreadApprovalResponseRequestedPayload = Schema.Struct({
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   requestId: ApprovalRequestId,
   decision: ProviderApprovalDecision,
   createdAt: IsoDateTime,
@@ -711,6 +795,7 @@ export const ThreadApprovalResponseRequestedPayload = Schema.Struct({
 
 const ThreadUserInputResponseRequestedPayload = Schema.Struct({
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   requestId: ApprovalRequestId,
   answers: ProviderUserInputAnswers,
   createdAt: IsoDateTime,
@@ -718,32 +803,38 @@ const ThreadUserInputResponseRequestedPayload = Schema.Struct({
 
 export const ThreadCheckpointRevertRequestedPayload = Schema.Struct({
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   turnCount: NonNegativeInt,
   createdAt: IsoDateTime,
 });
 
 export const ThreadRevertedPayload = Schema.Struct({
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   turnCount: NonNegativeInt,
 });
 
 export const ThreadSessionStopRequestedPayload = Schema.Struct({
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   createdAt: IsoDateTime,
 });
 
 export const ThreadSessionSetPayload = Schema.Struct({
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   session: OrchestrationSession,
 });
 
 export const ThreadProposedPlanUpsertedPayload = Schema.Struct({
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   proposedPlan: OrchestrationProposedPlan,
 });
 
 export const ThreadTurnDiffCompletedPayload = Schema.Struct({
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   turnId: TurnId,
   checkpointTurnCount: NonNegativeInt,
   checkpointRef: CheckpointRef,
@@ -755,7 +846,40 @@ export const ThreadTurnDiffCompletedPayload = Schema.Struct({
 
 export const ThreadActivityAppendedPayload = Schema.Struct({
   threadId: ThreadId,
+  subThreadId: Schema.optional(SubThreadId),
   activity: OrchestrationThreadActivity,
+});
+
+export const SubThreadCreatedPayload = Schema.Struct({
+  threadId: ThreadId,
+  subThreadId: SubThreadId,
+  title: TrimmedNonEmptyString,
+  model: TrimmedNonEmptyString,
+  runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(() => DEFAULT_RUNTIME_MODE)),
+  interactionMode: ProviderInteractionMode.pipe(
+    Schema.withDecodingDefault(() => DEFAULT_PROVIDER_INTERACTION_MODE),
+  ),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const SubThreadDeletedPayload = Schema.Struct({
+  threadId: ThreadId,
+  subThreadId: SubThreadId,
+  deletedAt: IsoDateTime,
+});
+
+export const SubThreadMetaUpdatedPayload = Schema.Struct({
+  threadId: ThreadId,
+  subThreadId: SubThreadId,
+  title: Schema.optional(TrimmedNonEmptyString),
+  model: Schema.optional(TrimmedNonEmptyString),
+  updatedAt: IsoDateTime,
+});
+
+export const ThreadActiveSubThreadSetPayload = Schema.Struct({
+  threadId: ThreadId,
+  subThreadId: SubThreadId,
 });
 
 export const OrchestrationEventMetadata = Schema.Struct({
@@ -879,6 +1003,26 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.activity-appended"),
     payload: ThreadActivityAppendedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.sub-thread-created"),
+    payload: SubThreadCreatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.sub-thread-deleted"),
+    payload: SubThreadDeletedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.sub-thread-meta-updated"),
+    payload: SubThreadMetaUpdatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.active-sub-thread-set"),
+    payload: ThreadActiveSubThreadSetPayload,
   }),
 ]);
 export type OrchestrationEvent = typeof OrchestrationEvent.Type;
