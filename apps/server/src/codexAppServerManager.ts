@@ -119,7 +119,9 @@ interface CodexAccountSnapshot {
 export interface CodexAppServerSendTurnInput {
   readonly threadId: ThreadId;
   readonly input?: string;
-  readonly attachments?: ReadonlyArray<{ type: "image"; url: string }>;
+  readonly attachments?: ReadonlyArray<
+    { type: "image"; url: string } | { type: "text_file"; content: string; name: string }
+  >;
   readonly model?: string;
   readonly serviceTier?: string | null;
   readonly effort?: string;
@@ -846,6 +848,12 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
         turnInput.push({
           type: "image",
           url: attachment.url,
+        });
+      } else if (attachment.type === "text_file") {
+        turnInput.push({
+          type: "text",
+          text: `--- ${attachment.name} ---\n${attachment.content}\n--- end of ${attachment.name} ---`,
+          text_elements: [],
         });
       }
     }

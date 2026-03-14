@@ -17,7 +17,9 @@ import {
   type OrchestrationCommand,
   ORCHESTRATION_WS_CHANNELS,
   ORCHESTRATION_WS_METHODS,
+  PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  PROVIDER_SEND_TURN_MAX_TEXT_FILE_BYTES,
   ProjectId,
   ThreadId,
   WS_CHANNELS,
@@ -72,7 +74,7 @@ import {
   resolveAttachmentPath,
   resolveAttachmentPathById,
 } from "./attachmentStore.ts";
-import { parseBase64DataUrl } from "./imageMime.ts";
+import { parseBase64DataUrl } from "./fileMime.ts";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService.ts";
 import { expandHomePath } from "./os-jank.ts";
 import { discoverAvailableSkillsByProvider } from "./providerSkillsDiscovery";
@@ -342,17 +344,48 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       (attachment) =>
         Effect.gen(function* () {
           const parsed = parseBase64DataUrl(attachment.dataUrl);
-          if (!parsed || !parsed.mimeType.startsWith("image/")) {
+          if (!parsed) {
             return yield* new RouteRequestError({
-              message: `Invalid image attachment payload for '${attachment.name}'.`,
+              message: `Invalid attachment payload for '${attachment.name}'.`,
             });
           }
 
+          // Type-specific MIME and size validation.
           const bytes = Buffer.from(parsed.base64, "base64");
-          if (bytes.byteLength === 0 || bytes.byteLength > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
-            return yield* new RouteRequestError({
-              message: `Image attachment '${attachment.name}' is empty or too large.`,
-            });
+          if (attachment.type === "image") {
+            if (!parsed.mimeType.startsWith("image/")) {
+              return yield* new RouteRequestError({
+                message: `Invalid image MIME type for '${attachment.name}'.`,
+              });
+            }
+            if (bytes.byteLength === 0 || bytes.byteLength > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+              return yield* new RouteRequestError({
+                message: `Image attachment '${attachment.name}' is empty or too large.`,
+              });
+            }
+          } else if (attachment.type === "document") {
+            if (parsed.mimeType !== "application/pdf") {
+              return yield* new RouteRequestError({
+                message: `Invalid document MIME type for '${attachment.name}'. Only PDF is supported.`,
+              });
+            }
+            if (
+              bytes.byteLength === 0 ||
+              bytes.byteLength > PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES
+            ) {
+              return yield* new RouteRequestError({
+                message: `Document attachment '${attachment.name}' is empty or too large.`,
+              });
+            }
+          } else if (attachment.type === "text_file") {
+            if (
+              bytes.byteLength === 0 ||
+              bytes.byteLength > PROVIDER_SEND_TURN_MAX_TEXT_FILE_BYTES
+            ) {
+              return yield* new RouteRequestError({
+                message: `Text file attachment '${attachment.name}' is empty or too large.`,
+              });
+            }
           }
 
           const attachmentId = createAttachmentId(turnStartCommand.threadId);
@@ -363,12 +396,12 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
           }
 
           const persistedAttachment = {
-            type: "image" as const,
+            type: attachment.type,
             id: attachmentId,
             name: attachment.name,
             mimeType: parsed.mimeType.toLowerCase(),
             sizeBytes: bytes.byteLength,
-          };
+          } as typeof attachment & { id: string };
 
           const attachmentPath = resolveAttachmentPath({
             stateDir: serverConfig.stateDir,

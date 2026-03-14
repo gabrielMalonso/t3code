@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { inferImageExtension, parseBase64DataUrl } from "./imageMime.ts";
+import { inferImageExtension, parseBase64DataUrl } from "./fileMime.ts";
 
-describe("imageMime", () => {
+describe("fileMime", () => {
   it("parses base64 data URL with mime type", () => {
     expect(parseBase64DataUrl("data:image/png;base64,SGVsbG8=")).toEqual({
       mimeType: "image/png",

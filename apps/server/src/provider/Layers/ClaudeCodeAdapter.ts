@@ -63,6 +63,8 @@ import {
   discoverSupportedCommands,
   extractSkillsFromSystemMessage,
 } from "../../skillsDiscovery.ts";
+import { resolveAttachmentPath } from "../../attachmentStore.ts";
+import { ServerConfig } from "../../config.ts";
 
 const PROVIDER = "claudeCode" as const;
 
@@ -326,19 +328,30 @@ function titleForTool(itemType: CanonicalItemType): string {
   }
 }
 
-function buildUserMessage(input: ProviderSendTurnInput): SDKUserMessage {
+function buildUserMessage(
+  input: ProviderSendTurnInput,
+  attachmentPaths: Map<string, string>,
+): SDKUserMessage {
   const fragments: string[] = [];
 
-  if (input.input && input.input.trim().length > 0) {
-    fragments.push(input.input.trim());
-  }
-
+  // Attachment instructions come first so the model reads files before responding.
   for (const attachment of input.attachments ?? []) {
+    const filePath = attachmentPaths.get(attachment.id);
     if (attachment.type === "image") {
       fragments.push(
         `Attached image: ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes).`,
       );
+    } else if (filePath) {
+      fragments.push(`[Attached file: ${attachment.name}]\nRead the file at: ${filePath}`);
+    } else {
+      fragments.push(
+        `Attached file: ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes).`,
+      );
     }
+  }
+
+  if (input.input && input.input.trim().length > 0) {
+    fragments.push(input.input.trim());
   }
 
   const text = fragments.join("\n\n");
@@ -562,6 +575,8 @@ function makeAsarSpawnOverride(): Pick<ClaudeQueryOptions, "spawnClaudeCodeProce
 
 function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
   return Effect.gen(function* () {
+    const serverConfig = yield* Effect.service(ServerConfig);
+
     const nativeEventLogger =
       options?.nativeEventLogger ??
       (options?.nativeEventLogPath !== undefined
@@ -2016,7 +2031,20 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           },
         });
 
-        const message = buildUserMessage(input);
+        // Resolve disk paths for non-image attachments so the model can read them.
+        const attachmentPaths = new Map<string, string>();
+        for (const attachment of input.attachments ?? []) {
+          if (attachment.type === "image") continue;
+          const filePath = resolveAttachmentPath({
+            stateDir: serverConfig.stateDir,
+            attachment,
+          });
+          if (filePath) {
+            attachmentPaths.set(attachment.id, filePath);
+          }
+        }
+
+        const message = buildUserMessage(input, attachmentPaths);
 
         yield* Queue.offer(context.promptQueue, {
           type: "message",

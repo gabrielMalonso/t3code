@@ -108,6 +108,25 @@ export function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+import {
+  SUPPORTED_DOCUMENT_MIME_TYPES,
+  SUPPORTED_TEXT_FILE_MIME_TYPES,
+  SUPPORTED_TEXT_FILE_EXTENSIONS,
+} from "@t3tools/shared/fileMime";
+
+export function classifyFile(file: File): "image" | "document" | "text_file" | null {
+  if (file.type.startsWith("image/")) return "image";
+  if (SUPPORTED_DOCUMENT_MIME_TYPES.has(file.type)) return "document";
+  if (SUPPORTED_TEXT_FILE_MIME_TYPES.has(file.type)) return "text_file";
+  // Fallback: check extension for files with empty/generic MIME type (e.g. .log files).
+  const dotIndex = file.name.lastIndexOf(".");
+  if (dotIndex > 0) {
+    const ext = file.name.slice(dotIndex).toLowerCase();
+    if (SUPPORTED_TEXT_FILE_EXTENSIONS.has(ext)) return "text_file";
+  }
+  return null;
+}
+
 export function buildTemporaryWorktreeBranchName(): string {
   // Keep the 8-hex suffix shape for backend temporary-branch detection.
   const token = randomUUID().slice(0, 8).toLowerCase();

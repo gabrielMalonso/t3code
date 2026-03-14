@@ -1361,10 +1361,27 @@ const makeCodexAdapter = (options?: CodexAdapterLiveOptions) =>
                     }),
                 ),
               );
-              return {
-                type: "image" as const,
-                url: `data:${attachment.mimeType};base64,${Buffer.from(bytes).toString("base64")}`,
-              };
+              switch (attachment.type) {
+                case "image":
+                  return {
+                    type: "image" as const,
+                    url: `data:${attachment.mimeType};base64,${Buffer.from(bytes).toString("base64")}`,
+                  };
+                case "document":
+                  // Codex CLI does not support native document/PDF attachments.
+                  // Fall back to a text description so the model is aware of the attachment.
+                  return {
+                    type: "text_file" as const,
+                    content: `[Attached PDF: ${attachment.name} (${attachment.sizeBytes} bytes). PDF content is not available through the Codex provider.]`,
+                    name: attachment.name,
+                  };
+                case "text_file":
+                  return {
+                    type: "text_file" as const,
+                    content: Buffer.from(bytes).toString("utf-8"),
+                    name: attachment.name,
+                  };
+              }
             }),
           { concurrency: 1 },
         );

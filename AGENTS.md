@@ -53,4 +53,5 @@ Docs:
 Use these as implementation references when designing protocol handling, UX flows, and operational safeguards.
 
 ## A regra para a execução de planejamentos:
-Lembre-se de utilizar a skill /executar-plano na hora de executar planejamentos, sempre que houver "Implement the following plan: # Plano:" no texto. - CODEX: PODE IGNORAR ESSA INFORMAÇÃO. ESSA INFORMAÇÃO É PARA O CLAUDE, APENAS. 
+
+Lembre-se de utilizar a skill /executar-plano na hora de executar planejamentos, sempre que houver "Implement the following plan: # Plano:" no texto. - CODEX: PODE IGNORAR ESSA INFORMAÇÃO. ESSA INFORMAÇÃO É PARA O CLAUDE, APENAS.

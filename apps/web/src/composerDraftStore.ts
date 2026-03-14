@@ -72,9 +72,28 @@ export interface ComposerImageAttachment extends Omit<ChatImageAttachment, "prev
   file: File;
 }
 
+export interface ComposerDocumentAttachment {
+  type: "document" | "text_file";
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  file: File;
+}
+
+export interface PersistedComposerDocumentAttachment {
+  type: "document" | "text_file";
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  dataUrl: string;
+}
+
 interface PersistedComposerThreadDraftState {
   prompt: string;
   attachments: PersistedComposerImageAttachment[];
+  documentAttachments?: PersistedComposerDocumentAttachment[];
   provider?: ProviderKind | null;
   model?: string | null;
   runtimeMode?: RuntimeMode | null;
@@ -105,6 +124,8 @@ interface ComposerThreadDraftState {
   images: ComposerImageAttachment[];
   nonPersistedImageIds: string[];
   persistedAttachments: PersistedComposerImageAttachment[];
+  documents: ComposerDocumentAttachment[];
+  persistedDocumentAttachments: PersistedComposerDocumentAttachment[];
   provider: ProviderKind | null;
   model: string | null;
   runtimeMode: RuntimeMode | null;
@@ -173,6 +194,9 @@ interface ComposerDraftStoreState {
   addImage: (threadId: ThreadId, image: ComposerImageAttachment) => void;
   addImages: (threadId: ThreadId, images: ComposerImageAttachment[]) => void;
   removeImage: (threadId: ThreadId, imageId: string) => void;
+  addDocument: (threadId: ThreadId, doc: ComposerDocumentAttachment) => void;
+  addDocuments: (threadId: ThreadId, docs: ComposerDocumentAttachment[]) => void;
+  removeDocument: (threadId: ThreadId, docId: string) => void;
   clearPersistedAttachments: (threadId: ThreadId) => void;
   syncPersistedAttachments: (
     threadId: ThreadId,
@@ -191,14 +215,20 @@ const EMPTY_PERSISTED_DRAFT_STORE_STATE: PersistedComposerDraftStoreState = {
 const EMPTY_IMAGES: ComposerImageAttachment[] = [];
 const EMPTY_IDS: string[] = [];
 const EMPTY_PERSISTED_ATTACHMENTS: PersistedComposerImageAttachment[] = [];
+const EMPTY_DOCUMENTS: ComposerDocumentAttachment[] = [];
+const EMPTY_PERSISTED_DOCUMENT_ATTACHMENTS: PersistedComposerDocumentAttachment[] = [];
 Object.freeze(EMPTY_IMAGES);
 Object.freeze(EMPTY_IDS);
 Object.freeze(EMPTY_PERSISTED_ATTACHMENTS);
+Object.freeze(EMPTY_DOCUMENTS);
+Object.freeze(EMPTY_PERSISTED_DOCUMENT_ATTACHMENTS);
 const EMPTY_THREAD_DRAFT = Object.freeze({
   prompt: "",
   images: EMPTY_IMAGES,
   nonPersistedImageIds: EMPTY_IDS,
   persistedAttachments: EMPTY_PERSISTED_ATTACHMENTS,
+  documents: EMPTY_DOCUMENTS,
+  persistedDocumentAttachments: EMPTY_PERSISTED_DOCUMENT_ATTACHMENTS,
   provider: null,
   model: null,
   runtimeMode: null,
@@ -217,6 +247,8 @@ function createEmptyThreadDraft(): ComposerThreadDraftState {
     images: [],
     nonPersistedImageIds: [],
     persistedAttachments: [],
+    documents: [],
+    persistedDocumentAttachments: [],
     provider: null,
     model: null,
     runtimeMode: null,
@@ -237,6 +269,8 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     draft.prompt.length === 0 &&
     draft.images.length === 0 &&
     draft.persistedAttachments.length === 0 &&
+    draft.documents.length === 0 &&
+    draft.persistedDocumentAttachments.length === 0 &&
     draft.provider === null &&
     draft.model === null &&
     draft.runtimeMode === null &&
@@ -425,12 +459,23 @@ function normalizePersistedComposerDraftState(value: unknown): PersistedComposer
       effortCandidate && REASONING_EFFORT_VALUES.has(effortCandidate as CodexReasoningEffort)
         ? (effortCandidate as CodexReasoningEffort)
         : null;
+    const documentAttachments = Array.isArray(draftCandidate.documentAttachments)
+      ? draftCandidate.documentAttachments.flatMap((entry) => {
+          const normalized = normalizePersistedAttachment(entry);
+          if (!normalized) return [];
+          const candidate = entry as Record<string, unknown>;
+          const type = candidate.type;
+          if (type !== "document" && type !== "text_file") return [];
+          return [{ ...normalized, type } satisfies PersistedComposerDocumentAttachment];
+        })
+      : [];
     const codexFastMode =
       draftCandidate.codexFastMode === true ||
       (typeof draftCandidate.serviceTier === "string" && draftCandidate.serviceTier === "fast");
     if (
       prompt.length === 0 &&
       attachments.length === 0 &&
+      documentAttachments.length === 0 &&
       !provider &&
       !model &&
       !runtimeMode &&
@@ -443,6 +488,7 @@ function normalizePersistedComposerDraftState(value: unknown): PersistedComposer
     nextDraftsByThreadId[threadId as ThreadId] = {
       prompt,
       attachments,
+      ...(documentAttachments.length > 0 ? { documentAttachments } : {}),
       ...(provider ? { provider } : {}),
       ...(model ? { model } : {}),
       ...(runtimeMode ? { runtimeMode } : {}),
@@ -541,14 +587,36 @@ function hydrateImagesFromPersisted(
   });
 }
 
+function hydrateDocumentsFromPersisted(
+  attachments: PersistedComposerDocumentAttachment[],
+): ComposerDocumentAttachment[] {
+  return attachments.flatMap((attachment) => {
+    const file = hydreatePersistedComposerImageAttachment(attachment);
+    if (!file) return [];
+    return [
+      {
+        type: attachment.type,
+        id: attachment.id,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        file,
+      } satisfies ComposerDocumentAttachment,
+    ];
+  });
+}
+
 function toHydratedThreadDraft(
   persistedDraft: PersistedComposerThreadDraftState,
 ): ComposerThreadDraftState {
+  const docAttachments = persistedDraft.documentAttachments ?? [];
   return {
     prompt: persistedDraft.prompt,
     images: hydrateImagesFromPersisted(persistedDraft.attachments),
     nonPersistedImageIds: [],
     persistedAttachments: persistedDraft.attachments,
+    documents: hydrateDocumentsFromPersisted(docAttachments),
+    persistedDocumentAttachments: docAttachments,
     provider: persistedDraft.provider ?? null,
     model: persistedDraft.model ?? null,
     runtimeMode: persistedDraft.runtimeMode ?? null,
@@ -1068,6 +1136,66 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
           return { draftsByThreadId: nextDraftsByThreadId };
         });
       },
+      addDocument: (threadId, doc) => {
+        if (threadId.length === 0) {
+          return;
+        }
+        get().addDocuments(threadId, [doc]);
+      },
+      addDocuments: (threadId, docs) => {
+        if (threadId.length === 0 || docs.length === 0) {
+          return;
+        }
+        set((state) => {
+          const existing = state.draftsByThreadId[threadId] ?? createEmptyThreadDraft();
+          const existingIds = new Set(existing.documents.map((d) => d.id));
+          const dedupedIncoming: ComposerDocumentAttachment[] = [];
+          for (const doc of docs) {
+            if (existingIds.has(doc.id)) {
+              continue;
+            }
+            dedupedIncoming.push(doc);
+            existingIds.add(doc.id);
+          }
+          if (dedupedIncoming.length === 0) {
+            return state;
+          }
+          return {
+            draftsByThreadId: {
+              ...state.draftsByThreadId,
+              [threadId]: {
+                ...existing,
+                documents: [...existing.documents, ...dedupedIncoming],
+              },
+            },
+          };
+        });
+      },
+      removeDocument: (threadId, docId) => {
+        if (threadId.length === 0) {
+          return;
+        }
+        set((state) => {
+          const current = state.draftsByThreadId[threadId];
+          if (!current) {
+            return state;
+          }
+          const nextDraft: ComposerThreadDraftState = {
+            ...current,
+            documents: current.documents.filter((d) => d.id !== docId),
+            persistedDocumentAttachments: current.persistedDocumentAttachments.filter(
+              (d) => d.id !== docId,
+            ),
+          };
+          const nextDraftsByThreadId = { ...state.draftsByThreadId };
+          if (shouldRemoveDraft(nextDraft)) {
+            delete nextDraftsByThreadId[threadId];
+          } else {
+            nextDraftsByThreadId[threadId] = nextDraft;
+          }
+          return { draftsByThreadId: nextDraftsByThreadId };
+        });
+      },
       clearPersistedAttachments: (threadId) => {
         if (threadId.length === 0) {
           return;
@@ -1161,6 +1289,8 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
             images: [],
             nonPersistedImageIds: [],
             persistedAttachments: [],
+            documents: [],
+            persistedDocumentAttachments: [],
           };
           const nextDraftsByThreadId = { ...state.draftsByThreadId };
           if (shouldRemoveDraft(nextDraft)) {
@@ -1220,6 +1350,7 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
           if (
             draft.prompt.length === 0 &&
             draft.persistedAttachments.length === 0 &&
+            draft.persistedDocumentAttachments.length === 0 &&
             draft.provider === null &&
             draft.model === null &&
             draft.runtimeMode === null &&
@@ -1232,6 +1363,9 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
           const persistedDraft: PersistedComposerThreadDraftState = {
             prompt: draft.prompt,
             attachments: draft.persistedAttachments,
+            ...(draft.persistedDocumentAttachments.length > 0
+              ? { documentAttachments: draft.persistedDocumentAttachments }
+              : {}),
           };
           if (draft.model) {
             persistedDraft.model = draft.model;
