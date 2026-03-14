@@ -35,6 +35,7 @@ import { Button } from "../ui/button";
 import { clamp } from "effect/Number";
 import { estimateTimelineMessageHeight } from "../timelineHeight";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
+import { VscodeEntryIcon } from "./VscodeEntryIcon";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesTree } from "./ChangedFilesTree";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
@@ -540,46 +541,68 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       {row.kind === "message" &&
         row.message.role === "user" &&
         (() => {
-          const userImages = row.message.attachments ?? [];
+          const allAttachments = row.message.attachments ?? [];
+          const userImages = allAttachments.filter((a) => a.type === "image");
+          const userDocuments = allAttachments.filter(
+            (a) => a.type === "document" || a.type === "text_file",
+          );
           const canRevertAgentWork = revertTurnCountByUserMessageId.has(row.message.id);
           return (
             <div className="flex justify-end">
               <div className="group relative max-w-[80%] rounded-2xl rounded-br-sm border border-border bg-secondary px-4 py-3">
+                {userDocuments.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {userDocuments.map((doc) => (
+                      <div
+                        key={doc.id}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/50 px-2 py-1"
+                      >
+                        <VscodeEntryIcon
+                          pathValue={doc.name}
+                          kind="file"
+                          theme={resolvedTheme}
+                          className="size-5"
+                        />
+                        <span className="max-w-[200px] truncate text-xs text-muted-foreground">
+                          {doc.name}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {userImages.length > 0 && (
                   <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
-                    {userImages.map(
-                      (image: NonNullable<TimelineMessage["attachments"]>[number]) => (
-                        <div
-                          key={image.id}
-                          className="overflow-hidden rounded-lg border border-border/80 bg-background/70"
-                        >
-                          {image.previewUrl ? (
-                            <button
-                              type="button"
-                              className="h-full w-full cursor-zoom-in"
-                              aria-label={`Preview ${image.name}`}
-                              onClick={() => {
-                                const preview = buildExpandedImagePreview(userImages, image.id);
-                                if (!preview) return;
-                                onImageExpand(preview);
-                              }}
-                            >
-                              <img
-                                src={image.previewUrl}
-                                alt={image.name}
-                                className="h-full max-h-[220px] w-full object-cover"
-                                onLoad={onTimelineImageLoad}
-                                onError={onTimelineImageLoad}
-                              />
-                            </button>
-                          ) : (
-                            <div className="flex min-h-[72px] items-center justify-center px-2 py-3 text-center text-[11px] text-muted-foreground/70">
-                              {image.name}
-                            </div>
-                          )}
-                        </div>
-                      ),
-                    )}
+                    {userImages.map((image) => (
+                      <div
+                        key={image.id}
+                        className="overflow-hidden rounded-lg border border-border/80 bg-background/70"
+                      >
+                        {image.previewUrl ? (
+                          <button
+                            type="button"
+                            className="h-full w-full cursor-zoom-in"
+                            aria-label={`Preview ${image.name}`}
+                            onClick={() => {
+                              const preview = buildExpandedImagePreview(userImages, image.id);
+                              if (!preview) return;
+                              onImageExpand(preview);
+                            }}
+                          >
+                            <img
+                              src={image.previewUrl}
+                              alt={image.name}
+                              className="h-full max-h-[220px] w-full object-cover"
+                              onLoad={onTimelineImageLoad}
+                              onError={onTimelineImageLoad}
+                            />
+                          </button>
+                        ) : (
+                          <div className="flex min-h-[72px] items-center justify-center px-2 py-3 text-center text-[11px] text-muted-foreground/70">
+                            {image.name}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
                 {row.message.text && (

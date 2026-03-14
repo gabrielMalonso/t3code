@@ -77,3 +77,43 @@ export function inferImageExtension(input: { mimeType: string; fileName?: string
 
   return ".bin";
 }
+
+export const DOCUMENT_EXTENSION_BY_MIME_TYPE: Record<string, string> = {
+  "application/pdf": ".pdf",
+  "text/plain": ".txt",
+  "text/markdown": ".md",
+  "text/csv": ".csv",
+  "application/json": ".json",
+  "text/xml": ".xml",
+  "application/xml": ".xml",
+  "text/x-log": ".log",
+};
+
+export const SAFE_DOCUMENT_FILE_EXTENSIONS = new Set([
+  ".csv",
+  ".json",
+  ".log",
+  ".md",
+  ".pdf",
+  ".txt",
+  ".xml",
+]);
+
+export function inferDocumentExtension(input: { mimeType: string; fileName?: string }): string {
+  const key = input.mimeType.toLowerCase();
+  const fromMime = Object.hasOwn(DOCUMENT_EXTENSION_BY_MIME_TYPE, key)
+    ? DOCUMENT_EXTENSION_BY_MIME_TYPE[key]
+    : undefined;
+  if (fromMime) {
+    return fromMime;
+  }
+
+  const fileName = input.fileName?.trim() ?? "";
+  const extensionMatch = /\.([a-z0-9]{1,8})$/i.exec(fileName);
+  const fileNameExtension = extensionMatch ? `.${extensionMatch[1]!.toLowerCase()}` : "";
+  if (SAFE_DOCUMENT_FILE_EXTENSIONS.has(fileNameExtension)) {
+    return fileNameExtension;
+  }
+
+  return ".bin";
+}
