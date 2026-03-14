@@ -1,8 +1,10 @@
 import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ThreadId } from "@t3tools/contracts";
-import { Effect, ManagedRuntime, Stream } from "effect";
+import { Effect, Layer, ManagedRuntime, Stream } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { ServerConfig } from "../../config.ts";
 import { ClaudeCodeAdapter } from "../Services/ClaudeCodeAdapter.ts";
 import { makeClaudeCodeAdapterLive } from "./ClaudeCodeAdapter.ts";
 
@@ -85,7 +87,10 @@ describe("ClaudeCodeAdapter", () => {
       makeClaudeCodeAdapterLive({
         createQuery: (_input: { readonly prompt: AsyncIterable<SDKUserMessage> }) =>
           fakeQuery as FakeClaudeQuery,
-      }),
+      }).pipe(
+        Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+        Layer.provideMerge(NodeServices.layer),
+      ),
     );
 
     const adapter = await runtime.runPromise(Effect.service(ClaudeCodeAdapter));
