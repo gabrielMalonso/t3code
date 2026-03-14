@@ -18,6 +18,7 @@ export function resolveComposerSkills(input: ResolveComposerSkillsInput): string
     .map(normalizeComposerSkillName)
     .filter((commandName) => commandName.length > 0);
   const providerSkills = (input.availableSkillsByProvider?.[input.provider] ?? [])
+    .map((skill) => skill.name)
     .map(normalizeComposerSkillName)
     .filter((commandName) => commandName.length > 0);
   return Array.from(new Set([...sessionSkills, ...providerSkills]));

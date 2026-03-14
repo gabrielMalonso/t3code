@@ -45,10 +45,20 @@ export type ServerProviderStatus = typeof ServerProviderStatus.Type;
 
 const ServerProviderStatuses = Schema.Array(ServerProviderStatus);
 
+export const ServerAvailableSkillDescriptor = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  path: Schema.optional(TrimmedNonEmptyString),
+  description: Schema.optional(TrimmedNonEmptyString),
+  suggestedUse: Schema.optional(TrimmedNonEmptyString),
+  enabled: Schema.optional(Schema.Boolean),
+  sourceType: Schema.optional(TrimmedNonEmptyString),
+});
+export type ServerAvailableSkillDescriptor = typeof ServerAvailableSkillDescriptor.Type;
+
 export const ServerAvailableSkillsByProvider = Schema.Struct({
-  codex: Schema.Array(Schema.String),
-  claudeCode: Schema.Array(Schema.String),
-  cursor: Schema.Array(Schema.String),
+  codex: Schema.Array(ServerAvailableSkillDescriptor),
+  claudeCode: Schema.Array(ServerAvailableSkillDescriptor),
+  cursor: Schema.Array(ServerAvailableSkillDescriptor),
 });
 export type ServerAvailableSkillsByProvider = typeof ServerAvailableSkillsByProvider.Type;
 

@@ -630,6 +630,18 @@ function mapToRuntimeEvents(
     ];
   }
 
+  if (event.method === "session/configured") {
+    return [
+      {
+        ...runtimeEventBase(event, canonicalThreadId),
+        type: "session.configured",
+        payload: {
+          config: asObject(payload?.config) ?? asObject(event.payload) ?? {},
+        },
+      },
+    ];
+  }
+
   if (event.method === "session/exited" || event.method === "session/closed") {
     return [
       {
