@@ -11,6 +11,7 @@ import {
   IsoDateTime,
   ProjectionPendingApprovalDecision,
   ProjectionPendingApprovalStatus,
+  SubThreadId,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -22,6 +23,7 @@ import type { ProjectionRepositoryError } from "../Errors.ts";
 export const ProjectionPendingApproval = Schema.Struct({
   requestId: ApprovalRequestId,
   threadId: ThreadId,
+  subThreadId: Schema.NullOr(SubThreadId),
   turnId: Schema.NullOr(TurnId),
   status: ProjectionPendingApprovalStatus,
   decision: ProjectionPendingApprovalDecision,

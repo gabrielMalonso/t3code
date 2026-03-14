@@ -2,6 +2,7 @@ import {
   ApprovalRequestId,
   type ChatAttachment,
   type OrchestrationEvent,
+  type SubThreadId,
 } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Effect, FileSystem, Layer, Option, Path, Stream } from "effect";
@@ -428,6 +429,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             sourceThreadId: event.payload.sourceThreadId ?? null,
             implementationThreadId: null,
             latestTurnId: null,
+            activeSubThreadId: null,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
             deletedAt: null,
@@ -564,6 +566,98 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
           return;
         }
 
+        case "thread.sub-thread-created": {
+          yield* sql`
+            INSERT INTO projection_sub_threads (
+              sub_thread_id,
+              thread_id,
+              title,
+              model,
+              runtime_mode,
+              interaction_mode,
+              created_at,
+              updated_at
+            )
+            VALUES (
+              ${event.payload.subThreadId},
+              ${event.payload.threadId},
+              ${event.payload.title},
+              ${event.payload.model},
+              ${event.payload.runtimeMode},
+              ${event.payload.interactionMode},
+              ${event.payload.createdAt},
+              ${event.payload.updatedAt}
+            )
+            ON CONFLICT (sub_thread_id)
+            DO UPDATE SET
+              thread_id = excluded.thread_id,
+              title = excluded.title,
+              model = excluded.model,
+              runtime_mode = excluded.runtime_mode,
+              interaction_mode = excluded.interaction_mode,
+              created_at = excluded.created_at,
+              updated_at = excluded.updated_at
+          `;
+          // Also set active sub-thread if this is the first one
+          const threadRow = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isSome(threadRow) && threadRow.value.activeSubThreadId === null) {
+            yield* projectionThreadRepository.upsert({
+              ...threadRow.value,
+              activeSubThreadId: event.payload.subThreadId,
+              updatedAt: event.occurredAt,
+            });
+          }
+          return;
+        }
+
+        case "thread.sub-thread-deleted": {
+          yield* sql`
+            UPDATE projection_sub_threads
+            SET deleted_at = ${event.payload.deletedAt},
+                updated_at = ${event.payload.deletedAt}
+            WHERE sub_thread_id = ${event.payload.subThreadId}
+          `;
+          return;
+        }
+
+        case "thread.sub-thread-meta-updated": {
+          const updates: Array<string> = [];
+          if (event.payload.title !== undefined) {
+            updates.push("title");
+          }
+          if (event.payload.model !== undefined) {
+            updates.push("model");
+          }
+          if (updates.length > 0) {
+            yield* sql`
+              UPDATE projection_sub_threads
+              SET
+                title = COALESCE(${event.payload.title ?? null}, title),
+                model = COALESCE(${event.payload.model ?? null}, model),
+                updated_at = ${event.payload.updatedAt}
+              WHERE sub_thread_id = ${event.payload.subThreadId}
+            `;
+          }
+          return;
+        }
+
+        case "thread.active-sub-thread-set": {
+          const threadRow = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isNone(threadRow)) {
+            return;
+          }
+          yield* projectionThreadRepository.upsert({
+            ...threadRow.value,
+            activeSubThreadId: event.payload.subThreadId,
+            updatedAt: event.occurredAt,
+          });
+          return;
+        }
+
         default:
           return;
       }
@@ -597,6 +691,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
           yield* projectionThreadMessageRepository.upsert({
             messageId: event.payload.messageId,
             threadId: event.payload.threadId,
+            subThreadId: (event.payload.subThreadId as SubThreadId | undefined) ?? null,
             turnId: event.payload.turnId,
             role: event.payload.role,
             text: nextText,
@@ -656,6 +751,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
           yield* projectionThreadProposedPlanRepository.upsert({
             planId: event.payload.proposedPlan.id,
             threadId: event.payload.threadId,
+            subThreadId: (event.payload.subThreadId as SubThreadId | undefined) ?? null,
             turnId: event.payload.proposedPlan.turnId,
             planMarkdown: event.payload.proposedPlan.planMarkdown,
             createdAt: event.payload.proposedPlan.createdAt,
@@ -707,6 +803,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
           yield* projectionThreadActivityRepository.upsert({
             activityId: event.payload.activity.id,
             threadId: event.payload.threadId,
+            subThreadId: (event.payload.subThreadId as SubThreadId | undefined) ?? null,
             turnId: event.payload.activity.turnId,
             tone: event.payload.activity.tone,
             kind: event.payload.activity.kind,
@@ -761,6 +858,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
       }
       yield* projectionThreadSessionRepository.upsert({
         threadId: event.payload.threadId,
+        subThreadId: (event.payload.subThreadId as SubThreadId | undefined) ?? null,
         status: event.payload.session.status,
         providerName: event.payload.session.providerName,
         runtimeMode: event.payload.session.runtimeMode,
@@ -824,6 +922,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             yield* projectionTurnRepository.upsertByTurnId({
               turnId,
               threadId: event.payload.threadId,
+              subThreadId: (event.payload.subThreadId as SubThreadId | undefined) ?? null,
               pendingMessageId: Option.isSome(pendingTurnStart)
                 ? pendingTurnStart.value.messageId
                 : null,
@@ -879,6 +978,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
           yield* projectionTurnRepository.upsertByTurnId({
             turnId: event.payload.turnId,
             threadId: event.payload.threadId,
+            subThreadId: (event.payload.subThreadId as SubThreadId | undefined) ?? null,
             pendingMessageId: null,
             assistantMessageId: event.payload.messageId,
             state: event.payload.streaming ? "running" : "completed",
@@ -914,6 +1014,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
           yield* projectionTurnRepository.upsertByTurnId({
             turnId: event.payload.turnId,
             threadId: event.payload.threadId,
+            subThreadId: (event.payload.subThreadId as SubThreadId | undefined) ?? null,
             pendingMessageId: null,
             assistantMessageId: null,
             state: "interrupted",
@@ -958,6 +1059,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
           yield* projectionTurnRepository.upsertByTurnId({
             turnId: event.payload.turnId,
             threadId: event.payload.threadId,
+            subThreadId: (event.payload.subThreadId as SubThreadId | undefined) ?? null,
             pendingMessageId: null,
             assistantMessageId: event.payload.assistantMessageId,
             state: nextState,
@@ -1042,6 +1144,9 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
               threadId: Option.isSome(existingRow)
                 ? existingRow.value.threadId
                 : event.payload.threadId,
+              subThreadId: Option.isSome(existingRow)
+                ? existingRow.value.subThreadId
+                : ((event.payload.subThreadId as SubThreadId | undefined) ?? null),
               turnId: Option.isSome(existingRow)
                 ? existingRow.value.turnId
                 : event.payload.activity.turnId,
@@ -1060,6 +1165,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
           yield* projectionPendingApprovalRepository.upsert({
             requestId,
             threadId: event.payload.threadId,
+            subThreadId: (event.payload.subThreadId as SubThreadId | undefined) ?? null,
             turnId: event.payload.activity.turnId,
             status: "pending",
             decision: null,
@@ -1080,6 +1186,9 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
             threadId: Option.isSome(existingRow)
               ? existingRow.value.threadId
               : event.payload.threadId,
+            subThreadId: Option.isSome(existingRow)
+              ? existingRow.value.subThreadId
+              : ((event.payload.subThreadId as SubThreadId | undefined) ?? null),
             turnId: Option.isSome(existingRow) ? existingRow.value.turnId : null,
             status: "resolved",
             decision: event.payload.decision,

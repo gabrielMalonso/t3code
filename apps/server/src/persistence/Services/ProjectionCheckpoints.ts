@@ -13,6 +13,7 @@ import {
   NonNegativeInt,
   OrchestrationCheckpointFile,
   OrchestrationCheckpointStatus,
+  SubThreadId,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -23,6 +24,7 @@ import type { ProjectionRepositoryError } from "../Errors.ts";
 
 export const ProjectionCheckpoint = Schema.Struct({
   threadId: ThreadId,
+  subThreadId: Schema.NullOr(SubThreadId),
   turnId: TurnId,
   checkpointTurnCount: NonNegativeInt,
   checkpointRef: CheckpointRef,

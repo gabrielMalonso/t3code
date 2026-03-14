@@ -31,6 +31,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           source_thread_id,
           implementation_thread_id,
           latest_turn_id,
+          active_sub_thread_id,
           created_at,
           updated_at,
           deleted_at
@@ -47,6 +48,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.sourceThreadId},
           ${row.implementationThreadId},
           ${row.latestTurnId},
+          ${row.activeSubThreadId},
           ${row.createdAt},
           ${row.updatedAt},
           ${row.deletedAt}
@@ -63,6 +65,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           source_thread_id = excluded.source_thread_id,
           implementation_thread_id = excluded.implementation_thread_id,
           latest_turn_id = excluded.latest_turn_id,
+          active_sub_thread_id = excluded.active_sub_thread_id,
           created_at = excluded.created_at,
           updated_at = excluded.updated_at,
           deleted_at = excluded.deleted_at
@@ -86,6 +89,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           source_thread_id AS "sourceThreadId",
           implementation_thread_id AS "implementationThreadId",
           latest_turn_id AS "latestTurnId",
+          active_sub_thread_id AS "activeSubThreadId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           deleted_at AS "deletedAt"
@@ -111,6 +115,7 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           source_thread_id AS "sourceThreadId",
           implementation_thread_id AS "implementationThreadId",
           latest_turn_id AS "latestTurnId",
+          active_sub_thread_id AS "activeSubThreadId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           deleted_at AS "deletedAt"

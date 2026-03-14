@@ -31,6 +31,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
         INSERT INTO projection_thread_messages (
           message_id,
           thread_id,
+          sub_thread_id,
           turn_id,
           role,
           text,
@@ -42,6 +43,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
         VALUES (
           ${row.messageId},
           ${row.threadId},
+          ${row.subThreadId},
           ${row.turnId},
           ${row.role},
           ${row.text},
@@ -60,6 +62,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
         ON CONFLICT (message_id)
         DO UPDATE SET
           thread_id = excluded.thread_id,
+          sub_thread_id = excluded.sub_thread_id,
           turn_id = excluded.turn_id,
           role = excluded.role,
           text = excluded.text,
@@ -82,6 +85,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
         SELECT
           message_id AS "messageId",
           thread_id AS "threadId",
+          sub_thread_id AS "subThreadId",
           turn_id AS "turnId",
           role,
           text,
@@ -118,6 +122,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
         rows.map((row) => ({
           messageId: row.messageId,
           threadId: row.threadId,
+          subThreadId: row.subThreadId,
           turnId: row.turnId,
           role: row.role,
           text: row.text,
