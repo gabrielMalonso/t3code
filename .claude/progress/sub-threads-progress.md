@@ -17,8 +17,17 @@
 
 ### Wave 2: Server — Decider e Projector
 
-- Status: PENDENTE
+- Status: CONCLUIDO
 - Tarefas: 2.1-2.9
+- Step 2.1: findSubThreadById, requireSubThread, resolveSubThreadId adicionados em commandInvariants.ts
+- Step 2.2: Re-exports de SubThreadCreatedPayload, SubThreadDeletedPayload, SubThreadMetaUpdatedPayload, ThreadActiveSubThreadSetPayload adicionados em Schemas.ts
+- Step 2.3: thread.create agora emite [thread.created, thread.sub-thread-created] com SubThreadId auto-gerado
+- Step 2.4: Novos command cases no decider: thread.sub-thread.create, thread.sub-thread.delete, thread.sub-thread.meta.update, thread.active-sub-thread.set
+- Step 2.5: subThreadId forwarding adicionado em 15 commands existentes via resolveSubThreadId; thread.turn.start agora le runtimeMode/interactionMode do SubThread
+- Step 2.6: updateSubThread helper e resolveEventSubThreadId helper no projector; thread.created handler atualizado para subThreads: [], activeSubThreadId: null
+- Step 2.7: Handlers para thread.sub-thread-created, thread.sub-thread-deleted, thread.sub-thread-meta-updated, thread.active-sub-thread-set
+- Step 2.8: Todos handlers existentes migrados para updateSubThread: message-sent, session-set, proposed-plan-upserted, turn-diff-completed, reverted, activity-appended, runtime-mode-set, interaction-mode-set
+- Step 2.9: fmt OK, lint OK, typecheck OK nos arquivos Wave 2 (erros restantes sao em arquivos Wave 3: ProjectionSnapshotQuery, ProviderCommandReactor, ProviderRuntimeIngestion, CheckpointReactor, CheckpointDiffQuery)
 
 ### Wave 3: Server — Persistência
 
@@ -37,7 +46,10 @@
 
 ## Descobertas dos Subagentes
 
-[Será preenchido durante execução]
+- exactOptionalPropertyTypes: O tsconfig usa exactOptionalPropertyTypes: true. Funcoes que recebem SubThreadId de commands (Schema.optional) devem declarar o parametro como `SubThreadId | undefined` e nao `explicitSubThreadId?: SubThreadId`, pois passar undefined explicitamente falha o type check.
+- OrchestrationThread nao tem mais model, runtimeMode, interactionMode, latestTurn, messages, proposedPlans, activities, checkpoints, session. Tudo foi movido para OrchestrationSubThread.
+- thread.meta-updated payload ainda tem `model` no schema mas o handler do projector nao o aplica na thread (pois a thread nao tem mais model).
+- Wave 3 tera que atualizar: CheckpointDiffQuery, CheckpointReactor, ProjectionSnapshotQuery, ProviderCommandReactor, ProviderRuntimeIngestion (todos acessam thread.checkpoints, thread.session, thread.messages, etc).
 
 ## Log de Execução
 
@@ -45,3 +57,4 @@
 - Step 1.1: SubThreadId adicionado em baseSchemas.ts (feito manualmente antes do /executar-plano)
 - Import de SubThreadId adicionado em orchestration.ts
 - Steps 1.2-1.8: OrchestrationSubThread criado, OrchestrationThread refatorado (campos movidos para SubThread, adicionados subThreads + activeSubThreadId), subThreadId adicionado em 15 payloads e 16 commands, 4 novos commands (sub-thread.create/delete/meta.update, active-sub-thread.set), 4 novos events (sub-thread-created/deleted/meta-updated, active-sub-thread-set). Contracts typecheck OK.
+- Wave 2 (Steps 2.1-2.9): Server decider e projector atualizados. Decider: thread.create emite 2 events, 4 novos command cases, subThreadId forwarding em 15 commands. Projector: updateSubThread helper, 4 novos event handlers, 8 handlers existentes migrados para updateSubThread. Validacao: fmt/lint/typecheck OK nos arquivos Wave 2.
