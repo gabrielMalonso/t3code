@@ -507,7 +507,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const inferredProviderFromDraftModel = inferProviderFromModel(composerDraft.model);
   const globalFavorite = getFavoriteModel(settings);
   const favoriteProvider = isLocalDraftThread && globalFavorite
-    ? (globalFavorite.provider as ProviderKind)
+    ? globalFavorite.provider
     : null;
   const selectedProvider: ProviderKind =
     lockedProvider ?? selectedProviderByThreadId ?? inferredProviderFromDraftModel ?? favoriteProvider ?? "codex";

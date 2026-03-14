@@ -17,7 +17,7 @@ const BUILT_IN_MODEL_SLUGS_BY_PROVIDER: Record<ProviderKind, ReadonlySet<string>
 };
 
 const FavoriteModelSchema = Schema.Struct({
-  provider: Schema.String,
+  provider: Schema.Literals(["codex", "claudeCode", "cursor"]),
   model: Schema.String,
 });
 export type FavoriteModel = typeof FavoriteModelSchema.Type;
@@ -174,7 +174,8 @@ export function getFavoriteModel(
 ): FavoriteModel | null {
   const fav = settings.favoriteModel;
   if (!fav || !fav.provider || !fav.model) return null;
-  const provider = fav.provider as ProviderKind;
+  const provider = fav.provider;
+  if (!(provider in BUILT_IN_MODEL_SLUGS_BY_PROVIDER)) return null;
   const normalized = normalizeModelSlug(fav.model, provider);
   if (!normalized) return null;
   return { provider, model: normalized };

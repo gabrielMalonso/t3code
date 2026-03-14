@@ -105,6 +105,13 @@ describe("getFavoriteModel", () => {
     expect(fav).toEqual({ provider: "claudeCode", model: "claude-opus-4-6" });
   });
 
+  it("returns null for invalid provider values", () => {
+    const settings = makeSettings({
+      favoriteModel: { provider: "invalid" as any, model: "gpt-5.4" },
+    });
+    expect(getFavoriteModel(settings)).toBeNull();
+  });
+
   it("returns null for empty model values", () => {
     const settings = makeSettings({
       favoriteModel: { provider: "codex", model: "" },
