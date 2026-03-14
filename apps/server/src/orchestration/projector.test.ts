@@ -142,7 +142,7 @@ async function applyThreadCreation(
       makeSubThreadCreatedEvent({
         sequence: input.baseSequence + 1,
         threadId: input.threadId,
-        subThreadId: input.subThreadId,
+        ...(input.subThreadId !== undefined ? { subThreadId: input.subThreadId } : {}),
         model: input.modelSlug,
         occurredAt: input.occurredAt,
         commandId: `${input.commandId}-sub`,
@@ -155,7 +155,7 @@ async function applyThreadCreation(
       makeActiveSubThreadSetEvent({
         sequence: input.baseSequence + 2,
         threadId: input.threadId,
-        subThreadId: input.subThreadId,
+        ...(input.subThreadId !== undefined ? { subThreadId: input.subThreadId } : {}),
         occurredAt: input.occurredAt,
         commandId: `${input.commandId}-active`,
       }),
@@ -336,7 +336,7 @@ describe("orchestration projector", () => {
     );
 
     expect(afterUpdate.threads[0]?.subThreads[0]?.runtimeMode).toBe("approval-required");
-    expect(afterUpdate.threads[0]?.updatedAt).toBe(updatedAt);
+    expect(afterUpdate.threads[0]?.subThreads[0]?.updatedAt).toBe(updatedAt);
   });
 
   it("marks assistant messages completed with non-streaming updates", async () => {

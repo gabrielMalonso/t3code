@@ -158,6 +158,7 @@ describe("OrchestrationEngine", () => {
     expect(events.map((event) => event.type)).toEqual([
       "project.created",
       "thread.created",
+      "thread.sub-thread-created",
       "thread.deleted",
     ]);
     await system.dispose();
@@ -185,7 +186,7 @@ describe("OrchestrationEngine", () => {
       Effect.gen(function* () {
         const eventQueue = yield* Queue.unbounded<OrchestrationEvent>();
         yield* Effect.forkScoped(
-          Stream.take(engine.streamDomainEvents, 2).pipe(
+          Stream.take(engine.streamDomainEvents, 3).pipe(
             Stream.runForEach((event) => Queue.offer(eventQueue, event).pipe(Effect.asVoid)),
           ),
         );
@@ -211,10 +212,15 @@ describe("OrchestrationEngine", () => {
         });
         eventTypes.push((yield* Queue.take(eventQueue)).type);
         eventTypes.push((yield* Queue.take(eventQueue)).type);
+        eventTypes.push((yield* Queue.take(eventQueue)).type);
       }).pipe(Effect.scoped),
     );
 
-    expect(eventTypes).toEqual(["thread.created", "thread.meta-updated"]);
+    expect(eventTypes).toEqual([
+      "thread.created",
+      "thread.sub-thread-created",
+      "thread.meta-updated",
+    ]);
     await system.dispose();
   });
 
@@ -267,7 +273,7 @@ describe("OrchestrationEngine", () => {
     const thread = (await system.run(engine.getReadModel())).threads.find(
       (entry) => entry.id === "thread-turn-diff",
     );
-    expect(thread?.checkpoints).toEqual([
+    expect(thread?.subThreads[0]?.checkpoints).toEqual([
       {
         turnId: asTurnId("turn-1"),
         checkpointTurnCount: 1,
@@ -376,8 +382,8 @@ describe("OrchestrationEngine", () => {
       }),
     );
 
-    expect(result.sequence).toBe(2);
-    expect((await runtime.runPromise(engine.getReadModel())).snapshotSequence).toBe(2);
+    expect(result.sequence).toBe(3);
+    expect((await runtime.runPromise(engine.getReadModel())).snapshotSequence).toBe(3);
     await runtime.dispose();
   });
 
@@ -468,11 +474,12 @@ describe("OrchestrationEngine", () => {
     expect(eventsAfterFailure.map((event) => event.type)).toEqual([
       "project.created",
       "thread.created",
+      "thread.sub-thread-created",
     ]);
-    expect((await runtime.runPromise(engine.getReadModel())).snapshotSequence).toBe(2);
+    expect((await runtime.runPromise(engine.getReadModel())).snapshotSequence).toBe(3);
 
     const retryResult = await runtime.runPromise(engine.dispatch(turnStartCommand));
-    expect(retryResult.sequence).toBe(4);
+    expect(retryResult.sequence).toBe(5);
 
     const eventsAfterRetry = await runtime.runPromise(
       Stream.runCollect(engine.readEvents(0)).pipe(
@@ -482,6 +489,7 @@ describe("OrchestrationEngine", () => {
     expect(eventsAfterRetry.map((event) => event.type)).toEqual([
       "project.created",
       "thread.created",
+      "thread.sub-thread-created",
       "thread.message-sent",
       "thread.turn-start-requested",
     ]);
@@ -591,7 +599,7 @@ describe("OrchestrationEngine", () => {
     const updatedThread = readModelAfterFailure.threads.find(
       (thread) => thread.id === "thread-sync",
     );
-    expect(readModelAfterFailure.snapshotSequence).toBe(3);
+    expect(readModelAfterFailure.snapshotSequence).toBe(4);
     expect(updatedThread?.title).toBe("sync-after-failed-projection");
 
     await runtime.dispose();

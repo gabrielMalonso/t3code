@@ -696,9 +696,11 @@ describe("WebSocket Server", () => {
         id: string;
         projectId: string;
         title: string;
-        model: string;
         branch: string | null;
         worktreePath: string | null;
+        subThreads: Array<{
+          model: string;
+        }>;
       }>;
     };
     const bootstrapProjectId = (welcome.data as { bootstrapProjectId?: string }).bootstrapProjectId;
@@ -722,9 +724,13 @@ describe("WebSocket Server", () => {
           id: bootstrapThreadId,
           projectId: bootstrapProjectId,
           title: "New thread",
-          model: "gpt-5-codex",
           branch: null,
           worktreePath: null,
+          subThreads: expect.arrayContaining([
+            expect.objectContaining({
+              model: "gpt-5-codex",
+            }),
+          ]),
         }),
       ]),
     );

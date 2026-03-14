@@ -106,25 +106,38 @@ function createProviderServiceHarness(
   };
 }
 
+type CheckpointReactorTestThread = {
+  latestTurn: { turnId: string } | null;
+  checkpoints: ReadonlyArray<{ checkpointTurnCount: number }>;
+  activities: ReadonlyArray<{ kind: string }>;
+};
+
+function activeSubThreadView(thread: {
+  subThreads: ReadonlyArray<{ latestTurn: unknown; checkpoints: unknown; activities: unknown }>;
+  activeSubThreadId: unknown;
+}): CheckpointReactorTestThread {
+  const sub = thread.subThreads[0];
+  return {
+    latestTurn: (sub?.latestTurn ?? null) as CheckpointReactorTestThread["latestTurn"],
+    checkpoints: (sub?.checkpoints ?? []) as CheckpointReactorTestThread["checkpoints"],
+    activities: (sub?.activities ?? []) as CheckpointReactorTestThread["activities"],
+  };
+}
+
 async function waitForThread(
   engine: OrchestrationEngineShape,
-  predicate: (thread: {
-    latestTurn: { turnId: string } | null;
-    checkpoints: ReadonlyArray<{ checkpointTurnCount: number }>;
-    activities: ReadonlyArray<{ kind: string }>;
-  }) => boolean,
+  predicate: (thread: CheckpointReactorTestThread) => boolean,
   timeoutMs = 5000,
 ) {
   const deadline = Date.now() + timeoutMs;
-  const poll = async (): Promise<{
-    latestTurn: { turnId: string } | null;
-    checkpoints: ReadonlyArray<{ checkpointTurnCount: number }>;
-    activities: ReadonlyArray<{ kind: string }>;
-  }> => {
+  const poll = async (): Promise<CheckpointReactorTestThread> => {
     const readModel = await Effect.runPromise(engine.getReadModel());
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.makeUnsafe("thread-1"));
-    if (thread && predicate(thread)) {
-      return thread;
+    if (thread) {
+      const view = activeSubThreadView(thread);
+      if (predicate(view)) {
+        return view;
+      }
     }
     if (Date.now() >= deadline) {
       throw new Error("Timed out waiting for thread state.");
@@ -457,7 +470,7 @@ describe("CheckpointReactor", () => {
     const midThread = midReadModel.threads.find(
       (entry) => entry.id === ThreadId.makeUnsafe("thread-1"),
     );
-    expect(midThread?.checkpoints).toHaveLength(0);
+    expect(midThread?.subThreads[0]?.checkpoints).toHaveLength(0);
 
     harness.provider.emit({
       type: "turn.completed",
@@ -649,9 +662,9 @@ describe("CheckpointReactor", () => {
     await harness.drain();
     const readModel = await Effect.runPromise(harness.engine.getReadModel());
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.makeUnsafe("thread-1"));
-    expect(thread?.checkpoints.some((checkpoint) => checkpoint.checkpointTurnCount === 3)).toBe(
-      false,
-    );
+    expect(
+      thread?.subThreads[0]?.checkpoints.some((checkpoint) => checkpoint.checkpointTurnCount === 3),
+    ).toBe(false);
   });
 
   it("continues processing runtime events after a single checkpoint runtime failure", async () => {
