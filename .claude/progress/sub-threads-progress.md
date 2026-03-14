@@ -31,13 +31,20 @@
 
 ### Wave 3: Server — Persistência
 
-- Status: PENDENTE
+- Status: CONCLUIDO
 - Tarefas: 3.1-3.5
+- Nota: Erros restantes nos test files do server (projector.test.ts, orchestrationEngine.integration.test.ts, ProjectionThreadMessages.test.ts) precisam ser atualizados para acessar subThreads[0] ao inves de thread diretamente
 
 ### Wave 4: Client — Tipos e Store
 
-- Status: PENDENTE
+- Status: CONCLUIDO
 - Tarefas: 4.1-4.6
+- Step 4.1: SubThread interface criada em types.ts; Thread refatorada (removidos model, runtimeMode, interactionMode, session, messages, proposedPlans, latestTurn, turnDiffSummaries, activities; adicionados subThreads, activeSubThreadId); helper getActiveSubThread() exportado
+- Step 4.2: syncServerReadModel em store.ts atualizado para mapear sub-threads do OrchestrationReadModel; markThreadUnread acessa latestTurn via active sub-thread; setThreadBranch reseta session em todas sub-threads ao mudar cwd
+- Step 4.3: composerDraftStore mantido com keys por threadId (Phase 1: 1 sub-thread por thread)
+- Step 4.4: Componentes atualizados: ChatView.tsx (activeSubThread derivado, todas refs migradas), ChatView.logic.ts (buildLocalDraftThread cria sub-thread default), Sidebar.logic.ts (deriveThreadStatusInput helper), Sidebar.tsx (usa deriveThreadStatusInput e getActiveSubThread), BranchToolbar.tsx (session via active sub-thread), useTurnDiffSummaries.ts (recebe SubThread), DiffPanel.tsx (usa activeSubThread), store.test.ts (mock atualizado), worktreeCleanup.test.ts (mock atualizado), ChatView.browser.tsx (snapshots com subThreads), KeybindingsToast.browser.tsx (snapshot com subThreads)
+- Step 4.5: Commands ja passam subThreadId opcionalmente via contracts; nenhuma mudanca necessaria no client para Phase 1
+- Step 4.6: Validacao: fmt OK, lint OK (0 errors), web typecheck OK, store tests OK (7/7), worktreeCleanup tests OK (9/9)
 
 ### Wave 5: Client — Routing e Tab Bar
 
@@ -50,6 +57,10 @@
 - OrchestrationThread nao tem mais model, runtimeMode, interactionMode, latestTurn, messages, proposedPlans, activities, checkpoints, session. Tudo foi movido para OrchestrationSubThread.
 - thread.meta-updated payload ainda tem `model` no schema mas o handler do projector nao o aplica na thread (pois a thread nao tem mais model).
 - Wave 3 tera que atualizar: CheckpointDiffQuery, CheckpointReactor, ProjectionSnapshotQuery, ProviderCommandReactor, ProviderRuntimeIngestion (todos acessam thread.checkpoints, thread.session, thread.messages, etc).
+- Client Thread nao tem mais model/session/messages/etc direto. Todos os componentes que acessavam essas props agora usam getActiveSubThread(thread) para obter a sub-thread ativa.
+- Sidebar.logic.ts: ThreadStatusInput agora e um tipo interno, preenchido via deriveThreadStatusInput(thread) que le da sub-thread ativa.
+- useTurnDiffSummaries agora recebe SubThread ao inves de Thread.
+- Para Phase 1, composerDraftStore continua keyed por threadId (1:1 com sub-thread). Wave 5 pode migrar para subThreadId keys se necessario.
 
 ## Log de Execução
 
@@ -58,3 +69,4 @@
 - Import de SubThreadId adicionado em orchestration.ts
 - Steps 1.2-1.8: OrchestrationSubThread criado, OrchestrationThread refatorado (campos movidos para SubThread, adicionados subThreads + activeSubThreadId), subThreadId adicionado em 15 payloads e 16 commands, 4 novos commands (sub-thread.create/delete/meta.update, active-sub-thread.set), 4 novos events (sub-thread-created/deleted/meta-updated, active-sub-thread-set). Contracts typecheck OK.
 - Wave 2 (Steps 2.1-2.9): Server decider e projector atualizados. Decider: thread.create emite 2 events, 4 novos command cases, subThreadId forwarding em 15 commands. Projector: updateSubThread helper, 4 novos event handlers, 8 handlers existentes migrados para updateSubThread. Validacao: fmt/lint/typecheck OK nos arquivos Wave 2.
+- Wave 4 (Steps 4.1-4.6): Client types e store atualizados. SubThread interface criada, Thread refatorada, getActiveSubThread helper. syncServerReadModel mapeia sub-threads. 11 arquivos de componentes atualizados. fmt/lint/typecheck OK para @t3tools/web. Testes unitarios passam (store 7/7, worktreeCleanup 9/9).

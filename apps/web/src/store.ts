@@ -13,7 +13,7 @@ import {
   resolveModelSlugForProvider,
 } from "@t3tools/shared/model";
 import { create } from "zustand";
-import { type ChatMessage, type Project, type Thread } from "./types";
+import { type ChatMessage, type Project, type SubThread, type Thread } from "./types";
 import { Debouncer } from "@tanstack/react-pacer";
 
 // ── State ────────────────────────────────────────────────────────────
@@ -252,6 +252,54 @@ function attachmentPreviewRoutePath(attachmentId: string): string {
 
 // ── Pure state transition functions ────────────────────────────────────
 
+function mapSubThreadSession(sub: {
+  session: OrchestrationReadModel["threads"][number]["subThreads"][number]["session"];
+  model: string;
+}) {
+  if (!sub.session) return null;
+  return {
+    provider:
+      normalizeProviderName(sub.session.providerName) ??
+      inferProviderForThreadModel({
+        model: sub.model,
+        sessionProviderName: sub.session.providerName,
+      }),
+    status: toLegacySessionStatus(sub.session.status),
+    orchestrationStatus: sub.session.status,
+    activeTurnId: sub.session.activeTurnId ?? undefined,
+    createdAt: sub.session.updatedAt,
+    updatedAt: sub.session.updatedAt,
+    ...(sub.session.lastError ? { lastError: sub.session.lastError } : {}),
+    ...(sub.session.skills ? { skills: [...sub.session.skills] } : {}),
+    ...(sub.session.slashCommands ? { slashCommands: [...sub.session.slashCommands] } : {}),
+  };
+}
+
+function mapSubThreadMessages(
+  messages: OrchestrationReadModel["threads"][number]["subThreads"][number]["messages"],
+): ChatMessage[] {
+  return messages.map((message) => {
+    const attachments = message.attachments?.map((attachment) => ({
+      type: "image" as const,
+      id: attachment.id,
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      sizeBytes: attachment.sizeBytes,
+      previewUrl: toAttachmentPreviewUrl(attachmentPreviewRoutePath(attachment.id)),
+    }));
+    const normalizedMessage: ChatMessage = {
+      id: message.id,
+      role: message.role,
+      text: message.text,
+      createdAt: message.createdAt,
+      streaming: message.streaming,
+      ...(message.streaming ? {} : { completedAt: message.updatedAt }),
+      ...(attachments && attachments.length > 0 ? { attachments } : {}),
+    };
+    return normalizedMessage;
+  });
+}
+
 export function syncServerReadModel(state: AppState, readModel: OrchestrationReadModel): AppState {
   const projects = mapProjectsFromReadModel(
     readModel.projects.filter((project) => project.deletedAt === null),
@@ -262,86 +310,62 @@ export function syncServerReadModel(state: AppState, readModel: OrchestrationRea
     .filter((thread) => thread.deletedAt === null)
     .map((thread) => {
       const existing = existingThreadById.get(thread.id);
+
+      const subThreads: SubThread[] = thread.subThreads
+        .filter((sub) => sub.deletedAt === null)
+        .map((sub) => ({
+          id: sub.id,
+          threadId: sub.threadId,
+          title: sub.title,
+          model: resolveModelSlugForProvider(
+            inferProviderForThreadModel({
+              model: sub.model,
+              sessionProviderName: sub.session?.providerName ?? null,
+            }),
+            sub.model,
+          ),
+          runtimeMode: sub.runtimeMode,
+          interactionMode: sub.interactionMode,
+          session: mapSubThreadSession(sub),
+          messages: mapSubThreadMessages(sub.messages),
+          proposedPlans: sub.proposedPlans.map((proposedPlan) => ({
+            id: proposedPlan.id,
+            turnId: proposedPlan.turnId,
+            planMarkdown: proposedPlan.planMarkdown,
+            createdAt: proposedPlan.createdAt,
+            updatedAt: proposedPlan.updatedAt,
+          })),
+          latestTurn: sub.latestTurn,
+          turnDiffSummaries: sub.checkpoints.map((checkpoint) => ({
+            turnId: checkpoint.turnId,
+            completedAt: checkpoint.completedAt,
+            status: checkpoint.status,
+            assistantMessageId: checkpoint.assistantMessageId ?? undefined,
+            checkpointTurnCount: checkpoint.checkpointTurnCount,
+            checkpointRef: checkpoint.checkpointRef,
+            files: checkpoint.files.map((file) => ({ ...file })),
+          })),
+          activities: sub.activities.map((activity) => ({ ...activity })),
+          createdAt: sub.createdAt,
+        }));
+
+      const activeSubThreadId = thread.activeSubThreadId ?? subThreads[0]?.id ?? null;
+      const activeSub = subThreads.find((s) => s.id === activeSubThreadId) ?? subThreads[0];
+
       return {
         id: thread.id,
         codexThreadId: null,
         projectId: thread.projectId,
         title: thread.title,
-        model: resolveModelSlugForProvider(
-          inferProviderForThreadModel({
-            model: thread.model,
-            sessionProviderName: thread.session?.providerName ?? null,
-          }),
-          thread.model,
-        ),
-        runtimeMode: thread.runtimeMode,
-        interactionMode: thread.interactionMode,
-        session: (() => {
-          if (!thread.session) return null;
-          return {
-            provider:
-              normalizeProviderName(thread.session.providerName) ??
-              inferProviderForThreadModel({
-                model: thread.model,
-                sessionProviderName: thread.session.providerName,
-              }),
-            status: toLegacySessionStatus(thread.session.status),
-            orchestrationStatus: thread.session.status,
-            activeTurnId: thread.session.activeTurnId ?? undefined,
-            createdAt: thread.session.updatedAt,
-            updatedAt: thread.session.updatedAt,
-            ...(thread.session.lastError ? { lastError: thread.session.lastError } : {}),
-            ...(thread.session.skills ? { skills: [...thread.session.skills] } : {}),
-            ...(thread.session.slashCommands
-              ? { slashCommands: [...thread.session.slashCommands] }
-              : {}),
-          };
-        })(),
-        messages: thread.messages.map((message) => {
-          const attachments = message.attachments?.map((attachment) => ({
-            type: "image" as const,
-            id: attachment.id,
-            name: attachment.name,
-            mimeType: attachment.mimeType,
-            sizeBytes: attachment.sizeBytes,
-            previewUrl: toAttachmentPreviewUrl(attachmentPreviewRoutePath(attachment.id)),
-          }));
-          const normalizedMessage: ChatMessage = {
-            id: message.id,
-            role: message.role,
-            text: message.text,
-            createdAt: message.createdAt,
-            streaming: message.streaming,
-            ...(message.streaming ? {} : { completedAt: message.updatedAt }),
-            ...(attachments && attachments.length > 0 ? { attachments } : {}),
-          };
-          return normalizedMessage;
-        }),
-        proposedPlans: thread.proposedPlans.map((proposedPlan) => ({
-          id: proposedPlan.id,
-          turnId: proposedPlan.turnId,
-          planMarkdown: proposedPlan.planMarkdown,
-          createdAt: proposedPlan.createdAt,
-          updatedAt: proposedPlan.updatedAt,
-        })),
-        error: thread.session?.lastError ?? null,
+        error: activeSub?.session?.lastError ?? null,
         createdAt: thread.createdAt,
-        latestTurn: thread.latestTurn,
         lastVisitedAt: existing?.lastVisitedAt ?? thread.updatedAt,
         branch: thread.branch,
         worktreePath: thread.worktreePath,
         sourceThreadId: thread.sourceThreadId ?? null,
         implementationThreadId: thread.implementationThreadId ?? null,
-        turnDiffSummaries: thread.checkpoints.map((checkpoint) => ({
-          turnId: checkpoint.turnId,
-          completedAt: checkpoint.completedAt,
-          status: checkpoint.status,
-          assistantMessageId: checkpoint.assistantMessageId ?? undefined,
-          checkpointTurnCount: checkpoint.checkpointTurnCount,
-          checkpointRef: checkpoint.checkpointRef,
-          files: checkpoint.files.map((file) => ({ ...file })),
-        })),
-        activities: thread.activities.map((activity) => ({ ...activity })),
+        subThreads,
+        activeSubThreadId,
       };
     });
   return {
@@ -375,8 +399,11 @@ export function markThreadVisited(
 
 export function markThreadUnread(state: AppState, threadId: ThreadId): AppState {
   const threads = updateThread(state.threads, threadId, (thread) => {
-    if (!thread.latestTurn?.completedAt) return thread;
-    const latestTurnCompletedAtMs = Date.parse(thread.latestTurn.completedAt);
+    const activeSub =
+      thread.subThreads.find((s) => s.id === thread.activeSubThreadId) ?? thread.subThreads[0];
+    const latestTurn = activeSub?.latestTurn ?? null;
+    if (!latestTurn?.completedAt) return thread;
+    const latestTurnCompletedAtMs = Date.parse(latestTurn.completedAt);
     if (Number.isNaN(latestTurnCompletedAtMs)) return thread;
     const unreadVisitedAt = new Date(latestTurnCompletedAtMs - 1).toISOString();
     if (thread.lastVisitedAt === unreadVisitedAt) return thread;
@@ -443,7 +470,7 @@ export function setThreadBranch(
       ...t,
       branch,
       worktreePath,
-      ...(cwdChanged ? { session: null } : {}),
+      ...(cwdChanged ? { subThreads: t.subThreads.map((sub) => ({ ...sub, session: null })) } : {}),
     };
   });
   return threads === state.threads ? state : { ...state, threads };

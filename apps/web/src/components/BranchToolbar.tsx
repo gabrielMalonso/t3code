@@ -6,6 +6,7 @@ import { newCommandId } from "../lib/utils";
 import { readNativeApi } from "../nativeApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useStore } from "../store";
+import { getActiveSubThread } from "../types";
 import {
   EnvMode,
   resolveDraftEnvModeAfterBranchChange,
@@ -60,7 +61,8 @@ export default function BranchToolbar({
       const api = readNativeApi();
       // If the effective cwd is about to change, stop the running session so the
       // next message creates a new one with the correct cwd.
-      if (serverThread?.session && worktreePath !== activeWorktreePath && api) {
+      const activeSubSession = serverThread ? getActiveSubThread(serverThread)?.session : undefined;
+      if (activeSubSession && worktreePath !== activeWorktreePath && api) {
         void api.orchestration
           .dispatchCommand({
             type: "thread.session.stop",
@@ -96,7 +98,7 @@ export default function BranchToolbar({
     },
     [
       activeThreadId,
-      serverThread?.session,
+      serverThread,
       activeWorktreePath,
       hasServerThread,
       setThreadBranchAction,

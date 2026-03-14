@@ -2,6 +2,7 @@ import {
   type CodexReasoningEffort,
   ProjectId,
   type ProviderKind,
+  type SubThreadId,
   type ThreadId,
 } from "@t3tools/contracts";
 import { type ChatMessage, type Thread } from "../types";
@@ -28,27 +29,37 @@ export function buildLocalDraftThread(
   fallbackModel: string,
   error: string | null,
 ): Thread {
+  const defaultSubThreadId = `default-${threadId}` as SubThreadId;
   return {
     id: threadId,
     codexThreadId: null,
     projectId: draftThread.projectId,
     title: "New thread",
-    model: fallbackModel,
-    runtimeMode: draftThread.runtimeMode,
-    interactionMode: draftThread.interactionMode,
-    session: null,
-    messages: [],
     error,
     createdAt: draftThread.createdAt,
-    latestTurn: null,
     lastVisitedAt: draftThread.createdAt,
     branch: draftThread.branch,
     worktreePath: draftThread.worktreePath,
-    turnDiffSummaries: [],
-    activities: [],
-    proposedPlans: [],
     sourceThreadId: null,
     implementationThreadId: null,
+    subThreads: [
+      {
+        id: defaultSubThreadId,
+        threadId,
+        title: "Main",
+        model: fallbackModel,
+        runtimeMode: draftThread.runtimeMode,
+        interactionMode: draftThread.interactionMode,
+        session: null,
+        messages: [],
+        proposedPlans: [],
+        latestTurn: null,
+        turnDiffSummaries: [],
+        activities: [],
+        createdAt: draftThread.createdAt,
+      },
+    ],
+    activeSubThreadId: defaultSubThreadId,
   };
 }
 

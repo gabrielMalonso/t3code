@@ -1,4 +1,5 @@
-import type { Thread } from "../types";
+import type { OrchestrationLatestTurn, ProviderInteractionMode } from "@t3tools/contracts";
+import type { ProposedPlan, SubThread, Thread, ThreadSession } from "../types";
 import { cn } from "../lib/utils";
 import { findLatestProposedPlan, isLatestTurnSettled } from "../session-logic";
 
@@ -19,15 +20,30 @@ export interface ThreadStatusPill {
   pulse: boolean;
 }
 
-type ThreadStatusInput = Pick<
-  Thread,
-  | "interactionMode"
-  | "implementationThreadId"
-  | "latestTurn"
-  | "lastVisitedAt"
-  | "proposedPlans"
-  | "session"
->;
+interface ThreadStatusInput {
+  interactionMode: ProviderInteractionMode;
+  implementationThreadId: string | null;
+  latestTurn: OrchestrationLatestTurn | null;
+  lastVisitedAt?: string | undefined;
+  proposedPlans: ProposedPlan[];
+  session: ThreadSession | null;
+}
+
+/**
+ * Derives the status input from a Thread by reading the active sub-thread.
+ */
+export function deriveThreadStatusInput(thread: Thread): ThreadStatusInput {
+  const activeSub: SubThread | undefined =
+    thread.subThreads.find((s) => s.id === thread.activeSubThreadId) ?? thread.subThreads[0];
+  return {
+    interactionMode: activeSub?.interactionMode ?? "default",
+    implementationThreadId: thread.implementationThreadId,
+    latestTurn: activeSub?.latestTurn ?? null,
+    lastVisitedAt: thread.lastVisitedAt,
+    proposedPlans: activeSub?.proposedPlans ?? [],
+    session: activeSub?.session ?? null,
+  };
+}
 
 export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {
   if (!thread.latestTurn?.completedAt) return false;

@@ -7,6 +7,7 @@ import {
   type OrchestrationReadModel,
   type ProjectId,
   type ServerConfig,
+  type SubThreadId,
   type ThreadId,
   type WsWelcomePayload,
   WS_CHANNELS,
@@ -27,6 +28,7 @@ import { useStore } from "../store";
 import { estimateTimelineMessageHeight } from "./timelineHeight";
 
 const THREAD_ID = "thread-browser-test" as ThreadId;
+const SUB_THREAD_ID = "sub-thread-browser-test" as SubThreadId;
 const UUID_ROUTE_RE = /^\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const PROJECT_ID = "project-1" as ProjectId;
 const NOW_ISO = "2026-03-04T12:00:00.000Z";
@@ -161,7 +163,9 @@ function createSnapshotForTargetUser(options: {
   targetAttachmentCount?: number;
   sessionStatus?: OrchestrationSessionStatus;
 }): OrchestrationReadModel {
-  const messages: Array<OrchestrationReadModel["threads"][number]["messages"][number]> = [];
+  const messages: Array<
+    OrchestrationReadModel["threads"][number]["subThreads"][number]["messages"][number]
+  > = [];
 
   for (let index = 0; index < 22; index += 1) {
     const isTarget = index === 3;
@@ -214,30 +218,41 @@ function createSnapshotForTargetUser(options: {
         id: THREAD_ID,
         projectId: PROJECT_ID,
         title: "Browser test thread",
-        model: "gpt-5",
-        interactionMode: "default",
-        runtimeMode: "full-access",
         branch: "main",
         worktreePath: null,
         sourceThreadId: null,
         implementationThreadId: null,
-        latestTurn: null,
         createdAt: NOW_ISO,
         updatedAt: NOW_ISO,
         deletedAt: null,
-        messages,
-        activities: [],
-        proposedPlans: [],
-        checkpoints: [],
-        session: {
-          threadId: THREAD_ID,
-          status: options.sessionStatus ?? "ready",
-          providerName: "codex",
-          runtimeMode: "full-access",
-          activeTurnId: null,
-          lastError: null,
-          updatedAt: NOW_ISO,
-        },
+        subThreads: [
+          {
+            id: SUB_THREAD_ID,
+            threadId: THREAD_ID,
+            title: "Main",
+            model: "gpt-5",
+            interactionMode: "default",
+            runtimeMode: "full-access",
+            latestTurn: null,
+            createdAt: NOW_ISO,
+            updatedAt: NOW_ISO,
+            deletedAt: null,
+            messages,
+            activities: [],
+            proposedPlans: [],
+            checkpoints: [],
+            session: {
+              threadId: THREAD_ID,
+              status: options.sessionStatus ?? "ready",
+              providerName: "codex",
+              runtimeMode: "full-access",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: NOW_ISO,
+            },
+          },
+        ],
+        activeSubThreadId: SUB_THREAD_ID,
       },
     ],
     updatedAt: NOW_ISO,
@@ -261,6 +276,7 @@ function addThreadToSnapshot(
   snapshot: OrchestrationReadModel,
   threadId: ThreadId,
 ): OrchestrationReadModel {
+  const newSubThreadId = `sub-${threadId}` as SubThreadId;
   return {
     ...snapshot,
     snapshotSequence: snapshot.snapshotSequence + 1,
@@ -270,30 +286,41 @@ function addThreadToSnapshot(
         id: threadId,
         projectId: PROJECT_ID,
         title: "New thread",
-        model: "gpt-5",
-        interactionMode: "default",
-        runtimeMode: "full-access",
         branch: "main",
         worktreePath: null,
         sourceThreadId: null,
         implementationThreadId: null,
-        latestTurn: null,
         createdAt: NOW_ISO,
         updatedAt: NOW_ISO,
         deletedAt: null,
-        messages: [],
-        activities: [],
-        proposedPlans: [],
-        checkpoints: [],
-        session: {
-          threadId,
-          status: "ready",
-          providerName: "codex",
-          runtimeMode: "full-access",
-          activeTurnId: null,
-          lastError: null,
-          updatedAt: NOW_ISO,
-        },
+        subThreads: [
+          {
+            id: newSubThreadId,
+            threadId,
+            title: "Main",
+            model: "gpt-5",
+            interactionMode: "default",
+            runtimeMode: "full-access",
+            latestTurn: null,
+            createdAt: NOW_ISO,
+            updatedAt: NOW_ISO,
+            deletedAt: null,
+            messages: [],
+            activities: [],
+            proposedPlans: [],
+            checkpoints: [],
+            session: {
+              threadId,
+              status: "ready",
+              providerName: "codex",
+              runtimeMode: "full-access",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: NOW_ISO,
+            },
+          },
+        ],
+        activeSubThreadId: newSubThreadId,
       },
     ],
   };
@@ -349,16 +376,20 @@ function createSnapshotWithLongProposedPlan(): OrchestrationReadModel {
     threads: snapshot.threads.map((thread) =>
       thread.id === THREAD_ID
         ? Object.assign({}, thread, {
-            proposedPlans: [
-              {
-                id: "plan-browser-test",
-                turnId: null,
-                planMarkdown,
-                createdAt: isoAt(1_000),
-                updatedAt: isoAt(1_001),
-              },
-            ],
             updatedAt: isoAt(1_001),
+            subThreads: thread.subThreads.map((sub) =>
+              Object.assign({}, sub, {
+                proposedPlans: [
+                  {
+                    id: "plan-browser-test",
+                    turnId: null,
+                    planMarkdown,
+                    createdAt: isoAt(1_000),
+                    updatedAt: isoAt(1_001),
+                  },
+                ],
+              }),
+            ),
           })
         : thread,
     ),

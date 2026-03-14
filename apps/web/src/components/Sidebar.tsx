@@ -85,11 +85,13 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
 import { isNonEmpty as isNonEmptyString } from "effect/String";
 import {
+  deriveThreadStatusInput,
   resolveSidebarNewThreadEnvMode,
   resolveThreadRowClassName,
   resolveThreadStatusPill,
   shouldClearThreadSelectionOnMouseDown,
 } from "./Sidebar.logic";
+import { getActiveSubThread } from "../types";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 
 const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
@@ -588,7 +590,8 @@ export default function Sidebar() {
           ].join("\n"),
         ));
 
-      if (thread.session && thread.session.status !== "closed") {
+      const activeSubForDelete = getActiveSubThread(thread);
+      if (activeSubForDelete?.session && activeSubForDelete.session.status !== "closed") {
         await api.orchestration
           .dispatchCommand({
             type: "thread.session.stop",
@@ -1382,12 +1385,15 @@ export default function Sidebar() {
                                 const isActive = routeThreadId === thread.id;
                                 const isSelected = selectedThreadIds.has(thread.id);
                                 const isHighlighted = isActive || isSelected;
+                                const threadStatusInput = deriveThreadStatusInput(thread);
+                                const activeSubActivities =
+                                  getActiveSubThread(thread)?.activities ?? [];
                                 const threadStatus = resolveThreadStatusPill({
-                                  thread,
+                                  thread: threadStatusInput,
                                   hasPendingApprovals:
-                                    derivePendingApprovals(thread.activities).length > 0,
+                                    derivePendingApprovals(activeSubActivities).length > 0,
                                   hasPendingUserInput:
-                                    derivePendingUserInputs(thread.activities).length > 0,
+                                    derivePendingUserInputs(activeSubActivities).length > 0,
                                 });
                                 const prStatus = prStatusIndicator(
                                   prByThreadId.get(thread.id) ?? null,

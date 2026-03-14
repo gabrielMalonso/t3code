@@ -1,6 +1,7 @@
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   ProjectId,
+  SubThreadId,
   ThreadId,
   TurnId,
   type OrchestrationReadModel,
@@ -8,29 +9,47 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { markThreadUnread, reorderProjects, syncServerReadModel, type AppState } from "./store";
-import { DEFAULT_INTERACTION_MODE, DEFAULT_RUNTIME_MODE, type Thread } from "./types";
+import {
+  DEFAULT_INTERACTION_MODE,
+  DEFAULT_RUNTIME_MODE,
+  type SubThread,
+  type Thread,
+} from "./types";
 
-function makeThread(overrides: Partial<Thread> = {}): Thread {
+function makeSubThread(overrides: Partial<SubThread> = {}): SubThread {
   return {
-    id: ThreadId.makeUnsafe("thread-1"),
-    codexThreadId: null,
-    projectId: ProjectId.makeUnsafe("project-1"),
-    title: "Thread",
+    id: SubThreadId.makeUnsafe("sub-thread-1"),
+    threadId: ThreadId.makeUnsafe("thread-1"),
+    title: "Main",
     model: "gpt-5-codex",
     runtimeMode: DEFAULT_RUNTIME_MODE,
     interactionMode: DEFAULT_INTERACTION_MODE,
     session: null,
     messages: [],
+    proposedPlans: [],
+    latestTurn: null,
     turnDiffSummaries: [],
     activities: [],
-    proposedPlans: [],
+    createdAt: "2026-02-13T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function makeThread(overrides: Partial<Thread> = {}): Thread {
+  const subThread = makeSubThread();
+  return {
+    id: ThreadId.makeUnsafe("thread-1"),
+    codexThreadId: null,
+    projectId: ProjectId.makeUnsafe("project-1"),
+    title: "Thread",
     error: null,
     createdAt: "2026-02-13T00:00:00.000Z",
-    latestTurn: null,
     branch: null,
     worktreePath: null,
     sourceThreadId: null,
     implementationThreadId: null,
+    subThreads: [subThread],
+    activeSubThreadId: subThread.id,
     ...overrides,
   };
 }
@@ -52,16 +71,16 @@ function makeState(thread: Thread): AppState {
   };
 }
 
-function makeReadModelThread(overrides: Partial<OrchestrationReadModel["threads"][number]>) {
+function makeReadModelSubThread(
+  overrides: Partial<OrchestrationReadModel["threads"][number]["subThreads"][number]> = {},
+) {
   return {
-    id: ThreadId.makeUnsafe("thread-1"),
-    projectId: ProjectId.makeUnsafe("project-1"),
-    title: "Thread",
+    id: SubThreadId.makeUnsafe("sub-thread-1"),
+    threadId: ThreadId.makeUnsafe("thread-1"),
+    title: "Main",
     model: "gpt-5.3-codex",
     runtimeMode: DEFAULT_RUNTIME_MODE,
     interactionMode: DEFAULT_INTERACTION_MODE,
-    branch: null,
-    worktreePath: null,
     latestTurn: null,
     createdAt: "2026-02-27T00:00:00.000Z",
     updatedAt: "2026-02-27T00:00:00.000Z",
@@ -71,8 +90,24 @@ function makeReadModelThread(overrides: Partial<OrchestrationReadModel["threads"
     proposedPlans: [],
     checkpoints: [],
     session: null,
+    ...overrides,
+  };
+}
+
+function makeReadModelThread(overrides: Partial<OrchestrationReadModel["threads"][number]> = {}) {
+  return {
+    id: ThreadId.makeUnsafe("thread-1"),
+    projectId: ProjectId.makeUnsafe("project-1"),
+    title: "Thread",
+    branch: null,
+    worktreePath: null,
+    createdAt: "2026-02-27T00:00:00.000Z",
+    updatedAt: "2026-02-27T00:00:00.000Z",
+    deletedAt: null,
     sourceThreadId: null,
     implementationThreadId: null,
+    subThreads: [makeReadModelSubThread()],
+    activeSubThreadId: SubThreadId.makeUnsafe("sub-thread-1"),
     ...overrides,
   } satisfies OrchestrationReadModel["threads"][number];
 }
@@ -118,14 +153,18 @@ describe("store pure functions", () => {
     const latestTurnCompletedAt = "2026-02-25T12:30:00.000Z";
     const initialState = makeState(
       makeThread({
-        latestTurn: {
-          turnId: TurnId.makeUnsafe("turn-1"),
-          state: "completed",
-          requestedAt: "2026-02-25T12:28:00.000Z",
-          startedAt: "2026-02-25T12:28:30.000Z",
-          completedAt: latestTurnCompletedAt,
-          assistantMessageId: null,
-        },
+        subThreads: [
+          makeSubThread({
+            latestTurn: {
+              turnId: TurnId.makeUnsafe("turn-1"),
+              state: "completed",
+              requestedAt: "2026-02-25T12:28:00.000Z",
+              startedAt: "2026-02-25T12:28:30.000Z",
+              completedAt: latestTurnCompletedAt,
+              assistantMessageId: null,
+            },
+          }),
+        ],
         lastVisitedAt: "2026-02-25T12:35:00.000Z",
       }),
     );
@@ -143,7 +182,7 @@ describe("store pure functions", () => {
   it("markThreadUnread does not change a thread without a completed turn", () => {
     const initialState = makeState(
       makeThread({
-        latestTurn: null,
+        subThreads: [makeSubThread({ latestTurn: null })],
         lastVisitedAt: "2026-02-25T12:35:00.000Z",
       }),
     );
@@ -199,36 +238,42 @@ describe("store read model sync", () => {
     const initialState = makeState(makeThread());
     const readModel = makeReadModel(
       makeReadModelThread({
-        model: "claude-opus-4-6",
+        subThreads: [makeReadModelSubThread({ model: "claude-opus-4-6" })],
       }),
     );
 
     const next = syncServerReadModel(initialState, readModel);
 
-    expect(next.threads[0]?.model).toBe("claude-opus-4-6");
+    const activeSub = next.threads[0]?.subThreads[0];
+    expect(activeSub?.model).toBe("claude-opus-4-6");
   });
 
   it("preserves a Claude session provider from the read model", () => {
     const initialState = makeState(makeThread());
     const readModel = makeReadModel(
       makeReadModelThread({
-        model: "claude-sonnet-4-6",
-        session: {
-          threadId: ThreadId.makeUnsafe("thread-1"),
-          status: "ready",
-          providerName: "claudeCode",
-          runtimeMode: DEFAULT_RUNTIME_MODE,
-          activeTurnId: null,
-          lastError: null,
-          updatedAt: "2026-02-27T00:00:00.000Z",
-        },
+        subThreads: [
+          makeReadModelSubThread({
+            model: "claude-sonnet-4-6",
+            session: {
+              threadId: ThreadId.makeUnsafe("thread-1"),
+              status: "ready",
+              providerName: "claudeCode",
+              runtimeMode: DEFAULT_RUNTIME_MODE,
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: "2026-02-27T00:00:00.000Z",
+            },
+          }),
+        ],
       }),
     );
 
     const next = syncServerReadModel(initialState, readModel);
 
-    expect(next.threads[0]?.model).toBe("claude-sonnet-4-6");
-    expect(next.threads[0]?.session?.provider).toBe("claudeCode");
+    const activeSub = next.threads[0]?.subThreads[0];
+    expect(activeSub?.model).toBe("claude-sonnet-4-6");
+    expect(activeSub?.session?.provider).toBe("claudeCode");
   });
 
   it("preserves Claude project default models from the read model", () => {

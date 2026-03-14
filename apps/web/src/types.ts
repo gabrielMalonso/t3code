@@ -5,6 +5,7 @@ import type {
   OrchestrationThreadActivity,
   ProjectScript as ContractProjectScript,
   ThreadId,
+  SubThreadId,
   ProjectId,
   TurnId,
   MessageId,
@@ -83,10 +84,9 @@ export interface Project {
   scripts: ProjectScript[];
 }
 
-export interface Thread {
-  id: ThreadId;
-  codexThreadId: string | null;
-  projectId: ProjectId;
+export interface SubThread {
+  id: SubThreadId;
+  threadId: ThreadId;
   title: string;
   model: string;
   runtimeMode: RuntimeMode;
@@ -94,16 +94,34 @@ export interface Thread {
   session: ThreadSession | null;
   messages: ChatMessage[];
   proposedPlans: ProposedPlan[];
+  latestTurn: OrchestrationLatestTurn | null;
+  turnDiffSummaries: TurnDiffSummary[];
+  activities: OrchestrationThreadActivity[];
+  createdAt: string;
+}
+
+export interface Thread {
+  id: ThreadId;
+  codexThreadId: string | null;
+  projectId: ProjectId;
+  title: string;
   error: string | null;
   createdAt: string;
-  latestTurn: OrchestrationLatestTurn | null;
   lastVisitedAt?: string | undefined;
   branch: string | null;
   worktreePath: string | null;
   sourceThreadId: string | null;
   implementationThreadId: string | null;
-  turnDiffSummaries: TurnDiffSummary[];
-  activities: OrchestrationThreadActivity[];
+  subThreads: SubThread[];
+  activeSubThreadId: SubThreadId | null;
+}
+
+/**
+ * Returns the active sub-thread for a thread, falling back to the first sub-thread.
+ * This helper centralizes the lookup so components don't repeat it.
+ */
+export function getActiveSubThread(thread: Thread): SubThread | undefined {
+  return thread.subThreads.find((s) => s.id === thread.activeSubThreadId) ?? thread.subThreads[0];
 }
 
 export interface ThreadSession {
