@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ApprovalRequestId, ThreadId } from "@t3tools/contracts";
+import { ApprovalRequestId, type ProviderEvent, ThreadId } from "@t3tools/contracts";
 
 import {
   buildCodexInitializeParams,
@@ -37,6 +37,13 @@ function createSendTurnHarness() {
       planType: null,
       sparkEnabled: true,
     },
+    skillCatalog: [] as Array<{
+      name: string;
+      path?: string;
+      description?: string;
+      enabled?: boolean;
+      sourceType?: string;
+    }>,
   };
 
   const requireSession = vi
@@ -443,6 +450,124 @@ describe("sendTurn", () => {
       ],
       model: "gpt-5.3-codex",
     });
+  });
+
+  it("adds structured Codex skill input items for mentioned skills", async () => {
+    const { manager, context, sendRequest } = createSendTurnHarness();
+    context.skillCatalog = [
+      {
+        name: "build",
+        path: "/tmp/project/.codex/skills/build/SKILL.md",
+        description: "Build the project",
+        enabled: true,
+        sourceType: "project",
+      },
+    ];
+
+    await manager.sendTurn({
+      threadId: asThreadId("thread_1"),
+      input: "Please $build the app",
+    });
+
+    expect(sendRequest).toHaveBeenCalledWith(context, "turn/start", {
+      threadId: "thread_1",
+      input: [
+        {
+          type: "text",
+          text: "Please $build the app",
+          text_elements: [],
+        },
+        {
+          type: "skill",
+          name: "build",
+          path: "/tmp/project/.codex/skills/build/SKILL.md",
+        },
+      ],
+      model: "gpt-5.3-codex",
+    });
+  });
+
+  it("publishes session-configured skill names after refreshing the Codex catalog", async () => {
+    const manager = new CodexAppServerManager();
+    const events: ProviderEvent[] = [];
+    manager.on("event", (event) => {
+      events.push(event);
+    });
+
+    const sendRequest = vi.spyOn(
+      manager as unknown as { sendRequest: (...args: unknown[]) => Promise<unknown> },
+      "sendRequest",
+    );
+    sendRequest.mockResolvedValue({
+      skills: [
+        {
+          name: "playwright-cli",
+          path: "/Users/gabrielalonso/.codex/skills/playwright-cli/SKILL.md",
+          enabled: true,
+          source: { type: "user" },
+        },
+        {
+          name: "build",
+          path: "/tmp/project/.codex/skills/build/SKILL.md",
+          enabled: false,
+          source: { type: "project" },
+        },
+      ],
+    });
+
+    const context = {
+      session: {
+        provider: "codex",
+        status: "ready",
+        threadId: "thread_1",
+        runtimeMode: "full-access",
+        model: "gpt-5.3-codex",
+        cwd: "/tmp/project",
+        resumeCursor: { threadId: "thread_1" },
+        createdAt: "2026-02-10T00:00:00.000Z",
+        updatedAt: "2026-02-10T00:00:00.000Z",
+      },
+      skillCatalog: [] as Array<{
+        name: string;
+        path?: string;
+        description?: string;
+        enabled?: boolean;
+        sourceType?: string;
+      }>,
+    };
+
+    await (
+      manager as unknown as {
+        refreshSkillCatalog: (refreshContext: typeof context) => Promise<void>;
+      }
+    ).refreshSkillCatalog(context);
+
+    expect(context.skillCatalog).toEqual([
+      {
+        name: "playwright-cli",
+        path: "/Users/gabrielalonso/.codex/skills/playwright-cli/SKILL.md",
+        enabled: true,
+        sourceType: "user",
+      },
+      {
+        name: "build",
+        path: "/tmp/project/.codex/skills/build/SKILL.md",
+        enabled: false,
+        sourceType: "project",
+      },
+    ]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: "session",
+        method: "session/configured",
+        threadId: "thread_1",
+        payload: {
+          config: {
+            skills: ["playwright-cli"],
+          },
+        },
+      }),
+    );
   });
 
   it("passes Codex plan mode as a collaboration preset on turn/start", async () => {

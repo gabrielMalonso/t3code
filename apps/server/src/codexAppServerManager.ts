@@ -8,6 +8,7 @@ import {
   EventId,
   ProviderItemId,
   ProviderRequestKind,
+  type ServerAvailableSkillDescriptor,
   type ProviderUserInputAnswers,
   ThreadId,
   TurnId,
@@ -27,6 +28,7 @@ import {
   isCodexCliVersionSupported,
   parseCodexCliVersion,
 } from "./provider/codexCliVersion";
+import { updateDiscoveredSkillCatalogCache } from "./skillsCache";
 
 type PendingRequestKey = string;
 
@@ -65,6 +67,7 @@ interface CodexUserInputAnswer {
 interface CodexSessionContext {
   session: ProviderSession;
   account: CodexAccountSnapshot;
+  skillCatalog: ServerAvailableSkillDescriptor[];
   child: ChildProcessWithoutNullStreams;
   output: readline.Interface;
   pending: Map<PendingRequestKey, PendingRequest>;
@@ -164,12 +167,94 @@ const RECOVERABLE_THREAD_RESUME_ERROR_SNIPPETS = [
 const CODEX_DEFAULT_MODEL = "gpt-5.3-codex";
 const CODEX_SPARK_MODEL = "gpt-5.3-codex-spark";
 const CODEX_SPARK_DISABLED_PLAN_TYPES = new Set<CodexPlanType>(["free", "go", "plus"]);
+const CODEX_SKILL_TOKEN_REGEX = /(^|\s)\$([a-z0-9:_-]+)/gi;
+const CODEX_PROJECT_SCOPED_SOURCE_TYPES = new Set(["ancestor", "local", "project"]);
+
+interface CodexTurnInputTextItem {
+  type: "text";
+  text: string;
+  text_elements: [];
+}
+
+interface CodexTurnInputImageItem {
+  type: "image";
+  url: string;
+}
+
+interface CodexTurnInputSkillItem {
+  type: "skill";
+  name: string;
+  path: string;
+}
 
 function asObject(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
   }
   return value as Record<string, unknown>;
+}
+
+function readCodexSkillCatalog(response: unknown): ServerAvailableSkillDescriptor[] {
+  const record = asObject(response);
+  const skills = Array.isArray(record?.skills) ? record.skills : [];
+  const result: ServerAvailableSkillDescriptor[] = [];
+
+  for (const entry of skills) {
+    const skill = asObject(entry);
+    const name = typeof skill?.name === "string" ? skill.name.trim() : "";
+    const path = typeof skill?.path === "string" ? skill.path.trim() : "";
+    if (!name || !path) {
+      continue;
+    }
+    const source = asObject(skill?.source);
+    result.push({
+      name,
+      path,
+      ...(typeof skill?.description === "string" && skill.description.trim().length > 0
+        ? { description: skill.description.trim() }
+        : {}),
+      ...(typeof skill?.suggestedUse === "string" && skill.suggestedUse.trim().length > 0
+        ? { suggestedUse: skill.suggestedUse.trim() }
+        : {}),
+      ...(typeof skill?.enabled === "boolean" ? { enabled: skill.enabled } : {}),
+      ...(typeof source?.type === "string" && source.type.trim().length > 0
+        ? { sourceType: source.type.trim() }
+        : {}),
+    });
+  }
+
+  return result;
+}
+
+function extractMentionedCodexSkillNames(text: string): string[] {
+  const names = new Set<string>();
+  for (const match of text.matchAll(CODEX_SKILL_TOKEN_REGEX)) {
+    const rawName = match[2]?.trim();
+    if (rawName) {
+      names.add(rawName);
+    }
+  }
+  return [...names];
+}
+
+function isProjectScopedCodexSkill(skill: ServerAvailableSkillDescriptor): boolean {
+  const sourceType = skill.sourceType?.trim().toLowerCase();
+  return sourceType !== undefined && CODEX_PROJECT_SCOPED_SOURCE_TYPES.has(sourceType);
+}
+
+function enabledCodexSkillNames(catalog: readonly ServerAvailableSkillDescriptor[]): string[] {
+  const names = new Set<string>();
+  for (const skill of catalog) {
+    if (skill.enabled === false) {
+      continue;
+    }
+    const name = skill.name.trim();
+    if (name.length === 0) {
+      continue;
+    }
+    names.add(name);
+  }
+  return [...names];
 }
 
 function asString(value: unknown): string | undefined {
@@ -566,6 +651,7 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
           planType: null,
           sparkEnabled: true,
         },
+        skillCatalog: [],
         child,
         output,
         pending: new Map(),
@@ -692,6 +778,7 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
         status: "ready",
         resumeCursor: { threadId: providerThreadId },
       });
+      await this.refreshSkillCatalog(context);
       this.emitLifecycleEvent(
         context,
         "session/threadOpenResolved",
@@ -733,8 +820,12 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
   async sendTurn(input: CodexAppServerSendTurnInput): Promise<ProviderTurnStartResult> {
     const context = this.requireSession(input.threadId);
 
+    if (context.skillCatalog.length === 0) {
+      await this.refreshSkillCatalog(context);
+    }
+
     const turnInput: Array<
-      { type: "text"; text: string; text_elements: [] } | { type: "image"; url: string }
+      CodexTurnInputTextItem | CodexTurnInputImageItem | CodexTurnInputSkillItem
     > = [];
     if (input.input) {
       turnInput.push({
@@ -742,6 +833,13 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
         text: input.input,
         text_elements: [],
       });
+      for (const skill of this.resolveMentionedSkills(input.input, context.skillCatalog)) {
+        turnInput.push({
+          type: "skill",
+          name: skill.name,
+          path: skill.path,
+        });
+      }
     }
     for (const attachment of input.attachments ?? []) {
       if (attachment.type === "image") {
@@ -765,9 +863,7 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
     }
     const turnStartParams: {
       threadId: string;
-      input: Array<
-        { type: "text"; text: string; text_elements: [] } | { type: "image"; url: string }
-      >;
+      input: Array<CodexTurnInputTextItem | CodexTurnInputImageItem | CodexTurnInputSkillItem>;
       model?: string;
       serviceTier?: string | null;
       effort?: string;
@@ -1333,6 +1429,30 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
     this.emit("event", event);
   }
 
+  private emitSkillCatalogConfigured(
+    context: CodexSessionContext,
+    catalog: readonly ServerAvailableSkillDescriptor[],
+  ): void {
+    const skills = enabledCodexSkillNames(catalog);
+    if (skills.length === 0) {
+      return;
+    }
+
+    this.emitEvent({
+      id: EventId.makeUnsafe(randomUUID()),
+      kind: "session",
+      provider: "codex",
+      threadId: context.session.threadId,
+      createdAt: new Date().toISOString(),
+      method: "session/configured",
+      payload: {
+        config: {
+          skills,
+        },
+      },
+    });
+  }
+
   private assertSupportedCodexCliVersion(input: {
     readonly binaryPath: string;
     readonly cwd: string;
@@ -1390,6 +1510,52 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
       threadId: threadIdRaw,
       turns,
     };
+  }
+
+  private resolveMentionedSkills(
+    input: string,
+    catalog: readonly ServerAvailableSkillDescriptor[],
+  ): Array<ServerAvailableSkillDescriptor & { path: string }> {
+    if (catalog.length === 0) {
+      return [];
+    }
+
+    const resolved: Array<ServerAvailableSkillDescriptor & { path: string }> = [];
+    const seenPaths = new Set<string>();
+
+    for (const mentionedName of extractMentionedCodexSkillNames(input)) {
+      const match = catalog.find(
+        (skill) =>
+          skill.enabled !== false &&
+          typeof skill.path === "string" &&
+          skill.name.toLowerCase() === mentionedName.toLowerCase(),
+      );
+      if (!match?.path || seenPaths.has(match.path)) {
+        continue;
+      }
+      seenPaths.add(match.path);
+      resolved.push({ ...match, path: match.path });
+    }
+
+    return resolved;
+  }
+
+  private async refreshSkillCatalog(context: CodexSessionContext): Promise<void> {
+    try {
+      const response = await this.sendRequest(context, "skills/list", {});
+      const catalog = readCodexSkillCatalog(response);
+      context.skillCatalog = catalog;
+      this.emitSkillCatalogConfigured(context, catalog);
+      if (context.session.cwd) {
+        updateDiscoveredSkillCatalogCache(
+          context.session.cwd,
+          "codex",
+          catalog.filter((skill) => !isProjectScopedCodexSkill(skill)),
+        );
+      }
+    } catch {
+      // Skills discovery should not block session startup or turn send.
+    }
   }
 
   private isServerRequest(value: unknown): value is JsonRpcRequest {

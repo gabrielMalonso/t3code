@@ -9,9 +9,9 @@ describe("resolveComposerSkills", () => {
         provider: "codex",
         sessionSkills: ["session-codex-skill"],
         availableSkillsByProvider: {
-          codex: ["codex:build"],
-          claudeCode: ["claude:review"],
-          cursor: ["cursor:assist"],
+          codex: [{ name: "codex:build" }],
+          claudeCode: [{ name: "claude:review" }],
+          cursor: [{ name: "cursor:assist" }],
         },
       }),
     ).toEqual(["session-codex-skill", "codex:build"]);
@@ -24,8 +24,8 @@ describe("resolveComposerSkills", () => {
         sessionSkills: ["session-skill"],
         sessionSlashCommands: ["/project:triage"],
         availableSkillsByProvider: {
-          codex: ["codex:build"],
-          claudeCode: ["claude:review"],
+          codex: [{ name: "codex:build" }],
+          claudeCode: [{ name: "claude:review" }],
           cursor: [],
         },
       }),

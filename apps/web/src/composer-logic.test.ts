@@ -62,7 +62,7 @@ describe("detectComposerTrigger", () => {
 
   it("detects skills when available command names include a leading slash", () => {
     const text = "/co";
-    const trigger = detectComposerTrigger(text, text.length, ["/compact"]);
+    const trigger = detectComposerTrigger(text, text.length, ["/compact"], "claudeCode");
 
     expect(trigger).toEqual({
       kind: "skill",
@@ -74,7 +74,12 @@ describe("detectComposerTrigger", () => {
 
   it("detects namespaced commands when typing only the alias", () => {
     const text = "/status";
-    const trigger = detectComposerTrigger(text, text.length, ["interface-design:status"]);
+    const trigger = detectComposerTrigger(
+      text,
+      text.length,
+      ["interface-design:status"],
+      "claudeCode",
+    );
 
     expect(trigger).toEqual({
       kind: "skill",
@@ -122,6 +127,18 @@ describe("detectComposerTrigger", () => {
     expect(trigger).not.toBeNull();
     expect(trigger?.kind).toBe("path");
     expect(trigger?.query).toBe("");
+  });
+
+  it("detects Codex skills when typing a dollar trigger", () => {
+    const text = "Use $bui";
+    const trigger = detectComposerTrigger(text, text.length, ["build"], "codex");
+
+    expect(trigger).toEqual({
+      kind: "skill",
+      query: "bui",
+      rangeStart: "Use ".length,
+      rangeEnd: text.length,
+    });
   });
 });
 

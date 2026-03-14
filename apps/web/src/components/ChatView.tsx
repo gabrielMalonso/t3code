@@ -13,6 +13,7 @@ import {
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   type ResolvedKeybindingsConfig,
   type ProviderApprovalDecision,
+  type ServerAvailableSkillDescriptor,
   type ServerProviderStatus,
   type ProviderKind,
   type ThreadId,
@@ -44,6 +45,7 @@ import {
   collapseExpandedComposerCursor,
   detectComposerTrigger,
   expandCollapsedComposerCursor,
+  normalizeComposerSkillName,
   parseStandaloneComposerSlashCommand,
   replaceTextRange,
 } from "../composer-logic";
@@ -173,6 +175,7 @@ const EMPTY_PROJECT_ENTRIES: ProjectEntry[] = [];
 const EMPTY_AVAILABLE_EDITORS: EditorId[] = [];
 const EMPTY_PROVIDER_STATUSES: ServerProviderStatus[] = [];
 const EMPTY_SKILLS: readonly string[] = [];
+const EMPTY_SKILL_DESCRIPTORS: readonly ServerAvailableSkillDescriptor[] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
 const COMPOSER_PATH_QUERY_DEBOUNCE_MS = 120;
 const SCRIPT_TERMINAL_COLS = 120;
@@ -287,7 +290,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     collapseExpandedComposerCursor(prompt, prompt.length),
   );
   const [composerTrigger, setComposerTrigger] = useState<ComposerTrigger | null>(() =>
-    detectComposerTrigger(prompt, prompt.length),
+    detectComposerTrigger(prompt, prompt.length, EMPTY_SKILLS, "codex"),
   );
   const [lastInvokedScriptByProjectId, setLastInvokedScriptByProjectId] = useLocalStorage(
     LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
@@ -691,6 +694,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         nextCustomAnswer,
         expandCollapsedComposerCursor(nextCustomAnswer, nextCursor),
         sessionSkillsRef.current,
+        selectedProvider,
       ),
     );
     setComposerHighlightedItemId(null);
@@ -698,6 +702,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     activePendingProgress?.customAnswer,
     activePendingUserInput?.requestId,
     activePendingProgress?.activeQuestion?.id,
+    selectedProvider,
   ]);
   useEffect(() => {
     attachmentPreviewHandoffByMessageIdRef.current = attachmentPreviewHandoffByMessageId;
@@ -930,6 +935,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }),
   );
   const workspaceEntries = workspaceEntriesQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
+  const selectedProviderSkillsCatalog =
+    serverConfigQuery.data?.availableSkillsByProvider?.[selectedProvider] ??
+    EMPTY_SKILL_DESCRIPTORS;
+  const selectedProviderSkillByName = useMemo(() => {
+    const entries: Array<readonly [string, ServerAvailableSkillDescriptor]> =
+      selectedProviderSkillsCatalog.map((skill) => [normalizeComposerSkillName(skill.name), skill]);
+    return new Map<string, ServerAvailableSkillDescriptor>(entries);
+  }, [selectedProviderSkillsCatalog]);
   const sessionSkills = useMemo(() => {
     return resolveComposerSkills({
       provider: selectedProvider,
@@ -944,6 +957,16 @@ export default function ChatView({ threadId }: ChatViewProps) {
     serverConfigQuery.data?.availableSkillsByProvider,
   ]);
   sessionSkillsRef.current = sessionSkills;
+  useEffect(() => {
+    setComposerTrigger(
+      detectComposerTrigger(
+        promptRef.current,
+        expandCollapsedComposerCursor(promptRef.current, composerCursor),
+        sessionSkillsRef.current,
+        selectedProvider,
+      ),
+    );
+  }, [composerCursor, selectedProvider, sessionSkills]);
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
@@ -987,15 +1010,23 @@ export default function ChatView({ threadId }: ChatViewProps) {
         : slashCommandItems.filter(
             (item) => item.command.includes(query) || item.label.slice(1).includes(query),
           );
-      const skillItems: ComposerCommandItem[] = sessionSkills
-        .filter((skill) => !query || skill.toLowerCase().includes(query))
-        .map((skill) => ({
-          id: `skill:${skill}`,
-          type: "skill" as const,
-          skillName: skill,
-          label: `/${skill}`,
-          description: `Run ${skill} skill`,
-        }));
+      const skillItems: ComposerCommandItem[] =
+        selectedProvider === "codex"
+          ? []
+          : sessionSkills
+              .filter((skill) => !query || skill.toLowerCase().includes(query))
+              .map((skill) => {
+                const descriptor = selectedProviderSkillByName.get(
+                  normalizeComposerSkillName(skill),
+                );
+                return {
+                  id: `skill:${skill}`,
+                  type: "skill" as const,
+                  skillName: skill,
+                  label: `/${skill}`,
+                  description: descriptor?.description ?? `Run ${skill} skill`,
+                };
+              });
       return [...filteredSlashCommandItems, ...skillItems];
     }
 
@@ -1003,13 +1034,17 @@ export default function ChatView({ threadId }: ChatViewProps) {
       const query = composerTrigger.query.trim().toLowerCase();
       return sessionSkills
         .filter((skill) => !query || skill.toLowerCase().includes(query))
-        .map((skill) => ({
-          id: `skill:${skill}`,
-          type: "skill" as const,
-          skillName: skill,
-          label: `/${skill}`,
-          description: `Run ${skill} skill`,
-        }));
+        .map((skill) => {
+          const descriptor = selectedProviderSkillByName.get(normalizeComposerSkillName(skill));
+          const prefix = selectedProvider === "codex" ? "$" : "/";
+          return {
+            id: `skill:${skill}`,
+            type: "skill" as const,
+            skillName: skill,
+            label: `${prefix}${skill}`,
+            description: descriptor?.description ?? `Run ${skill} skill`,
+          };
+        });
     }
 
     return searchableModelOptions
@@ -1028,7 +1063,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
         label: name,
         description: `${providerLabel} · ${slug}`,
       }));
-  }, [composerTrigger, searchableModelOptions, sessionSkills, workspaceEntries]);
+  }, [
+    composerTrigger,
+    searchableModelOptions,
+    selectedProvider,
+    selectedProviderSkillByName,
+    sessionSkills,
+    workspaceEntries,
+  ]);
   const composerMenuOpen = Boolean(composerTrigger);
   const activeComposerMenuItem = useMemo(
     () =>
@@ -1817,12 +1859,17 @@ export default function ChatView({ threadId }: ChatViewProps) {
     setComposerHighlightedItemId(null);
     setComposerCursor(collapseExpandedComposerCursor(promptRef.current, promptRef.current.length));
     setComposerTrigger(
-      detectComposerTrigger(promptRef.current, promptRef.current.length, sessionSkillsRef.current),
+      detectComposerTrigger(
+        promptRef.current,
+        promptRef.current.length,
+        sessionSkillsRef.current,
+        selectedProvider,
+      ),
     );
     dragDepthRef.current = 0;
     setIsDragOverComposer(false);
     setExpandedImage(null);
-  }, [threadId]);
+  }, [selectedProvider, threadId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2508,7 +2555,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
         setComposerCursor(collapseExpandedComposerCursor(trimmed, trimmed.length));
         addComposerImagesToDraft(composerImagesSnapshot.map(cloneComposerImageForRetry));
         setComposerTrigger(
-          detectComposerTrigger(trimmed, trimmed.length, sessionSkillsRef.current),
+          detectComposerTrigger(
+            trimmed,
+            trimmed.length,
+            sessionSkillsRef.current,
+            selectedProvider,
+          ),
         );
       }
       setThreadError(
@@ -2716,10 +2768,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
       setComposerTrigger(
         cursorAdjacentToMention
           ? null
-          : detectComposerTrigger(value, expandedCursor, sessionSkillsRef.current),
+          : detectComposerTrigger(value, expandedCursor, sessionSkillsRef.current, selectedProvider),
       );
     },
-    [activePendingUserInput],
+    [activePendingUserInput, selectedProvider],
   );
 
   const onAdvanceActivePendingUserInput = useCallback(() => {
@@ -3124,6 +3176,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           next.text,
           expandCollapsedComposerCursor(next.text, nextCursor),
           sessionSkillsRef.current,
+          selectedProvider,
         ),
       );
       window.requestAnimationFrame(() => {
@@ -3131,7 +3184,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       });
       return true;
     },
-    [activePendingProgress?.activeQuestion, activePendingUserInput, setPrompt],
+    [activePendingProgress?.activeQuestion, activePendingUserInput, selectedProvider, setPrompt],
   );
 
   const readComposerSnapshot = useCallback((): {
@@ -3157,9 +3210,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
     const snapshot = readComposerSnapshot();
     return {
       snapshot,
-      trigger: detectComposerTrigger(snapshot.value, snapshot.expandedCursor, sessionSkills),
+      trigger: detectComposerTrigger(snapshot.value, snapshot.expandedCursor, sessionSkills, selectedProvider),
     };
-  }, [readComposerSnapshot, sessionSkills]);
+  }, [readComposerSnapshot, selectedProvider, sessionSkills]);
 
   const onSelectComposerItem = useCallback(
     (item: ComposerCommandItem) => {
@@ -3227,15 +3280,16 @@ export default function ChatView({ threadId }: ChatViewProps) {
         return;
       }
       if (item.type === "skill") {
+        const skillPrefix = selectedProvider === "codex" ? "$" : "/";
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
           snapshot.value,
           trigger.rangeEnd,
-          `/${item.skillName} `,
+          `${skillPrefix}${item.skillName} `,
         );
         const applied = applyPromptReplacement(
           trigger.rangeStart,
           replacementRangeEnd,
-          `/${item.skillName} `,
+          `${skillPrefix}${item.skillName} `,
           { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
         );
         if (applied) {
@@ -3249,6 +3303,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       handleInteractionModeChange,
       onProviderModelSelect,
       resolveActiveComposerTrigger,
+      selectedProvider,
     ],
   );
   const onComposerMenuItemHighlighted = useCallback((itemId: string | null) => {
@@ -3301,13 +3356,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
       setComposerTrigger(
         cursorAdjacentToMention
           ? null
-          : detectComposerTrigger(nextPrompt, expandedCursor, sessionSkills),
+          : detectComposerTrigger(nextPrompt, expandedCursor, sessionSkills, selectedProvider),
       );
     },
     [
       activePendingProgress?.activeQuestion,
       activePendingUserInput,
       onChangeActivePendingUserInputCustomAnswer,
+      selectedProvider,
       sessionSkills,
       setPrompt,
     ],

@@ -1,3 +1,4 @@
+import type { ProviderKind } from "@t3tools/contracts";
 import { normalizeSlashCommandName } from "@t3tools/shared/strings";
 import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
 
@@ -171,6 +172,7 @@ export function detectComposerTrigger(
   text: string,
   cursorInput: number,
   availableSkills: readonly string[] = [],
+  provider: ProviderKind = "codex",
 ): ComposerTrigger | null {
   const normalizedAvailableSkills = availableSkills
     .map(normalizeComposerSkillName)
@@ -199,7 +201,7 @@ export function detectComposerTrigger(
           rangeEnd: cursor,
         };
       }
-      if (normalizedAvailableSkills.length > 0) {
+      if (provider !== "codex" && normalizedAvailableSkills.length > 0) {
         if (
           normalizedAvailableSkills.some((skill) => matchesComposerSkillQuery(skill, commandQuery))
         ) {
@@ -222,6 +224,14 @@ export function detectComposerTrigger(
 
   const tokenStart = tokenStartForCursor(text, cursor);
   const token = text.slice(tokenStart, cursor);
+  if (provider === "codex" && token.startsWith("$")) {
+    return {
+      kind: "skill",
+      query: token.slice(1),
+      rangeStart: tokenStart,
+      rangeEnd: cursor,
+    };
+  }
   if (!token.startsWith("@")) {
     return null;
   }
