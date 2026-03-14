@@ -1,33 +1,19 @@
 import Mime from "@effect/platform-node/Mime";
 
-export const IMAGE_EXTENSION_BY_MIME_TYPE: Record<string, string> = {
-  "image/avif": ".avif",
-  "image/bmp": ".bmp",
-  "image/gif": ".gif",
-  "image/heic": ".heic",
-  "image/heif": ".heif",
-  "image/jpeg": ".jpg",
-  "image/jpg": ".jpg",
-  "image/png": ".png",
-  "image/svg+xml": ".svg",
-  "image/tiff": ".tiff",
-  "image/webp": ".webp",
-};
+import {
+  IMAGE_EXTENSION_BY_MIME_TYPE,
+  SAFE_IMAGE_FILE_EXTENSIONS,
+  DOCUMENT_EXTENSION_BY_MIME_TYPE,
+  SAFE_DOCUMENT_FILE_EXTENSIONS,
+  inferExtension,
+} from "@t3tools/shared/fileMime";
 
-export const SAFE_IMAGE_FILE_EXTENSIONS = new Set([
-  ".avif",
-  ".bmp",
-  ".gif",
-  ".heic",
-  ".heif",
-  ".ico",
-  ".jpeg",
-  ".jpg",
-  ".png",
-  ".svg",
-  ".tiff",
-  ".webp",
-]);
+export {
+  IMAGE_EXTENSION_BY_MIME_TYPE,
+  SAFE_IMAGE_FILE_EXTENSIONS,
+  DOCUMENT_EXTENSION_BY_MIME_TYPE,
+  SAFE_DOCUMENT_FILE_EXTENSIONS,
+} from "@t3tools/shared/fileMime";
 
 export function parseBase64DataUrl(
   dataUrl: string,
@@ -55,12 +41,9 @@ export function parseBase64DataUrl(
 }
 
 export function inferImageExtension(input: { mimeType: string; fileName?: string }): string {
-  const key = input.mimeType.toLowerCase();
-  const fromMime = Object.hasOwn(IMAGE_EXTENSION_BY_MIME_TYPE, key)
-    ? IMAGE_EXTENSION_BY_MIME_TYPE[key]
-    : undefined;
-  if (fromMime) {
-    return fromMime;
+  const fromMap = inferExtension(input, IMAGE_EXTENSION_BY_MIME_TYPE, SAFE_IMAGE_FILE_EXTENSIONS);
+  if (fromMap !== ".bin") {
+    return fromMap;
   }
 
   const fromMimeExtension = Mime.getExtension(input.mimeType);
@@ -68,52 +51,9 @@ export function inferImageExtension(input: { mimeType: string; fileName?: string
     return fromMimeExtension;
   }
 
-  const fileName = input.fileName?.trim() ?? "";
-  const extensionMatch = /\.([a-z0-9]{1,8})$/i.exec(fileName);
-  const fileNameExtension = extensionMatch ? `.${extensionMatch[1]!.toLowerCase()}` : "";
-  if (SAFE_IMAGE_FILE_EXTENSIONS.has(fileNameExtension)) {
-    return fileNameExtension;
-  }
-
   return ".bin";
 }
 
-export const DOCUMENT_EXTENSION_BY_MIME_TYPE: Record<string, string> = {
-  "application/pdf": ".pdf",
-  "text/plain": ".txt",
-  "text/markdown": ".md",
-  "text/csv": ".csv",
-  "application/json": ".json",
-  "text/xml": ".xml",
-  "application/xml": ".xml",
-  "text/x-log": ".log",
-};
-
-export const SAFE_DOCUMENT_FILE_EXTENSIONS = new Set([
-  ".csv",
-  ".json",
-  ".log",
-  ".md",
-  ".pdf",
-  ".txt",
-  ".xml",
-]);
-
 export function inferDocumentExtension(input: { mimeType: string; fileName?: string }): string {
-  const key = input.mimeType.toLowerCase();
-  const fromMime = Object.hasOwn(DOCUMENT_EXTENSION_BY_MIME_TYPE, key)
-    ? DOCUMENT_EXTENSION_BY_MIME_TYPE[key]
-    : undefined;
-  if (fromMime) {
-    return fromMime;
-  }
-
-  const fileName = input.fileName?.trim() ?? "";
-  const extensionMatch = /\.([a-z0-9]{1,8})$/i.exec(fileName);
-  const fileNameExtension = extensionMatch ? `.${extensionMatch[1]!.toLowerCase()}` : "";
-  if (SAFE_DOCUMENT_FILE_EXTENSIONS.has(fileNameExtension)) {
-    return fileNameExtension;
-  }
-
-  return ".bin";
+  return inferExtension(input, DOCUMENT_EXTENSION_BY_MIME_TYPE, SAFE_DOCUMENT_FILE_EXTENSIONS);
 }

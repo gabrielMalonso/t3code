@@ -108,16 +108,11 @@ export function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-const SUPPORTED_DOCUMENT_MIME_TYPES = new Set(["application/pdf"]);
-const SUPPORTED_TEXT_FILE_MIME_TYPES = new Set([
-  "text/plain",
-  "text/markdown",
-  "text/csv",
-  "application/json",
-  "text/xml",
-  "application/xml",
-]);
-const SUPPORTED_TEXT_FILE_EXTENSIONS = new Set([".txt", ".md", ".csv", ".json", ".log", ".xml"]);
+import {
+  SUPPORTED_DOCUMENT_MIME_TYPES,
+  SUPPORTED_TEXT_FILE_MIME_TYPES,
+  SUPPORTED_TEXT_FILE_EXTENSIONS,
+} from "@t3tools/shared/fileMime";
 
 export function classifyFile(file: File): "image" | "document" | "text_file" | null {
   if (file.type.startsWith("image/")) return "image";

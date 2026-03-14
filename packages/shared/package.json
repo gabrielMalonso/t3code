@@ -39,6 +39,10 @@
     "./providerRuntime": {
       "types": "./src/providerRuntime.ts",
       "import": "./src/providerRuntime.ts"
+    },
+    "./fileMime": {
+      "types": "./src/fileMime.ts",
+      "import": "./src/fileMime.ts"
     }
   },
   "scripts": {
