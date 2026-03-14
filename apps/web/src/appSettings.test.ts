@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_TIMESTAMP_FORMAT,
   getAppModelOptions,
+  getFavoriteModel,
   normalizeCustomModelSlugs,
   resolveAppModelSelection,
+  toggleFavoriteModel,
+  type AppSettings,
 } from "./appSettings";
 
 describe("normalizeCustomModelSlugs", () => {
@@ -62,5 +65,97 @@ describe("resolveAppModelSelection", () => {
 describe("timestamp format defaults", () => {
   it("defaults timestamp format to locale", () => {
     expect(DEFAULT_TIMESTAMP_FORMAT).toBe("locale");
+  });
+});
+
+function makeSettings(overrides?: Partial<AppSettings>): AppSettings {
+  return {
+    codexBinaryPath: "",
+    codexHomePath: "",
+    defaultThreadEnvMode: "local",
+    confirmThreadDelete: true,
+    enableAssistantStreaming: false,
+    timestampFormat: "locale",
+    customCodexModels: [],
+    customClaudeModels: [],
+    customCursorModels: [],
+    favoriteModel: undefined,
+    ...overrides,
+  };
+}
+
+describe("getFavoriteModel", () => {
+  it("returns null when no favorite is set", () => {
+    expect(getFavoriteModel(makeSettings())).toBeNull();
+  });
+
+  it("returns the favorite with provider and model when set", () => {
+    const settings = makeSettings({
+      favoriteModel: { provider: "codex", model: "gpt-5.4" },
+    });
+    const fav = getFavoriteModel(settings);
+    expect(fav).toEqual({ provider: "codex", model: "gpt-5.4" });
+  });
+
+  it("normalizes aliases to canonical slugs", () => {
+    const settings = makeSettings({
+      favoriteModel: { provider: "claudeCode", model: "opus" },
+    });
+    const fav = getFavoriteModel(settings);
+    expect(fav).toEqual({ provider: "claudeCode", model: "claude-opus-4-6" });
+  });
+
+  it("returns null for empty model values", () => {
+    const settings = makeSettings({
+      favoriteModel: { provider: "codex", model: "" },
+    });
+    expect(getFavoriteModel(settings)).toBeNull();
+  });
+
+  it("returns a single global favorite regardless of provider", () => {
+    const settings = makeSettings({
+      favoriteModel: { provider: "claudeCode", model: "claude-opus-4-6" },
+    });
+    const fav = getFavoriteModel(settings);
+    expect(fav?.provider).toBe("claudeCode");
+    expect(fav?.model).toBe("claude-opus-4-6");
+  });
+});
+
+describe("toggleFavoriteModel", () => {
+  it("sets a favorite model when none is set", () => {
+    const settings = makeSettings();
+    const patch = toggleFavoriteModel(settings, "codex", "gpt-5.4");
+    expect(patch.favoriteModel).toEqual({ provider: "codex", model: "gpt-5.4" });
+  });
+
+  it("removes the favorite when toggling the same model", () => {
+    const settings = makeSettings({
+      favoriteModel: { provider: "codex", model: "gpt-5.4" },
+    });
+    const patch = toggleFavoriteModel(settings, "codex", "gpt-5.4");
+    expect(patch.favoriteModel).toBeUndefined();
+  });
+
+  it("switches the favorite to a different model in the same provider", () => {
+    const settings = makeSettings({
+      favoriteModel: { provider: "codex", model: "gpt-5.4" },
+    });
+    const patch = toggleFavoriteModel(settings, "codex", "gpt-5.3-codex");
+    expect(patch.favoriteModel).toEqual({ provider: "codex", model: "gpt-5.3-codex" });
+  });
+
+  it("switches the favorite to a different provider entirely", () => {
+    const settings = makeSettings({
+      favoriteModel: { provider: "codex", model: "gpt-5.4" },
+    });
+    const patch = toggleFavoriteModel(settings, "claudeCode", "claude-opus-4-6");
+    expect(patch.favoriteModel).toEqual({ provider: "claudeCode", model: "claude-opus-4-6" });
+  });
+
+  it("normalizes aliases when toggling", () => {
+    const settings = makeSettings();
+    const patch = toggleFavoriteModel(settings, "claudeCode", "opus");
+    expect(patch.favoriteModel).toEqual({ provider: "claudeCode", model: "claude-opus-4-6" });
   });
 });
