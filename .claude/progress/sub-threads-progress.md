@@ -50,8 +50,8 @@
 
 - Status: CONCLUIDO
 - Tarefas: 5.1-5.7
-- Step 5.1: Nova rota _chat.$threadId.$subThreadId.tsx criada com ChatView recebendo ambos params, SubThreadTabBar integrado, callbacks wired para commands (create/select/rename/close sub-thread)
-- Step 5.2: _chat.$threadId.tsx convertida em redirect que resolve activeSubThreadId e navega para /$threadId/$subThreadId. Draft threads renderizados inline com DraftThreadFallback. Search params preservados no redirect.
+- Step 5.1: Nova rota \_chat.$threadId.$subThreadId.tsx criada com ChatView recebendo ambos params, SubThreadTabBar integrado, callbacks wired para commands (create/select/rename/close sub-thread)
+- Step 5.2: \_chat.$threadId.tsx convertida em redirect que resolve activeSubThreadId e navega para /$threadId/$subThreadId. Draft threads renderizados inline com DraftThreadFallback. Search params preservados no redirect.
 - Step 5.3: SubThreadTabBar.tsx criado em components/chat/ com tabs horizontais, botao +, inline editing (double-click), context menu (Rename/Close), botao X, warning de sessoes multiplas
 - Step 5.4: TabBar integrado na rota sub-thread, callbacks wired para dispatchCommand (thread.sub-thread.create, thread.active-sub-thread.set, thread.sub-thread.meta.update, thread.sub-thread.delete). newSubThreadId() adicionado em lib/utils.ts
 - Step 5.5: Sidebar atualizado para navegar com /$threadId/$subThreadId via getActiveSubThread() em handleThreadClick, focusMostRecentThreadForProject, keyboard nav, e delete fallback. Outros navigate calls usam redirect via /$threadId
