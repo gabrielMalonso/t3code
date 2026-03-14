@@ -372,8 +372,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const serverThread = threads.find((t) => t.id === threadId);
   const fallbackDraftProject = projects.find((project) => project.id === draftThread?.projectId);
   const localDraftError = serverThread ? null : (localDraftErrorsByThreadId[threadId] ?? null);
-  const draftFallbackModel =
-    fallbackDraftProject?.model ?? DEFAULT_MODEL_BY_PROVIDER.codex;
+  const draftFallbackModel = fallbackDraftProject?.model ?? DEFAULT_MODEL_BY_PROVIDER.codex;
   const localDraftThread = useMemo(
     () =>
       draftThread
@@ -506,11 +505,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
     : null;
   const inferredProviderFromDraftModel = inferProviderFromModel(composerDraft.model);
   const globalFavorite = getFavoriteModel(settings);
-  const favoriteProvider = isLocalDraftThread && globalFavorite
-    ? globalFavorite.provider
-    : null;
+  const favoriteProvider = isLocalDraftThread && globalFavorite ? globalFavorite.provider : null;
   const selectedProvider: ProviderKind =
-    lockedProvider ?? selectedProviderByThreadId ?? inferredProviderFromDraftModel ?? favoriteProvider ?? "codex";
+    lockedProvider ??
+    selectedProviderByThreadId ??
+    inferredProviderFromDraftModel ??
+    favoriteProvider ??
+    "codex";
   const baseThreadModel = resolveModelSlugForProvider(
     selectedProvider,
     isLocalDraftThread && globalFavorite && globalFavorite.provider === selectedProvider
@@ -2776,7 +2777,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
       setComposerTrigger(
         cursorAdjacentToMention
           ? null
-          : detectComposerTrigger(value, expandedCursor, sessionSkillsRef.current, selectedProvider),
+          : detectComposerTrigger(
+              value,
+              expandedCursor,
+              sessionSkillsRef.current,
+              selectedProvider,
+            ),
       );
     },
     [activePendingUserInput, selectedProvider],
@@ -3238,7 +3244,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
     const snapshot = readComposerSnapshot();
     return {
       snapshot,
-      trigger: detectComposerTrigger(snapshot.value, snapshot.expandedCursor, sessionSkills, selectedProvider),
+      trigger: detectComposerTrigger(
+        snapshot.value,
+        snapshot.expandedCursor,
+        sessionSkills,
+        selectedProvider,
+      ),
     };
   }, [readComposerSnapshot, selectedProvider, sessionSkills]);
 

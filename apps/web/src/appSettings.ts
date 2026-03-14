@@ -169,9 +169,7 @@ export function resolveAppModelSelection(
 /**
  * Returns the global favorite model, or `null` if none is set.
  */
-export function getFavoriteModel(
-  settings: AppSettings,
-): FavoriteModel | null {
+export function getFavoriteModel(settings: AppSettings): FavoriteModel | null {
   const fav = settings.favoriteModel;
   if (!fav || !fav.provider || !fav.model) return null;
   const provider = fav.provider;
