@@ -122,7 +122,12 @@ import {
 import { SidebarTrigger } from "./ui/sidebar";
 import { newCommandId, newMessageId, newThreadId } from "~/lib/utils";
 import { readNativeApi } from "~/nativeApi";
-import { resolveAppModelSelection, useAppSettings } from "../appSettings";
+import {
+  getFavoriteModel,
+  resolveAppModelSelection,
+  toggleFavoriteModel,
+  useAppSettings,
+} from "../appSettings";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import {
   type ComposerImageAttachment,
@@ -203,7 +208,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const syncServerReadModel = useStore((store) => store.syncServerReadModel);
   const setStoreThreadError = useStore((store) => store.setError);
   const setStoreThreadBranch = useStore((store) => store.setThreadBranch);
-  const { settings } = useAppSettings();
+  const { settings, updateSettings } = useAppSettings();
   const timestampFormat = settings.timestampFormat;
   const navigate = useNavigate();
   const rawSearch = useSearch({
@@ -367,17 +372,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const serverThread = threads.find((t) => t.id === threadId);
   const fallbackDraftProject = projects.find((project) => project.id === draftThread?.projectId);
   const localDraftError = serverThread ? null : (localDraftErrorsByThreadId[threadId] ?? null);
+  const draftFallbackModel =
+    fallbackDraftProject?.model ?? DEFAULT_MODEL_BY_PROVIDER.codex;
   const localDraftThread = useMemo(
     () =>
       draftThread
-        ? buildLocalDraftThread(
-            threadId,
-            draftThread,
-            fallbackDraftProject?.model ?? DEFAULT_MODEL_BY_PROVIDER.codex,
-            localDraftError,
-          )
+        ? buildLocalDraftThread(threadId, draftThread, draftFallbackModel, localDraftError)
         : undefined,
-    [draftThread, fallbackDraftProject?.model, localDraftError, threadId],
+    [draftThread, draftFallbackModel, localDraftError, threadId],
   );
   const activeThread = serverThread ?? localDraftThread;
   const runtimeMode =
@@ -503,11 +505,17 @@ export default function ChatView({ threadId }: ChatViewProps) {
     ? (sessionProvider ?? selectedProviderByThreadId ?? null)
     : null;
   const inferredProviderFromDraftModel = inferProviderFromModel(composerDraft.model);
+  const globalFavorite = getFavoriteModel(settings);
+  const favoriteProvider = isLocalDraftThread && globalFavorite
+    ? globalFavorite.provider
+    : null;
   const selectedProvider: ProviderKind =
-    lockedProvider ?? selectedProviderByThreadId ?? inferredProviderFromDraftModel ?? "codex";
+    lockedProvider ?? selectedProviderByThreadId ?? inferredProviderFromDraftModel ?? favoriteProvider ?? "codex";
   const baseThreadModel = resolveModelSlugForProvider(
     selectedProvider,
-    activeThread?.model ?? activeProject?.model ?? getDefaultModel(selectedProvider),
+    isLocalDraftThread && globalFavorite && globalFavorite.provider === selectedProvider
+      ? globalFavorite.model
+      : (activeThread?.model ?? activeProject?.model ?? getDefaultModel(selectedProvider)),
   );
   const customModelsForSelectedProvider = settings.customCodexModels;
   const selectedModel = useMemo(() => {
@@ -3052,6 +3060,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       selectedModel ||
       (activeThread.model as ModelSlug) ||
       (activeProject.model as ModelSlug) ||
+      (globalFavorite?.model as ModelSlug) ||
       DEFAULT_MODEL_BY_PROVIDER.codex;
 
     sendInFlightRef.current = true;
@@ -3081,6 +3090,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     activeProposedPlan,
     activeThread,
     beginSendPhase,
+    globalFavorite,
     isConnecting,
     isSendBusy,
     isServerThread,
@@ -3111,6 +3121,24 @@ export default function ChatView({ threadId }: ChatViewProps) {
       setComposerDraftProvider,
       settings.customCodexModels,
     ],
+  );
+  const onToggleFavorite = useCallback(
+    (provider: ProviderKind, model: ModelSlug) => {
+      const patch = toggleFavoriteModel(settings, provider, model);
+      updateSettings(patch);
+      const isFavoriting = patch.favoriteModel !== undefined;
+      const modelOptions = modelOptionsByProvider[provider];
+      const modelName = modelOptions.find((opt) => opt.slug === model)?.name ?? model;
+      toastManager.add({
+        type: isFavoriting ? "success" : "info",
+        title: isFavoriting ? "Set as default model" : "Default model removed",
+        description: isFavoriting
+          ? `New chats will use ${modelName}`
+          : "New chats will use the system default",
+        data: { dismissAfterVisibleMs: 2000 },
+      });
+    },
+    [settings, updateSettings, modelOptionsByProvider],
   );
   const onEffortSelect = useCallback(
     (effort: CodexReasoningEffort) => {
@@ -3783,7 +3811,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
                         model={selectedModelForPickerWithCustomFallback}
                         lockedProvider={lockedProvider}
                         modelOptionsByProvider={modelOptionsByProvider}
+                        favoriteModel={globalFavorite}
                         onProviderModelChange={onProviderModelSelect}
+                        onToggleFavorite={onToggleFavorite}
                       />
 
                       {isComposerFooterCompact ? (

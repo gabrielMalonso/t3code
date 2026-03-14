@@ -16,6 +16,12 @@ const BUILT_IN_MODEL_SLUGS_BY_PROVIDER: Record<ProviderKind, ReadonlySet<string>
   cursor: new Set(getModelOptions("cursor").map((option) => option.slug)),
 };
 
+const FavoriteModelSchema = Schema.Struct({
+  provider: Schema.Literals(["codex", "claudeCode", "cursor"]),
+  model: Schema.String,
+});
+export type FavoriteModel = typeof FavoriteModelSchema.Type;
+
 const AppSettingsSchema = Schema.Struct({
   codexBinaryPath: Schema.String.check(Schema.isMaxLength(4096)).pipe(
     Schema.withConstructorDefault(() => Option.some("")),
@@ -42,6 +48,7 @@ const AppSettingsSchema = Schema.Struct({
   customCursorModels: Schema.Array(Schema.String).pipe(
     Schema.withConstructorDefault(() => Option.some([])),
   ),
+  favoriteModel: Schema.optional(FavoriteModelSchema),
 });
 export type AppSettings = typeof AppSettingsSchema.Type;
 export interface AppModelOption {
@@ -157,6 +164,39 @@ export function resolveAppModelSelection(
     options.find((option) => option.slug === normalizedSelectedModel)?.slug ??
     getDefaultModel(provider)
   );
+}
+
+/**
+ * Returns the global favorite model, or `null` if none is set.
+ */
+export function getFavoriteModel(
+  settings: AppSettings,
+): FavoriteModel | null {
+  const fav = settings.favoriteModel;
+  if (!fav || !fav.provider || !fav.model) return null;
+  const provider = fav.provider;
+  if (!(provider in BUILT_IN_MODEL_SLUGS_BY_PROVIDER)) return null;
+  const normalized = normalizeModelSlug(fav.model, provider);
+  if (!normalized) return null;
+  return { provider, model: normalized };
+}
+
+/**
+ * Returns a partial `AppSettings` patch that toggles the global favorite model.
+ * If the model is already the favorite, it removes it. Otherwise, it sets it as the new favorite.
+ */
+export function toggleFavoriteModel(
+  settings: AppSettings,
+  provider: ProviderKind,
+  modelSlug: string,
+): Partial<AppSettings> {
+  const current = getFavoriteModel(settings);
+  const normalized = normalizeModelSlug(modelSlug, provider);
+  if (!normalized) return {};
+  const isSameFavorite = current?.provider === provider && current?.model === normalized;
+  return {
+    favoriteModel: isSameFavorite ? undefined : { provider, model: normalized },
+  };
 }
 
 export function useAppSettings() {

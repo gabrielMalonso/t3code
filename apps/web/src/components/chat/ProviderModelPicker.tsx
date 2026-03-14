@@ -2,7 +2,8 @@ import { type ModelSlug, type ProviderKind } from "@t3tools/contracts";
 import { normalizeModelSlug } from "@t3tools/shared/model";
 import { memo, useState } from "react";
 import { type ProviderPickerKind, PROVIDER_OPTIONS } from "../../session-logic";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, StarIcon } from "lucide-react";
+import type { FavoriteModel } from "../../appSettings";
 import { Button } from "../ui/button";
 import {
   Menu,
@@ -81,7 +82,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   modelOptionsByProvider: Record<ProviderKind, ReadonlyArray<{ slug: string; name: string }>>;
   compact?: boolean;
   disabled?: boolean;
+  favoriteModel?: FavoriteModel | null;
   onProviderModelChange: (provider: ProviderKind, model: ModelSlug) => void;
+  onToggleFavorite?: (provider: ProviderKind, model: ModelSlug) => void;
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const selectedProviderOptions = props.modelOptionsByProvider[props.provider];
@@ -153,15 +156,53 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
                       setIsMenuOpen(false);
                     }}
                   >
-                    {props.modelOptionsByProvider[option.value].map((modelOption) => (
-                      <MenuRadioItem
-                        key={`${option.value}:${modelOption.slug}`}
-                        value={modelOption.slug}
-                        onClick={() => setIsMenuOpen(false)}
-                      >
-                        {modelOption.name}
-                      </MenuRadioItem>
-                    ))}
+                    {props.modelOptionsByProvider[option.value].map((modelOption) => {
+                      const isFavorite =
+                        props.favoriteModel?.provider === option.value &&
+                        props.favoriteModel?.model === modelOption.slug;
+                      return (
+                        <MenuRadioItem
+                          key={`${option.value}:${modelOption.slug}`}
+                          value={modelOption.slug}
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          <span className="inline-flex w-full items-center gap-2">
+                            <span className="flex-1 truncate">{modelOption.name}</span>
+                            {props.onToggleFavorite && (
+                              <button
+                                type="button"
+                                aria-label={
+                                  isFavorite
+                                    ? `Remove ${modelOption.name} as default`
+                                    : `Set ${modelOption.name} as default`
+                                }
+                                className={cn(
+                                  "shrink-0 rounded-sm p-0.5 transition-colors pointer-events-auto",
+                                  isFavorite
+                                    ? "text-amber-400"
+                                    : "text-muted-foreground/30 hover:text-amber-400/70",
+                                )}
+                                onPointerDown={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  props.onToggleFavorite?.(option.value, modelOption.slug);
+                                }}
+                              >
+                                <StarIcon
+                                  aria-hidden="true"
+                                  className="size-3.5 shrink-0 pointer-events-none"
+                                  {...(isFavorite ? { fill: "currentColor" } : {})}
+                                />
+                              </button>
+                            )}
+                          </span>
+                        </MenuRadioItem>
+                      );
+                    })}
                   </MenuRadioGroup>
                 </MenuGroup>
               </MenuSubPopup>
