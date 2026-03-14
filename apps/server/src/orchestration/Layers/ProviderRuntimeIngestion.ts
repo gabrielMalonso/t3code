@@ -5,12 +5,12 @@ import {
   MessageId,
   type OrchestrationEvent,
   CheckpointRef,
-  isToolLifecycleItemType,
   ThreadId,
   TurnId,
   type OrchestrationThreadActivity,
   type ProviderRuntimeEvent,
 } from "@t3tools/contracts";
+import { isToolLifecycleItemType } from "@t3tools/shared/providerRuntime";
 import { Cache, Cause, Duration, Effect, Layer, Option, Ref, Stream } from "effect";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
@@ -239,7 +239,6 @@ function extractToolContext(data: unknown): Record<string, unknown> | undefined 
   }
   return Object.keys(result).length > 0 ? result : undefined;
 }
-
 
 function runtimeEventToActivities(
   event: ProviderRuntimeEvent,

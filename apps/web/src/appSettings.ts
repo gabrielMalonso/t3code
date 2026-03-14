@@ -90,7 +90,6 @@ function normalizeAppSettings(settings: AppSettings): AppSettings {
   };
 }
 
-
 export function getAppModelOptions(
   provider: ProviderKind,
   customModels: readonly string[],

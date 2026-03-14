@@ -1,6 +1,5 @@
 import {
   ApprovalRequestId,
-  isToolLifecycleItemType,
   type OrchestrationLatestTurn,
   type OrchestrationThreadActivity,
   type OrchestrationProposedPlanId,
@@ -9,6 +8,7 @@ import {
   type UserInputQuestion,
   type TurnId,
 } from "@t3tools/contracts";
+import { isToolLifecycleItemType } from "@t3tools/shared/providerRuntime";
 
 import type {
   ChatMessage,

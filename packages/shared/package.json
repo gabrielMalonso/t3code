@@ -35,6 +35,10 @@
     "./schemaJson": {
       "types": "./src/schemaJson.ts",
       "import": "./src/schemaJson.ts"
+    },
+    "./providerRuntime": {
+      "types": "./src/providerRuntime.ts",
+      "import": "./src/providerRuntime.ts"
     }
   },
   "scripts": {

@@ -52,7 +52,6 @@ export function resolveSidebarNewThreadEnvMode(input: {
   return input.requestedEnvMode ?? input.defaultEnvMode;
 }
 
-
 export function resolveThreadRowClassName(input: {
   isActive: boolean;
   isSelected: boolean;
