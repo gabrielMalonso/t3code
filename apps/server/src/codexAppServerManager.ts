@@ -120,8 +120,7 @@ export interface CodexAppServerSendTurnInput {
   readonly threadId: ThreadId;
   readonly input?: string;
   readonly attachments?: ReadonlyArray<
-    | { type: "image"; url: string }
-    | { type: "text_file"; content: string; name: string }
+    { type: "image"; url: string } | { type: "text_file"; content: string; name: string }
   >;
   readonly model?: string;
   readonly serviceTier?: string | null;

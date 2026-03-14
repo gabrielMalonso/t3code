@@ -342,9 +342,7 @@ function buildUserMessage(
         `Attached image: ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes).`,
       );
     } else if (filePath) {
-      fragments.push(
-        `[Attached file: ${attachment.name}]\nRead the file at: ${filePath}`,
-      );
+      fragments.push(`[Attached file: ${attachment.name}]\nRead the file at: ${filePath}`);
     } else {
       fragments.push(
         `Attached file: ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes).`,
