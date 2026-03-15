@@ -266,6 +266,7 @@ export default function ChatView({ threadId, tabBar }: ChatViewProps) {
     (store) => store.draftThreadsByThreadId[threadId] ?? null,
   );
   const promptRef = useRef(prompt);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [isDragOverComposer, setIsDragOverComposer] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
@@ -1710,6 +1711,7 @@ export default function ChatView({ threadId, tabBar }: ChatViewProps) {
       }
     }
 
+    setShowScrollToBottom(!shouldAutoScrollRef.current);
     lastKnownScrollTopRef.current = currentScrollTop;
   }, []);
   const onMessagesWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
@@ -3638,79 +3640,96 @@ export default function ChatView({ threadId, tabBar }: ChatViewProps) {
       <div className="flex min-h-0 min-w-0 flex-1">
         {/* Chat column */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {/* Messages */}
-          <div
-            ref={setMessagesScrollContainerRef}
-            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-3 py-3 sm:px-5 sm:py-4"
-            onScroll={onMessagesScroll}
-            onClickCapture={onMessagesClickCapture}
-            onWheel={onMessagesWheel}
-            onPointerDown={onMessagesPointerDown}
-            onPointerUp={onMessagesPointerUp}
-            onPointerCancel={onMessagesPointerCancel}
-            onTouchStart={onMessagesTouchStart}
-            onTouchMove={onMessagesTouchMove}
-            onTouchEnd={onMessagesTouchEnd}
-            onTouchCancel={onMessagesTouchEnd}
-          >
-            {activeThread.implementationThreadId && (
-              <div className="mb-3 flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300/90">
-                <span>Plan implemented in another thread.</span>
+          {/* Messages Wrapper */}
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            {/* Messages */}
+            <div
+              ref={setMessagesScrollContainerRef}
+              className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-3 py-3 sm:px-5 sm:py-4"
+              onScroll={onMessagesScroll}
+              onClickCapture={onMessagesClickCapture}
+              onWheel={onMessagesWheel}
+              onPointerDown={onMessagesPointerDown}
+              onPointerUp={onMessagesPointerUp}
+              onPointerCancel={onMessagesPointerCancel}
+              onTouchStart={onMessagesTouchStart}
+              onTouchMove={onMessagesTouchMove}
+              onTouchEnd={onMessagesTouchEnd}
+              onTouchCancel={onMessagesTouchEnd}
+            >
+              {activeThread.implementationThreadId && (
+                <div className="mb-3 flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300/90">
+                  <span>Plan implemented in another thread.</span>
+                  <button
+                    type="button"
+                    className="font-medium underline underline-offset-2 hover:text-emerald-900 dark:hover:text-emerald-100"
+                    onClick={() => {
+                      void navigate({
+                        to: "/$threadId",
+                        params: { threadId: activeThread.implementationThreadId! },
+                      });
+                    }}
+                  >
+                    Go to implementation
+                  </button>
+                </div>
+              )}
+              {activeThread.sourceThreadId && (
+                <div className="mb-3 flex items-center gap-2 rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-2 text-xs text-violet-700 dark:text-violet-300/90">
+                  <span>Implements plan from another thread.</span>
+                  <button
+                    type="button"
+                    className="font-medium underline underline-offset-2 hover:text-violet-900 dark:hover:text-violet-100"
+                    onClick={() => {
+                      void navigate({
+                        to: "/$threadId",
+                        params: { threadId: activeThread.sourceThreadId! },
+                      });
+                    }}
+                  >
+                    View plan
+                  </button>
+                </div>
+              )}
+              <MessagesTimeline
+                key={activeThread.id}
+                hasMessages={timelineEntries.length > 0}
+                isWorking={isWorking}
+                activeTurnInProgress={isWorking || !latestTurnSettled}
+                activeTurnStartedAt={activeWorkStartedAt}
+                scrollContainer={messagesScrollElement}
+                timelineEntries={timelineEntries}
+                completionDividerBeforeEntryId={completionDividerBeforeEntryId}
+                completionSummary={completionSummary}
+                turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
+                nowIso={nowIso}
+                expandedWorkGroups={expandedWorkGroups}
+                onToggleWorkGroup={onToggleWorkGroup}
+                onOpenTurnDiff={onOpenTurnDiff}
+                revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
+                onRevertUserMessage={onRevertUserMessage}
+                isRevertingCheckpoint={isRevertingCheckpoint}
+                onImageExpand={onExpandTimelineImage}
+                markdownCwd={gitCwd ?? undefined}
+                resolvedTheme={resolvedTheme}
+                timestampFormat={timestampFormat}
+                workspaceRoot={activeProject?.cwd ?? undefined}
+              />
+            </div>
+
+            {/* scroll to bottom pill — shown when user has scrolled away from the bottom */}
+            {showScrollToBottom && (
+              <div className="pointer-events-none absolute bottom-1 left-1/2 z-30 flex -translate-x-1/2 justify-center py-1.5">
                 <button
                   type="button"
-                  className="font-medium underline underline-offset-2 hover:text-emerald-900 dark:hover:text-emerald-100"
-                  onClick={() => {
-                    void navigate({
-                      to: "/$threadId",
-                      params: { threadId: activeThread.implementationThreadId! },
-                    });
-                  }}
+                  onClick={() => scrollMessagesToBottom("smooth")}
+                  className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1 text-muted-foreground text-xs shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
                 >
-                  Go to implementation
+                  <ChevronDownIcon className="size-3.5" />
+                  Scroll to bottom
                 </button>
               </div>
             )}
-            {activeThread.sourceThreadId && (
-              <div className="mb-3 flex items-center gap-2 rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-2 text-xs text-violet-700 dark:text-violet-300/90">
-                <span>Implements plan from another thread.</span>
-                <button
-                  type="button"
-                  className="font-medium underline underline-offset-2 hover:text-violet-900 dark:hover:text-violet-100"
-                  onClick={() => {
-                    void navigate({
-                      to: "/$threadId",
-                      params: { threadId: activeThread.sourceThreadId! },
-                    });
-                  }}
-                >
-                  View plan
-                </button>
-              </div>
-            )}
-            <MessagesTimeline
-              key={activeThread.id}
-              hasMessages={timelineEntries.length > 0}
-              isWorking={isWorking}
-              activeTurnInProgress={isWorking || !latestTurnSettled}
-              activeTurnStartedAt={activeWorkStartedAt}
-              scrollContainer={messagesScrollElement}
-              timelineEntries={timelineEntries}
-              completionDividerBeforeEntryId={completionDividerBeforeEntryId}
-              completionSummary={completionSummary}
-              turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
-              nowIso={nowIso}
-              expandedWorkGroups={expandedWorkGroups}
-              onToggleWorkGroup={onToggleWorkGroup}
-              onOpenTurnDiff={onOpenTurnDiff}
-              revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
-              onRevertUserMessage={onRevertUserMessage}
-              isRevertingCheckpoint={isRevertingCheckpoint}
-              onImageExpand={onExpandTimelineImage}
-              markdownCwd={gitCwd ?? undefined}
-              resolvedTheme={resolvedTheme}
-              timestampFormat={timestampFormat}
-              workspaceRoot={activeProject?.cwd ?? undefined}
-            />
           </div>
 
           {/* Input bar */}
@@ -3741,7 +3760,7 @@ export default function ChatView({ threadId, tabBar }: ChatViewProps) {
                   <div className="rounded-t-[19px] border-b border-border/65 bg-muted/20">
                     <ComposerPendingUserInputPanel
                       pendingUserInputs={pendingUserInputs}
-                      respondingRequestIds={respondingUserInputRequestIds}
+                      respondingRequestIds={respondingRequestIds}
                       answers={activePendingDraftAnswers}
                       questionIndex={activePendingQuestionIndex}
                       onSelectOption={onSelectActivePendingUserInputOption}
