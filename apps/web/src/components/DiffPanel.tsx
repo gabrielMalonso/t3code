@@ -24,6 +24,7 @@ import { buildPatchCacheKey } from "../lib/diffRendering";
 import { resolveDiffThemeName } from "../lib/diffRendering";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { useStore } from "../store";
+import { getActiveSubThread } from "../types";
 import { DiffPanelLoadingState, DiffPanelShell, type DiffPanelMode } from "./DiffPanelShell";
 import { useAppSettings } from "../appSettings";
 import { formatShortTimestamp } from "../timestampFormat";
@@ -182,8 +183,9 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const activeCwd = activeThread?.worktreePath ?? activeProject?.cwd;
   const gitBranchesQuery = useQuery(gitBranchesQueryOptions(activeCwd ?? null));
   const isGitRepo = gitBranchesQuery.data?.isRepo ?? true;
+  const activeSubThread = activeThread ? getActiveSubThread(activeThread) : undefined;
   const { turnDiffSummaries, inferredCheckpointTurnCountByTurnId } =
-    useTurnDiffSummaries(activeThread);
+    useTurnDiffSummaries(activeSubThread);
   const orderedTurnDiffSummaries = useMemo(
     () =>
       [...turnDiffSummaries].toSorted((left, right) => {

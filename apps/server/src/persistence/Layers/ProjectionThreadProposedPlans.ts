@@ -20,6 +20,7 @@ const makeProjectionThreadProposedPlanRepository = Effect.gen(function* () {
       INSERT INTO projection_thread_proposed_plans (
         plan_id,
         thread_id,
+        sub_thread_id,
         turn_id,
         plan_markdown,
         created_at,
@@ -28,6 +29,7 @@ const makeProjectionThreadProposedPlanRepository = Effect.gen(function* () {
       VALUES (
         ${row.planId},
         ${row.threadId},
+        ${row.subThreadId},
         ${row.turnId},
         ${row.planMarkdown},
         ${row.createdAt},
@@ -36,6 +38,7 @@ const makeProjectionThreadProposedPlanRepository = Effect.gen(function* () {
       ON CONFLICT (plan_id)
       DO UPDATE SET
         thread_id = excluded.thread_id,
+        sub_thread_id = excluded.sub_thread_id,
         turn_id = excluded.turn_id,
         plan_markdown = excluded.plan_markdown,
         created_at = excluded.created_at,
@@ -50,6 +53,7 @@ const makeProjectionThreadProposedPlanRepository = Effect.gen(function* () {
       SELECT
         plan_id AS "planId",
         thread_id AS "threadId",
+        sub_thread_id AS "subThreadId",
         turn_id AS "turnId",
         plan_markdown AS "planMarkdown",
         created_at AS "createdAt",

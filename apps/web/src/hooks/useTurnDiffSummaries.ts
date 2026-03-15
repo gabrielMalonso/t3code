@@ -1,14 +1,14 @@
 import { useMemo } from "react";
 import { inferCheckpointTurnCountByTurnId } from "../session-logic";
-import type { Thread } from "../types";
+import type { SubThread } from "../types";
 
-export function useTurnDiffSummaries(activeThread: Thread | undefined) {
+export function useTurnDiffSummaries(activeSubThread: SubThread | undefined) {
   const turnDiffSummaries = useMemo(() => {
-    if (!activeThread) {
+    if (!activeSubThread) {
       return [];
     }
-    return activeThread.turnDiffSummaries;
-  }, [activeThread]);
+    return activeSubThread.turnDiffSummaries;
+  }, [activeSubThread]);
 
   const inferredCheckpointTurnCountByTurnId = useMemo(
     () => inferCheckpointTurnCountByTurnId(turnDiffSummaries),

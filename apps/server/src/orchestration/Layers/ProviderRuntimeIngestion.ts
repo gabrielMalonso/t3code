@@ -4,6 +4,8 @@ import {
   CommandId,
   MessageId,
   type OrchestrationEvent,
+  type OrchestrationSubThread,
+  type OrchestrationThread,
   CheckpointRef,
   ThreadId,
   TurnId,
@@ -26,6 +28,10 @@ import {
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerCommandId = (event: ProviderRuntimeEvent, tag: string): CommandId =>
   CommandId.makeUnsafe(`provider:${event.eventId}:${tag}:${crypto.randomUUID()}`);
+
+function resolveActiveSubThread(thread: OrchestrationThread): OrchestrationSubThread | undefined {
+  return thread.subThreads.find((s) => s.id === thread.activeSubThreadId) ?? thread.subThreads[0];
+}
 
 const DEFAULT_ASSISTANT_DELIVERY_MODE: AssistantDeliveryMode = "buffered";
 const TURN_MESSAGE_IDS_BY_TURN_CACHE_CAPACITY = 10_000;
@@ -853,7 +859,7 @@ const make = Effect.gen(function* () {
 
       const now = event.createdAt;
       const eventTurnId = toTurnId(event.turnId);
-      const activeTurnId = thread.session?.activeTurnId ?? null;
+      const activeTurnId = resolveActiveSubThread(thread)?.session?.activeTurnId ?? null;
 
       const conflictsWithActiveTurn =
         activeTurnId !== null && eventTurnId !== undefined && !sameId(activeTurnId, eventTurnId);
@@ -919,12 +925,16 @@ const make = Effect.gen(function* () {
         })();
         const lastError =
           event.type === "session.state.changed" && event.payload.state === "error"
-            ? (event.payload.reason ?? thread.session?.lastError ?? "Provider session error")
+            ? (event.payload.reason ??
+              resolveActiveSubThread(thread)?.session?.lastError ??
+              "Provider session error")
             : event.type === "turn.completed" && runtimeTurnState(event) === "failed"
-              ? (runtimeTurnErrorMessage(event) ?? thread.session?.lastError ?? "Turn failed")
+              ? (runtimeTurnErrorMessage(event) ??
+                resolveActiveSubThread(thread)?.session?.lastError ??
+                "Turn failed")
               : status === "ready"
                 ? null
-                : (thread.session?.lastError ?? null);
+                : (resolveActiveSubThread(thread)?.session?.lastError ?? null);
 
         if (shouldApplyThreadLifecycle) {
           yield* orchestrationEngine.dispatch({
@@ -935,14 +945,15 @@ const make = Effect.gen(function* () {
               threadId: thread.id,
               status,
               providerName: event.provider,
-              runtimeMode: thread.session?.runtimeMode ?? "full-access",
+              runtimeMode: resolveActiveSubThread(thread)?.session?.runtimeMode ?? "full-access",
               activeTurnId: nextActiveTurnId,
               lastError,
-              ...(event.type !== "session.exited" && thread.session?.skills
-                ? { skills: thread.session.skills }
+              ...(event.type !== "session.exited" && resolveActiveSubThread(thread)?.session?.skills
+                ? { skills: resolveActiveSubThread(thread)?.session?.skills }
                 : {}),
-              ...(event.type !== "session.exited" && thread.session?.slashCommands
-                ? { slashCommands: thread.session.slashCommands }
+              ...(event.type !== "session.exited" &&
+              resolveActiveSubThread(thread)?.session?.slashCommands
+                ? { slashCommands: resolveActiveSubThread(thread)?.session?.slashCommands }
                 : {}),
               updatedAt: now,
             },
@@ -968,13 +979,13 @@ const make = Effect.gen(function* () {
             commandId: providerCommandId(event, "thread-session-configured-skills"),
             threadId: thread.id,
             session: {
-              ...thread.session,
+              ...resolveActiveSubThread(thread)?.session,
               threadId: thread.id,
-              status: thread.session?.status ?? "ready",
-              providerName: thread.session?.providerName ?? event.provider,
-              runtimeMode: thread.session?.runtimeMode ?? "full-access",
-              activeTurnId: thread.session?.activeTurnId ?? null,
-              lastError: thread.session?.lastError ?? null,
+              status: resolveActiveSubThread(thread)?.session?.status ?? "ready",
+              providerName: resolveActiveSubThread(thread)?.session?.providerName ?? event.provider,
+              runtimeMode: resolveActiveSubThread(thread)?.session?.runtimeMode ?? "full-access",
+              activeTurnId: resolveActiveSubThread(thread)?.session?.activeTurnId ?? null,
+              lastError: resolveActiveSubThread(thread)?.session?.lastError ?? null,
               skills: skills ?? [],
               slashCommands: slashCommands ?? [],
               updatedAt: now,
@@ -1077,7 +1088,7 @@ const make = Effect.gen(function* () {
       if (assistantCompletion) {
         const assistantMessageId = assistantCompletion.messageId;
         const turnId = toTurnId(event.turnId);
-        const existingAssistantMessage = thread.messages.find(
+        const existingAssistantMessage = (resolveActiveSubThread(thread)?.messages ?? []).find(
           (entry) => entry.id === assistantMessageId,
         );
         const shouldApplyFallbackCompletionText =
@@ -1109,7 +1120,7 @@ const make = Effect.gen(function* () {
         yield* finalizeBufferedProposedPlan({
           event,
           threadId: thread.id,
-          threadProposedPlans: thread.proposedPlans,
+          threadProposedPlans: resolveActiveSubThread(thread)?.proposedPlans ?? [],
           planId: proposedPlanCompletion.planId,
           ...(proposedPlanCompletion.turnId ? { turnId: proposedPlanCompletion.turnId } : {}),
           fallbackMarkdown: proposedPlanCompletion.planMarkdown,
@@ -1132,7 +1143,7 @@ const make = Effect.gen(function* () {
                 createdAt: now,
                 commandTag: "assistant-complete-finalize",
                 finalDeltaCommandTag: "assistant-delta-finalize-fallback",
-                messageExistsInThread: thread.messages.some(
+                messageExistsInThread: (resolveActiveSubThread(thread)?.messages ?? []).some(
                   (message) => message.id === assistantMessageId,
                 ),
               }),
@@ -1143,7 +1154,7 @@ const make = Effect.gen(function* () {
           yield* finalizeBufferedProposedPlan({
             event,
             threadId: thread.id,
-            threadProposedPlans: thread.proposedPlans,
+            threadProposedPlans: resolveActiveSubThread(thread)?.proposedPlans ?? [],
             planId: proposedPlanIdForTurn(thread.id, turnId),
             turnId,
             updatedAt: now,
@@ -1171,7 +1182,7 @@ const make = Effect.gen(function* () {
               threadId: thread.id,
               status: "error",
               providerName: event.provider,
-              runtimeMode: thread.session?.runtimeMode ?? "full-access",
+              runtimeMode: resolveActiveSubThread(thread)?.session?.runtimeMode ?? "full-access",
               activeTurnId: eventTurnId ?? null,
               lastError: runtimeErrorMessage,
               updatedAt: now,
@@ -1197,13 +1208,15 @@ const make = Effect.gen(function* () {
           // (non-placeholder) capture from CheckpointReactor should not
           // be clobbered, and dispatching a duplicate placeholder for the
           // same turnId would produce an unstable checkpointTurnCount.
-          if (thread.checkpoints.some((c) => c.turnId === turnId)) {
+          if (
+            (resolveActiveSubThread(thread)?.checkpoints ?? []).some((c) => c.turnId === turnId)
+          ) {
             // Already tracked; no-op.
           } else {
             const assistantMessageId = MessageId.makeUnsafe(
               `assistant:${event.itemId ?? event.turnId ?? event.eventId}`,
             );
-            const maxTurnCount = thread.checkpoints.reduce(
+            const maxTurnCount = (resolveActiveSubThread(thread)?.checkpoints ?? []).reduce(
               (max, c) => Math.max(max, c.checkpointTurnCount),
               0,
             );

@@ -1,4 +1,12 @@
-import { CheckpointRef, EventId, MessageId, ProjectId, ThreadId, TurnId } from "@t3tools/contracts";
+import {
+  CheckpointRef,
+  EventId,
+  MessageId,
+  ProjectId,
+  SubThreadId,
+  ThreadId,
+  TurnId,
+} from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -27,6 +35,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       yield* sql`DELETE FROM projection_projects`;
       yield* sql`DELETE FROM projection_state`;
       yield* sql`DELETE FROM projection_turns`;
+      yield* sql`DELETE FROM projection_sub_threads`;
 
       yield* sql`
         INSERT INTO projection_projects (
@@ -62,6 +71,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           source_thread_id,
           implementation_thread_id,
           latest_turn_id,
+          active_sub_thread_id,
           created_at,
           updated_at,
           deleted_at
@@ -76,6 +86,34 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           NULL,
           NULL,
           'turn-1',
+          'sub-thread-1',
+          '2026-02-24T00:00:02.000Z',
+          '2026-02-24T00:00:03.000Z',
+          NULL
+        )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_sub_threads (
+          sub_thread_id,
+          thread_id,
+          title,
+          model,
+          runtime_mode,
+          interaction_mode,
+          latest_turn_id,
+          created_at,
+          updated_at,
+          deleted_at
+        )
+        VALUES (
+          'sub-thread-1',
+          'thread-1',
+          'Main',
+          'gpt-5-codex',
+          'full-access',
+          'default',
+          'turn-1',
           '2026-02-24T00:00:02.000Z',
           '2026-02-24T00:00:03.000Z',
           NULL
@@ -86,6 +124,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         INSERT INTO projection_thread_messages (
           message_id,
           thread_id,
+          sub_thread_id,
           turn_id,
           role,
           text,
@@ -96,6 +135,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         VALUES (
           'message-1',
           'thread-1',
+          'sub-thread-1',
           'turn-1',
           'assistant',
           'hello from projection',
@@ -109,6 +149,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         INSERT INTO projection_thread_activities (
           activity_id,
           thread_id,
+          sub_thread_id,
           turn_id,
           tone,
           kind,
@@ -119,6 +160,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         VALUES (
           'activity-1',
           'thread-1',
+          'sub-thread-1',
           'turn-1',
           'info',
           'runtime.note',
@@ -131,6 +173,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       yield* sql`
         INSERT INTO projection_thread_sessions (
           thread_id,
+          sub_thread_id,
           status,
           provider_name,
           provider_session_id,
@@ -142,6 +185,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         )
         VALUES (
           'thread-1',
+          'sub-thread-1',
           'running',
           'codex',
           'provider-session-1',
@@ -156,6 +200,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       yield* sql`
         INSERT INTO projection_turns (
           thread_id,
+          sub_thread_id,
           turn_id,
           pending_message_id,
           assistant_message_id,
@@ -170,6 +215,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         )
         VALUES (
           'thread-1',
+          'sub-thread-1',
           'turn-1',
           NULL,
           'message-1',
@@ -230,67 +276,78 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           id: ThreadId.makeUnsafe("thread-1"),
           projectId: asProjectId("project-1"),
           title: "Thread 1",
-          model: "gpt-5-codex",
-          interactionMode: "default",
-          runtimeMode: "full-access",
           branch: null,
           worktreePath: null,
           sourceThreadId: null,
           implementationThreadId: null,
-          latestTurn: {
-            turnId: asTurnId("turn-1"),
-            state: "completed",
-            requestedAt: "2026-02-24T00:00:08.000Z",
-            startedAt: "2026-02-24T00:00:08.000Z",
-            completedAt: "2026-02-24T00:00:08.000Z",
-            assistantMessageId: asMessageId("message-1"),
-          },
           createdAt: "2026-02-24T00:00:02.000Z",
           updatedAt: "2026-02-24T00:00:03.000Z",
           deletedAt: null,
-          messages: [
+          activeSubThreadId: SubThreadId.makeUnsafe("sub-thread-1"),
+          subThreads: [
             {
-              id: asMessageId("message-1"),
-              role: "assistant",
-              text: "hello from projection",
-              turnId: asTurnId("turn-1"),
-              streaming: false,
-              createdAt: "2026-02-24T00:00:04.000Z",
-              updatedAt: "2026-02-24T00:00:05.000Z",
+              id: SubThreadId.makeUnsafe("sub-thread-1"),
+              threadId: ThreadId.makeUnsafe("thread-1"),
+              title: "Main",
+              model: "gpt-5-codex",
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              latestTurn: {
+                turnId: asTurnId("turn-1"),
+                state: "completed",
+                requestedAt: "2026-02-24T00:00:08.000Z",
+                startedAt: "2026-02-24T00:00:08.000Z",
+                completedAt: "2026-02-24T00:00:08.000Z",
+                assistantMessageId: asMessageId("message-1"),
+              },
+              createdAt: "2026-02-24T00:00:02.000Z",
+              updatedAt: "2026-02-24T00:00:03.000Z",
+              deletedAt: null,
+              messages: [
+                {
+                  id: asMessageId("message-1"),
+                  role: "assistant",
+                  text: "hello from projection",
+                  turnId: asTurnId("turn-1"),
+                  streaming: false,
+                  createdAt: "2026-02-24T00:00:04.000Z",
+                  updatedAt: "2026-02-24T00:00:05.000Z",
+                },
+              ],
+              proposedPlans: [],
+              activities: [
+                {
+                  id: asEventId("activity-1"),
+                  tone: "info",
+                  kind: "runtime.note",
+                  summary: "provider started",
+                  payload: { stage: "start" },
+                  turnId: asTurnId("turn-1"),
+                  createdAt: "2026-02-24T00:00:06.000Z",
+                },
+              ],
+              checkpoints: [
+                {
+                  turnId: asTurnId("turn-1"),
+                  checkpointTurnCount: 1,
+                  checkpointRef: asCheckpointRef("checkpoint-1"),
+                  status: "ready",
+                  files: [{ path: "README.md", kind: "modified", additions: 2, deletions: 1 }],
+                  assistantMessageId: asMessageId("message-1"),
+                  completedAt: "2026-02-24T00:00:08.000Z",
+                },
+              ],
+              session: {
+                threadId: ThreadId.makeUnsafe("thread-1"),
+                status: "running",
+                providerName: "codex",
+                runtimeMode: "approval-required",
+                activeTurnId: asTurnId("turn-1"),
+                lastError: null,
+                updatedAt: "2026-02-24T00:00:07.000Z",
+              },
             },
           ],
-          proposedPlans: [],
-          activities: [
-            {
-              id: asEventId("activity-1"),
-              tone: "info",
-              kind: "runtime.note",
-              summary: "provider started",
-              payload: { stage: "start" },
-              turnId: asTurnId("turn-1"),
-              createdAt: "2026-02-24T00:00:06.000Z",
-            },
-          ],
-          checkpoints: [
-            {
-              turnId: asTurnId("turn-1"),
-              checkpointTurnCount: 1,
-              checkpointRef: asCheckpointRef("checkpoint-1"),
-              status: "ready",
-              files: [{ path: "README.md", kind: "modified", additions: 2, deletions: 1 }],
-              assistantMessageId: asMessageId("message-1"),
-              completedAt: "2026-02-24T00:00:08.000Z",
-            },
-          ],
-          session: {
-            threadId: ThreadId.makeUnsafe("thread-1"),
-            status: "running",
-            providerName: "codex",
-            runtimeMode: "approval-required",
-            activeTurnId: asTurnId("turn-1"),
-            lastError: null,
-            updatedAt: "2026-02-24T00:00:07.000Z",
-          },
         },
       ]);
     }),

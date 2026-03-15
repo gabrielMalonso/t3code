@@ -21,6 +21,7 @@ const makeProjectionThreadSessionRepository = Effect.gen(function* () {
       sql`
         INSERT INTO projection_thread_sessions (
           thread_id,
+          sub_thread_id,
           status,
           provider_name,
           runtime_mode,
@@ -30,6 +31,7 @@ const makeProjectionThreadSessionRepository = Effect.gen(function* () {
         )
         VALUES (
           ${row.threadId},
+          ${row.subThreadId},
           ${row.status},
           ${row.providerName},
           ${row.runtimeMode},
@@ -39,6 +41,7 @@ const makeProjectionThreadSessionRepository = Effect.gen(function* () {
         )
         ON CONFLICT (thread_id)
         DO UPDATE SET
+          sub_thread_id = excluded.sub_thread_id,
           status = excluded.status,
           provider_name = excluded.provider_name,
           runtime_mode = excluded.runtime_mode,
@@ -55,6 +58,7 @@ const makeProjectionThreadSessionRepository = Effect.gen(function* () {
       sql`
         SELECT
           thread_id AS "threadId",
+          sub_thread_id AS "subThreadId",
           status,
           provider_name AS "providerName",
           runtime_mode AS "runtimeMode",

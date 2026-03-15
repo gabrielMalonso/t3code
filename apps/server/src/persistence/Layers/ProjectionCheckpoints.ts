@@ -50,6 +50,7 @@ const makeProjectionCheckpointRepository = Effect.gen(function* () {
       sql`
         INSERT INTO projection_turns (
           thread_id,
+          sub_thread_id,
           turn_id,
           pending_message_id,
           assistant_message_id,
@@ -64,6 +65,7 @@ const makeProjectionCheckpointRepository = Effect.gen(function* () {
         )
         VALUES (
           ${row.threadId},
+          ${row.subThreadId},
           ${row.turnId},
           NULL,
           ${row.assistantMessageId},
@@ -95,6 +97,7 @@ const makeProjectionCheckpointRepository = Effect.gen(function* () {
       sql`
         SELECT
           thread_id AS "threadId",
+          sub_thread_id AS "subThreadId",
           turn_id AS "turnId",
           checkpoint_turn_count AS "checkpointTurnCount",
           checkpoint_ref AS "checkpointRef",
@@ -116,6 +119,7 @@ const makeProjectionCheckpointRepository = Effect.gen(function* () {
       sql`
         SELECT
           thread_id AS "threadId",
+          sub_thread_id AS "subThreadId",
           turn_id AS "turnId",
           checkpoint_turn_count AS "checkpointTurnCount",
           checkpoint_ref AS "checkpointRef",

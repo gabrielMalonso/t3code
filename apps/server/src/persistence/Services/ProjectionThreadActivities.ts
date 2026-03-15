@@ -11,6 +11,7 @@ import {
   IsoDateTime,
   NonNegativeInt,
   OrchestrationThreadActivityTone,
+  SubThreadId,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -22,6 +23,7 @@ import type { ProjectionRepositoryError } from "../Errors.ts";
 export const ProjectionThreadActivity = Schema.Struct({
   activityId: EventId,
   threadId: ThreadId,
+  subThreadId: Schema.NullOr(SubThreadId),
   turnId: Schema.NullOr(TurnId),
   tone: OrchestrationThreadActivityTone,
   kind: Schema.String,

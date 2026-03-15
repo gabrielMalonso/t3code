@@ -13,6 +13,7 @@ import {
   NonNegativeInt,
   OrchestrationCheckpointFile,
   OrchestrationCheckpointStatus,
+  SubThreadId,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -32,6 +33,7 @@ export type ProjectionTurnState = typeof ProjectionTurnState.Type;
 
 export const ProjectionTurn = Schema.Struct({
   threadId: ThreadId,
+  subThreadId: Schema.NullOr(SubThreadId),
   turnId: Schema.NullOr(TurnId),
   pendingMessageId: Schema.NullOr(MessageId),
   assistantMessageId: Schema.NullOr(MessageId),
@@ -48,6 +50,7 @@ export type ProjectionTurn = typeof ProjectionTurn.Type;
 
 export const ProjectionTurnById = Schema.Struct({
   threadId: ThreadId,
+  subThreadId: Schema.NullOr(SubThreadId),
   turnId: TurnId,
   pendingMessageId: Schema.NullOr(MessageId),
   assistantMessageId: Schema.NullOr(MessageId),

@@ -295,8 +295,8 @@ describe("ProviderCommandReactor", () => {
 
     const readModel = await Effect.runPromise(harness.engine.getReadModel());
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.makeUnsafe("thread-1"));
-    expect(thread?.session?.threadId).toBe("thread-1");
-    expect(thread?.session?.runtimeMode).toBe("approval-required");
+    expect(thread?.subThreads[0]?.session?.threadId).toBe("thread-1");
+    expect(thread?.subThreads[0]?.session?.runtimeMode).toBe("approval-required");
   });
 
   it("forwards codex model options through session start and turn send", async () => {
@@ -484,7 +484,7 @@ describe("ProviderCommandReactor", () => {
       const thread = readModel.threads.find(
         (entry) => entry.id === ThreadId.makeUnsafe("thread-1"),
       );
-      return thread?.runtimeMode === "approval-required";
+      return thread?.subThreads[0]?.runtimeMode === "approval-required";
     });
     await waitFor(() => harness.startSession.mock.calls.length === 2);
     await Effect.runPromise(
@@ -518,8 +518,8 @@ describe("ProviderCommandReactor", () => {
 
     const readModel = await Effect.runPromise(harness.engine.getReadModel());
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.makeUnsafe("thread-1"));
-    expect(thread?.session?.threadId).toBe("thread-1");
-    expect(thread?.session?.runtimeMode).toBe("approval-required");
+    expect(thread?.subThreads[0]?.session?.threadId).toBe("thread-1");
+    expect(thread?.subThreads[0]?.session?.runtimeMode).toBe("approval-required");
   });
 
   it("does not stop the active session when restart fails before rebind", async () => {
@@ -575,7 +575,7 @@ describe("ProviderCommandReactor", () => {
       const thread = readModel.threads.find(
         (entry) => entry.id === ThreadId.makeUnsafe("thread-1"),
       );
-      return thread?.runtimeMode === "approval-required";
+      return thread?.subThreads[0]?.runtimeMode === "approval-required";
     });
     await waitFor(() => harness.startSession.mock.calls.length === 2);
     await harness.drain();
@@ -585,8 +585,8 @@ describe("ProviderCommandReactor", () => {
 
     const readModel = await Effect.runPromise(harness.engine.getReadModel());
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.makeUnsafe("thread-1"));
-    expect(thread?.session?.threadId).toBe("thread-1");
-    expect(thread?.session?.runtimeMode).toBe("full-access");
+    expect(thread?.subThreads[0]?.session?.threadId).toBe("thread-1");
+    expect(thread?.subThreads[0]?.session?.runtimeMode).toBe("full-access");
   });
 
   it("reacts to thread.turn.interrupt-requested by calling provider interrupt", async () => {
@@ -782,7 +782,7 @@ describe("ProviderCommandReactor", () => {
         (entry) => entry.id === ThreadId.makeUnsafe("thread-1"),
       );
       if (!thread) return false;
-      return thread.activities.some(
+      return (thread.subThreads[0]?.activities ?? []).some(
         (activity) => activity.kind === "provider.approval.respond.failed",
       );
     });
@@ -791,7 +791,7 @@ describe("ProviderCommandReactor", () => {
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.makeUnsafe("thread-1"));
     expect(thread).toBeDefined();
 
-    const failureActivity = thread?.activities.find(
+    const failureActivity = thread?.subThreads[0]?.activities.find(
       (activity) => activity.kind === "provider.approval.respond.failed",
     );
     expect(failureActivity).toBeDefined();
@@ -799,7 +799,7 @@ describe("ProviderCommandReactor", () => {
       requestId: "approval-request-1",
     });
 
-    const resolvedActivity = thread?.activities.find(
+    const resolvedActivity = thread?.subThreads[0]?.activities.find(
       (activity) =>
         activity.kind === "approval.resolved" &&
         typeof activity.payload === "object" &&
@@ -843,9 +843,9 @@ describe("ProviderCommandReactor", () => {
     await waitFor(() => harness.stopSession.mock.calls.length === 1);
     const readModel = await Effect.runPromise(harness.engine.getReadModel());
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.makeUnsafe("thread-1"));
-    expect(thread?.session).not.toBeNull();
-    expect(thread?.session?.status).toBe("stopped");
-    expect(thread?.session?.threadId).toBe("thread-1");
-    expect(thread?.session?.activeTurnId).toBeNull();
+    expect(thread?.subThreads[0]?.session).not.toBeNull();
+    expect(thread?.subThreads[0]?.session?.status).toBe("stopped");
+    expect(thread?.subThreads[0]?.session?.threadId).toBe("thread-1");
+    expect(thread?.subThreads[0]?.session?.activeTurnId).toBeNull();
   });
 });

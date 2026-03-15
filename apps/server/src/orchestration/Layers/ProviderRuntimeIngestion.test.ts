@@ -86,6 +86,41 @@ function createProviderServiceHarness() {
   };
 }
 
+type ProviderRuntimeTestReadModel = OrchestrationReadModel;
+type ProviderRuntimeTestRawThread = ProviderRuntimeTestReadModel["threads"][number];
+type ProviderRuntimeTestSubThread = ProviderRuntimeTestRawThread["subThreads"][number];
+type ProviderRuntimeTestMessage = ProviderRuntimeTestSubThread["messages"][number];
+type ProviderRuntimeTestProposedPlan = ProviderRuntimeTestSubThread["proposedPlans"][number];
+type ProviderRuntimeTestActivity = ProviderRuntimeTestSubThread["activities"][number];
+type ProviderRuntimeTestCheckpoint = ProviderRuntimeTestSubThread["checkpoints"][number];
+
+/**
+ * A flattened view of a thread that merges the active sub-thread's fields
+ * (session, messages, activities, checkpoints, proposedPlans, latestTurn)
+ * onto the thread for backwards-compatible test assertions.
+ */
+type ProviderRuntimeTestThread = ProviderRuntimeTestRawThread & {
+  session: ProviderRuntimeTestSubThread["session"];
+  messages: ProviderRuntimeTestSubThread["messages"];
+  activities: ProviderRuntimeTestSubThread["activities"];
+  checkpoints: ProviderRuntimeTestSubThread["checkpoints"];
+  proposedPlans: ProviderRuntimeTestSubThread["proposedPlans"];
+  latestTurn: ProviderRuntimeTestSubThread["latestTurn"];
+};
+
+function flattenThread(thread: ProviderRuntimeTestRawThread): ProviderRuntimeTestThread {
+  const sub = thread.subThreads[0];
+  return {
+    ...thread,
+    session: sub?.session ?? null,
+    messages: sub?.messages ?? [],
+    activities: sub?.activities ?? [],
+    checkpoints: sub?.checkpoints ?? [],
+    proposedPlans: sub?.proposedPlans ?? [],
+    latestTurn: sub?.latestTurn ?? null,
+  } as ProviderRuntimeTestThread;
+}
+
 async function waitForThread(
   engine: OrchestrationEngineShape,
   predicate: (thread: ProviderRuntimeTestThread) => boolean,
@@ -94,9 +129,14 @@ async function waitForThread(
   const deadline = Date.now() + timeoutMs;
   const poll = async (): Promise<ProviderRuntimeTestThread> => {
     const readModel = await Effect.runPromise(engine.getReadModel());
-    const thread = readModel.threads.find((entry) => entry.id === ThreadId.makeUnsafe("thread-1"));
-    if (thread && predicate(thread)) {
-      return thread;
+    const rawThread = readModel.threads.find(
+      (entry) => entry.id === ThreadId.makeUnsafe("thread-1"),
+    );
+    if (rawThread) {
+      const thread = flattenThread(rawThread);
+      if (predicate(thread)) {
+        return thread;
+      }
     }
     if (Date.now() >= deadline) {
       throw new Error("Timed out waiting for thread state");
@@ -106,13 +146,6 @@ async function waitForThread(
   };
   return poll();
 }
-
-type ProviderRuntimeTestReadModel = OrchestrationReadModel;
-type ProviderRuntimeTestThread = ProviderRuntimeTestReadModel["threads"][number];
-type ProviderRuntimeTestMessage = ProviderRuntimeTestThread["messages"][number];
-type ProviderRuntimeTestProposedPlan = ProviderRuntimeTestThread["proposedPlans"][number];
-type ProviderRuntimeTestActivity = ProviderRuntimeTestThread["activities"][number];
-type ProviderRuntimeTestCheckpoint = ProviderRuntimeTestThread["checkpoints"][number];
 
 describe("ProviderRuntimeIngestion", () => {
   let runtime: ManagedRuntime.ManagedRuntime<
@@ -384,9 +417,10 @@ describe("ProviderRuntimeIngestion", () => {
 
     await harness.drain();
     const midReadModel = await Effect.runPromise(harness.engine.getReadModel());
-    const midThread = midReadModel.threads.find(
+    const midRawThread = midReadModel.threads.find(
       (entry) => entry.id === ThreadId.makeUnsafe("thread-1"),
     );
+    const midThread = midRawThread ? flattenThread(midRawThread) : undefined;
     expect(midThread?.session?.status).toBe("running");
     expect(midThread?.session?.activeTurnId).toBe("turn-midturn-lifecycle");
 
@@ -436,12 +470,13 @@ describe("ProviderRuntimeIngestion", () => {
     });
 
     await harness.drain();
-    const midReadModel = await Effect.runPromise(harness.engine.getReadModel());
-    const midThread = midReadModel.threads.find(
+    const midReadModel2 = await Effect.runPromise(harness.engine.getReadModel());
+    const midRawThread2 = midReadModel2.threads.find(
       (entry) => entry.id === ThreadId.makeUnsafe("thread-1"),
     );
-    expect(midThread?.session?.status).toBe("running");
-    expect(midThread?.session?.activeTurnId).toBe("turn-primary");
+    const midThread2 = midRawThread2 ? flattenThread(midRawThread2) : undefined;
+    expect(midThread2?.session?.status).toBe("running");
+    expect(midThread2?.session?.activeTurnId).toBe("turn-primary");
 
     harness.emit({
       type: "turn.completed",
@@ -490,12 +525,13 @@ describe("ProviderRuntimeIngestion", () => {
     });
 
     await harness.drain();
-    const midReadModel = await Effect.runPromise(harness.engine.getReadModel());
-    const midThread = midReadModel.threads.find(
+    const midReadModel3 = await Effect.runPromise(harness.engine.getReadModel());
+    const midRawThread3 = midReadModel3.threads.find(
       (entry) => entry.id === ThreadId.makeUnsafe("thread-1"),
     );
-    expect(midThread?.session?.status).toBe("running");
-    expect(midThread?.session?.activeTurnId).toBe("turn-guarded-main");
+    const midThread3 = midRawThread3 ? flattenThread(midRawThread3) : undefined;
+    expect(midThread3?.session?.status).toBe("running");
+    expect(midThread3?.session?.activeTurnId).toBe("turn-guarded-main");
 
     harness.emit({
       type: "turn.completed",
@@ -622,7 +658,10 @@ describe("ProviderRuntimeIngestion", () => {
 
     await harness.drain();
     const readModel = await Effect.runPromise(harness.engine.getReadModel());
-    const thread = readModel.threads.find((entry) => entry.id === ThreadId.makeUnsafe("thread-1"));
+    const rawThread = readModel.threads.find(
+      (entry) => entry.id === ThreadId.makeUnsafe("thread-1"),
+    );
+    const thread = rawThread ? flattenThread(rawThread) : undefined;
 
     expect(thread).toBeDefined();
     expect(
@@ -967,12 +1006,13 @@ describe("ProviderRuntimeIngestion", () => {
     });
 
     await harness.drain();
-    const midReadModel = await Effect.runPromise(harness.engine.getReadModel());
-    const midThread = midReadModel.threads.find(
+    const midReadModel4 = await Effect.runPromise(harness.engine.getReadModel());
+    const midRawThread4 = midReadModel4.threads.find(
       (entry) => entry.id === ThreadId.makeUnsafe("thread-1"),
     );
+    const midThread4 = midRawThread4 ? flattenThread(midRawThread4) : undefined;
     expect(
-      midThread?.messages.some(
+      midThread4?.messages.some(
         (message: ProviderRuntimeTestMessage) => message.id === "assistant:item-buffered",
       ),
     ).toBe(false);
@@ -1285,11 +1325,14 @@ describe("ProviderRuntimeIngestion", () => {
         ),
     );
 
-    const readModel = await Effect.runPromise(harness.engine.getReadModel());
-    const thread = readModel.threads.find((entry) => entry.id === ThreadId.makeUnsafe("thread-1"));
-    expect(thread).toBeDefined();
+    const readModel2 = await Effect.runPromise(harness.engine.getReadModel());
+    const rawThread2 = readModel2.threads.find(
+      (entry) => entry.id === ThreadId.makeUnsafe("thread-1"),
+    );
+    const thread2 = rawThread2 ? flattenThread(rawThread2) : undefined;
+    expect(thread2).toBeDefined();
 
-    const requested = thread?.activities.find(
+    const requested = thread2?.activities.find(
       (activity: ProviderRuntimeTestActivity) => activity.id === "evt-request-opened",
     );
     const requestedPayload =
@@ -1299,7 +1342,7 @@ describe("ProviderRuntimeIngestion", () => {
     expect(requestedPayload?.requestKind).toBe("command");
     expect(requestedPayload?.requestType).toBe("command_execution_approval");
 
-    const resolved = thread?.activities.find(
+    const resolved = thread2?.activities.find(
       (activity: ProviderRuntimeTestActivity) => activity.id === "evt-request-resolved",
     );
     const resolvedPayload =

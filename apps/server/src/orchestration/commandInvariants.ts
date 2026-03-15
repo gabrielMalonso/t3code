@@ -2,8 +2,10 @@ import type {
   OrchestrationCommand,
   OrchestrationProject,
   OrchestrationReadModel,
+  OrchestrationSubThread,
   OrchestrationThread,
   ProjectId,
+  SubThreadId,
   ThreadId,
 } from "@t3tools/contracts";
 import { Effect } from "effect";
@@ -102,6 +104,48 @@ export function requireThreadAbsent(input: {
       `Thread '${input.threadId}' already exists and cannot be created twice.`,
     ),
   );
+}
+
+export function findSubThreadById(
+  thread: OrchestrationThread,
+  subThreadId: SubThreadId,
+): OrchestrationSubThread | undefined {
+  return thread.subThreads.find((sub) => sub.id === subThreadId);
+}
+
+export function requireSubThread(input: {
+  readonly readModel: OrchestrationReadModel;
+  readonly command: OrchestrationCommand;
+  readonly threadId: ThreadId;
+  readonly subThreadId: SubThreadId;
+}): Effect.Effect<OrchestrationSubThread, OrchestrationCommandInvariantError> {
+  const thread = findThreadById(input.readModel, input.threadId);
+  if (!thread) {
+    return Effect.fail(
+      invariantError(input.command.type, `Thread '${input.threadId}' does not exist.`),
+    );
+  }
+  const subThread = findSubThreadById(thread, input.subThreadId);
+  if (subThread) {
+    return Effect.succeed(subThread);
+  }
+  return Effect.fail(
+    invariantError(
+      input.command.type,
+      `SubThread '${input.subThreadId}' does not exist in thread '${input.threadId}'.`,
+    ),
+  );
+}
+
+export function resolveSubThreadId(input: {
+  readonly readModel: OrchestrationReadModel;
+  readonly threadId: ThreadId;
+  readonly explicitSubThreadId: SubThreadId | undefined;
+}): SubThreadId | undefined {
+  if (input.explicitSubThreadId) return input.explicitSubThreadId;
+  const thread = findThreadById(input.readModel, input.threadId);
+  if (!thread) return undefined;
+  return thread.activeSubThreadId ?? thread.subThreads[0]?.id ?? undefined;
 }
 
 export function requireNonNegativeInteger(input: {

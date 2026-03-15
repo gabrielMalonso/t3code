@@ -6,6 +6,8 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationEvent,
+  type OrchestrationSubThread,
+  type OrchestrationThread,
   type ProviderRuntimeEvent,
 } from "@t3tools/contracts";
 import { Cause, Effect, Layer, Option, Stream } from "effect";
@@ -38,6 +40,10 @@ type ReactorInput =
 
 function toTurnId(value: string | undefined): TurnId | null {
   return value === undefined ? null : TurnId.makeUnsafe(String(value));
+}
+
+function resolveActiveSubThread(thread: OrchestrationThread): OrchestrationSubThread | undefined {
+  return thread.subThreads.find((s) => s.id === thread.activeSubThreadId) ?? thread.subThreads[0];
 }
 
 function sameId(left: string | null | undefined, right: string | null | undefined): boolean {
@@ -190,13 +196,11 @@ const make = Effect.gen(function* () {
   const captureAndDispatchCheckpoint = Effect.fnUntraced(function* (input: {
     readonly threadId: ThreadId;
     readonly turnId: TurnId;
-    readonly thread: {
-      readonly messages: ReadonlyArray<{
-        readonly id: MessageId;
-        readonly role: string;
-        readonly turnId: TurnId | null;
-      }>;
-    };
+    readonly subThreadMessages: ReadonlyArray<{
+      readonly id: MessageId;
+      readonly role: string;
+      readonly turnId: TurnId | null;
+    }>;
     readonly cwd: string;
     readonly turnCount: number;
     readonly status: "ready" | "missing" | "error";
@@ -264,7 +268,7 @@ const make = Effect.gen(function* () {
 
     const assistantMessageId =
       input.assistantMessageId ??
-      input.thread.messages
+      input.subThreadMessages
         .toReversed()
         .find((entry) => entry.role === "assistant" && entry.turnId === input.turnId)?.id ??
       MessageId.makeUnsafe(`assistant:${input.turnId}`);
@@ -333,16 +337,20 @@ const make = Effect.gen(function* () {
       return;
     }
 
+    const activeSub = resolveActiveSubThread(thread);
+
     // When a primary turn is active, only that turn may produce completion checkpoints.
-    if (thread.session?.activeTurnId && !sameId(thread.session.activeTurnId, turnId)) {
+    if (activeSub?.session?.activeTurnId && !sameId(activeSub.session.activeTurnId, turnId)) {
       return;
     }
+
+    const subCheckpoints = activeSub?.checkpoints ?? [];
 
     // Only skip if a real (non-placeholder) checkpoint already exists for this turn.
     // ProviderRuntimeIngestion may insert placeholder entries with status "missing"
     // before this reactor runs; those must not prevent real git capture.
     if (
-      thread.checkpoints.some(
+      subCheckpoints.some(
         (checkpoint) => checkpoint.turnId === turnId && checkpoint.status !== "missing",
       )
     ) {
@@ -361,10 +369,10 @@ const make = Effect.gen(function* () {
 
     // If a placeholder checkpoint exists for this turn, reuse its turn count
     // instead of incrementing past it.
-    const existingPlaceholder = thread.checkpoints.find(
+    const existingPlaceholder = subCheckpoints.find(
       (checkpoint) => checkpoint.turnId === turnId && checkpoint.status === "missing",
     );
-    const currentTurnCount = thread.checkpoints.reduce(
+    const currentTurnCount = subCheckpoints.reduce(
       (maxTurnCount, checkpoint) => Math.max(maxTurnCount, checkpoint.checkpointTurnCount),
       0,
     );
@@ -375,7 +383,7 @@ const make = Effect.gen(function* () {
     yield* captureAndDispatchCheckpoint({
       threadId: thread.id,
       turnId,
-      thread,
+      subThreadMessages: activeSub?.messages ?? [],
       cwd: checkpointCwd,
       turnCount: nextTurnCount,
       status: checkpointStatusFromRuntime(event.payload.state),
@@ -411,9 +419,12 @@ const make = Effect.gen(function* () {
       return;
     }
 
+    const activeSubForPlaceholder = resolveActiveSubThread(thread);
+    const subCheckpointsForPlaceholder = activeSubForPlaceholder?.checkpoints ?? [];
+
     // If a real checkpoint already exists for this turn, skip.
     if (
-      thread.checkpoints.some(
+      subCheckpointsForPlaceholder.some(
         (checkpoint) => checkpoint.turnId === turnId && checkpoint.status !== "missing",
       )
     ) {
@@ -437,7 +448,7 @@ const make = Effect.gen(function* () {
     yield* captureAndDispatchCheckpoint({
       threadId,
       turnId,
-      thread,
+      subThreadMessages: activeSubForPlaceholder?.messages ?? [],
       cwd: checkpointCwd,
       turnCount: checkpointTurnCount,
       status: "ready",
@@ -470,7 +481,7 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const currentTurnCount = thread.checkpoints.reduce(
+    const currentTurnCount = (resolveActiveSubThread(thread)?.checkpoints ?? []).reduce(
       (maxTurnCount, checkpoint) => Math.max(maxTurnCount, checkpoint.checkpointTurnCount),
       0,
     );
@@ -529,7 +540,7 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const currentTurnCount = thread.checkpoints.reduce(
+    const currentTurnCount = (resolveActiveSubThread(thread)?.checkpoints ?? []).reduce(
       (maxTurnCount, checkpoint) => Math.max(maxTurnCount, checkpoint.checkpointTurnCount),
       0,
     );
@@ -592,7 +603,7 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const currentTurnCount = thread.checkpoints.reduce(
+    const currentTurnCount = (resolveActiveSubThread(thread)?.checkpoints ?? []).reduce(
       (maxTurnCount, checkpoint) => Math.max(maxTurnCount, checkpoint.checkpointTurnCount),
       0,
     );
@@ -610,7 +621,7 @@ const make = Effect.gen(function* () {
     const targetCheckpointRef =
       event.payload.turnCount === 0
         ? checkpointRefForThreadTurn(event.payload.threadId, 0)
-        : thread.checkpoints.find(
+        : (resolveActiveSubThread(thread)?.checkpoints ?? []).find(
             (checkpoint) => checkpoint.checkpointTurnCount === event.payload.turnCount,
           )?.checkpointRef;
 
@@ -651,7 +662,7 @@ const make = Effect.gen(function* () {
       });
     }
 
-    const staleCheckpointRefs = thread.checkpoints
+    const staleCheckpointRefs = (resolveActiveSubThread(thread)?.checkpoints ?? [])
       .filter((checkpoint) => checkpoint.checkpointTurnCount > event.payload.turnCount)
       .map((checkpoint) => checkpoint.checkpointRef);
 

@@ -22,6 +22,7 @@ const makeProjectionPendingApprovalRepository = Effect.gen(function* () {
         INSERT INTO projection_pending_approvals (
           request_id,
           thread_id,
+          sub_thread_id,
           turn_id,
           status,
           decision,
@@ -31,6 +32,7 @@ const makeProjectionPendingApprovalRepository = Effect.gen(function* () {
         VALUES (
           ${row.requestId},
           ${row.threadId},
+          ${row.subThreadId},
           ${row.turnId},
           ${row.status},
           ${row.decision},
@@ -40,6 +42,7 @@ const makeProjectionPendingApprovalRepository = Effect.gen(function* () {
         ON CONFLICT (request_id)
         DO UPDATE SET
           thread_id = excluded.thread_id,
+          sub_thread_id = excluded.sub_thread_id,
           turn_id = excluded.turn_id,
           status = excluded.status,
           decision = excluded.decision,
@@ -56,6 +59,7 @@ const makeProjectionPendingApprovalRepository = Effect.gen(function* () {
         SELECT
           request_id AS "requestId",
           thread_id AS "threadId",
+          sub_thread_id AS "subThreadId",
           turn_id AS "turnId",
           status,
           decision,
@@ -75,6 +79,7 @@ const makeProjectionPendingApprovalRepository = Effect.gen(function* () {
         SELECT
           request_id AS "requestId",
           thread_id AS "threadId",
+          sub_thread_id AS "subThreadId",
           turn_id AS "turnId",
           status,
           decision,

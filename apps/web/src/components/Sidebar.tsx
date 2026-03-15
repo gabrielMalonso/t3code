@@ -85,11 +85,13 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
 import { isNonEmpty as isNonEmptyString } from "effect/String";
 import {
+  deriveThreadStatusInput,
   resolveSidebarNewThreadEnvMode,
   resolveThreadRowClassName,
   resolveThreadStatusPill,
   shouldClearThreadSelectionOnMouseDown,
 } from "./Sidebar.logic";
+import { getActiveSubThread } from "../types";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 
 const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
@@ -393,10 +395,18 @@ export default function Sidebar() {
         })[0];
       if (!latestThread) return;
 
-      void navigate({
-        to: "/$threadId",
-        params: { threadId: latestThread.id },
-      });
+      const activeSubThread = getActiveSubThread(latestThread);
+      if (activeSubThread) {
+        void navigate({
+          to: "/$threadId/$subThreadId",
+          params: { threadId: latestThread.id, subThreadId: activeSubThread.id },
+        });
+      } else {
+        void navigate({
+          to: "/$threadId",
+          params: { threadId: latestThread.id },
+        });
+      }
     },
     [navigate, threads],
   );
@@ -588,7 +598,8 @@ export default function Sidebar() {
           ].join("\n"),
         ));
 
-      if (thread.session && thread.session.status !== "closed") {
+      const activeSubForDelete = getActiveSubThread(thread);
+      if (activeSubForDelete?.session && activeSubForDelete.session.status !== "closed") {
         await api.orchestration
           .dispatchCommand({
             type: "thread.session.stop",
@@ -619,11 +630,21 @@ export default function Sidebar() {
       clearTerminalState(threadId);
       if (shouldNavigateToFallback) {
         if (fallbackThreadId) {
-          void navigate({
-            to: "/$threadId",
-            params: { threadId: fallbackThreadId },
-            replace: true,
-          });
+          const fallbackThread = threads.find((t) => t.id === fallbackThreadId);
+          const fallbackSubThread = fallbackThread ? getActiveSubThread(fallbackThread) : undefined;
+          if (fallbackSubThread) {
+            void navigate({
+              to: "/$threadId/$subThreadId",
+              params: { threadId: fallbackThreadId, subThreadId: fallbackSubThread.id },
+              replace: true,
+            });
+          } else {
+            void navigate({
+              to: "/$threadId",
+              params: { threadId: fallbackThreadId },
+              replace: true,
+            });
+          }
         } else {
           void navigate({ to: "/", replace: true });
         }
@@ -805,10 +826,19 @@ export default function Sidebar() {
         clearSelection();
       }
       setSelectionAnchor(threadId);
-      void navigate({
-        to: "/$threadId",
-        params: { threadId },
-      });
+      const clickedThread = threads.find((t) => t.id === threadId);
+      const activeSubThread = clickedThread ? getActiveSubThread(clickedThread) : undefined;
+      if (activeSubThread) {
+        void navigate({
+          to: "/$threadId/$subThreadId",
+          params: { threadId, subThreadId: activeSubThread.id },
+        });
+      } else {
+        void navigate({
+          to: "/$threadId",
+          params: { threadId },
+        });
+      }
     },
     [
       clearSelection,
@@ -816,6 +846,7 @@ export default function Sidebar() {
       rangeSelectTo,
       selectedThreadIds.size,
       setSelectionAnchor,
+      threads,
       toggleThreadSelection,
     ],
   );
@@ -1382,12 +1413,15 @@ export default function Sidebar() {
                                 const isActive = routeThreadId === thread.id;
                                 const isSelected = selectedThreadIds.has(thread.id);
                                 const isHighlighted = isActive || isSelected;
+                                const threadStatusInput = deriveThreadStatusInput(thread);
+                                const activeSubActivities =
+                                  getActiveSubThread(thread)?.activities ?? [];
                                 const threadStatus = resolveThreadStatusPill({
-                                  thread,
+                                  thread: threadStatusInput,
                                   hasPendingApprovals:
-                                    derivePendingApprovals(thread.activities).length > 0,
+                                    derivePendingApprovals(activeSubActivities).length > 0,
                                   hasPendingUserInput:
-                                    derivePendingUserInputs(thread.activities).length > 0,
+                                    derivePendingUserInputs(activeSubActivities).length > 0,
                                 });
                                 const prStatus = prStatusIndicator(
                                   prByThreadId.get(thread.id) ?? null,
@@ -1425,10 +1459,21 @@ export default function Sidebar() {
                                           clearSelection();
                                         }
                                         setSelectionAnchor(thread.id);
-                                        void navigate({
-                                          to: "/$threadId",
-                                          params: { threadId: thread.id },
-                                        });
+                                        const subThread = getActiveSubThread(thread);
+                                        if (subThread) {
+                                          void navigate({
+                                            to: "/$threadId/$subThreadId",
+                                            params: {
+                                              threadId: thread.id,
+                                              subThreadId: subThread.id,
+                                            },
+                                          });
+                                        } else {
+                                          void navigate({
+                                            to: "/$threadId",
+                                            params: { threadId: thread.id },
+                                          });
+                                        }
                                       }}
                                       onContextMenu={(event) => {
                                         event.preventDefault();

@@ -2,15 +2,20 @@ import type {
   OrchestrationCommand,
   OrchestrationEvent,
   OrchestrationReadModel,
+  SubThreadId,
 } from "@t3tools/contracts";
 import { Effect } from "effect";
 
 import { OrchestrationCommandInvariantError } from "./Errors.ts";
 import {
+  findSubThreadById,
+  findThreadById,
   requireProject,
   requireProjectAbsent,
+  requireSubThread,
   requireThread,
   requireThreadAbsent,
+  resolveSubThreadId,
 } from "./commandInvariants.ts";
 
 const nowIso = () => new Date().toISOString();
@@ -144,7 +149,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
-      return {
+      const subThreadId = crypto.randomUUID() as SubThreadId;
+      const threadCreatedEvent: Omit<OrchestrationEvent, "sequence"> = {
         ...withEventBase({
           aggregateKind: "thread",
           aggregateId: command.threadId,
@@ -168,6 +174,27 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           updatedAt: command.createdAt,
         },
       };
+      const subThreadCreatedEvent: Omit<OrchestrationEvent, "sequence"> = {
+        ...withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        }),
+        causationEventId: threadCreatedEvent.eventId,
+        type: "thread.sub-thread-created",
+        payload: {
+          threadId: command.threadId,
+          subThreadId,
+          title: "Main",
+          model: command.model,
+          runtimeMode: command.runtimeMode,
+          interactionMode: command.interactionMode,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+      return [threadCreatedEvent, subThreadCreatedEvent];
     }
 
     case "thread.delete": {
@@ -228,6 +255,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         threadId: command.threadId,
       });
       const occurredAt = nowIso();
+      const resolvedSubThreadId = resolveSubThreadId({
+        readModel,
+        threadId: command.threadId,
+        explicitSubThreadId: command.subThreadId,
+      });
       return {
         ...withEventBase({
           aggregateKind: "thread",
@@ -238,6 +270,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.runtime-mode-set",
         payload: {
           threadId: command.threadId,
+          ...(resolvedSubThreadId !== undefined ? { subThreadId: resolvedSubThreadId } : {}),
           runtimeMode: command.runtimeMode,
           updatedAt: occurredAt,
         },
@@ -251,6 +284,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         threadId: command.threadId,
       });
       const occurredAt = nowIso();
+      const resolvedSubThreadId = resolveSubThreadId({
+        readModel,
+        threadId: command.threadId,
+        explicitSubThreadId: command.subThreadId,
+      });
       return {
         ...withEventBase({
           aggregateKind: "thread",
@@ -261,6 +299,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.interaction-mode-set",
         payload: {
           threadId: command.threadId,
+          ...(resolvedSubThreadId !== undefined ? { subThreadId: resolvedSubThreadId } : {}),
           interactionMode: command.interactionMode,
           updatedAt: occurredAt,
         },
@@ -273,6 +312,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const resolvedSubThreadId = resolveSubThreadId({
+        readModel,
+        threadId: command.threadId,
+        explicitSubThreadId: command.subThreadId,
+      });
+      const thread = findThreadById(readModel, command.threadId);
+      const activeSubThread =
+        thread && resolvedSubThreadId ? findSubThreadById(thread, resolvedSubThreadId) : undefined;
       const userMessageEvent: Omit<OrchestrationEvent, "sequence"> = {
         ...withEventBase({
           aggregateKind: "thread",
@@ -283,6 +330,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.message-sent",
         payload: {
           threadId: command.threadId,
+          ...(resolvedSubThreadId !== undefined ? { subThreadId: resolvedSubThreadId } : {}),
           messageId: command.message.messageId,
           role: "user",
           text: command.message.text,
@@ -304,6 +352,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.turn-start-requested",
         payload: {
           threadId: command.threadId,
+          ...(resolvedSubThreadId !== undefined ? { subThreadId: resolvedSubThreadId } : {}),
           messageId: command.message.messageId,
           ...(command.provider !== undefined ? { provider: command.provider } : {}),
           ...(command.model !== undefined ? { model: command.model } : {}),
@@ -312,12 +361,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             ? { providerOptions: command.providerOptions }
             : {}),
           assistantDeliveryMode: command.assistantDeliveryMode ?? DEFAULT_ASSISTANT_DELIVERY_MODE,
-          runtimeMode:
-            readModel.threads.find((entry) => entry.id === command.threadId)?.runtimeMode ??
-            command.runtimeMode,
-          interactionMode:
-            readModel.threads.find((entry) => entry.id === command.threadId)?.interactionMode ??
-            command.interactionMode,
+          runtimeMode: activeSubThread?.runtimeMode ?? command.runtimeMode,
+          interactionMode: activeSubThread?.interactionMode ?? command.interactionMode,
           createdAt: command.createdAt,
         },
       };
@@ -330,6 +375,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const resolvedSubThreadId = resolveSubThreadId({
+        readModel,
+        threadId: command.threadId,
+        explicitSubThreadId: command.subThreadId,
+      });
       return {
         ...withEventBase({
           aggregateKind: "thread",
@@ -340,6 +390,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.turn-interrupt-requested",
         payload: {
           threadId: command.threadId,
+          ...(resolvedSubThreadId !== undefined ? { subThreadId: resolvedSubThreadId } : {}),
           ...(command.turnId !== undefined ? { turnId: command.turnId } : {}),
           createdAt: command.createdAt,
         },
@@ -351,6 +402,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         readModel,
         command,
         threadId: command.threadId,
+      });
+      const resolvedSubThreadId = resolveSubThreadId({
+        readModel,
+        threadId: command.threadId,
+        explicitSubThreadId: command.subThreadId,
       });
       return {
         ...withEventBase({
@@ -365,6 +421,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.approval-response-requested",
         payload: {
           threadId: command.threadId,
+          ...(resolvedSubThreadId !== undefined ? { subThreadId: resolvedSubThreadId } : {}),
           requestId: command.requestId,
           decision: command.decision,
           createdAt: command.createdAt,
@@ -377,6 +434,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         readModel,
         command,
         threadId: command.threadId,
+      });
+      const resolvedSubThreadId = resolveSubThreadId({
+        readModel,
+        threadId: command.threadId,
+        explicitSubThreadId: command.subThreadId,
       });
       return {
         ...withEventBase({
@@ -391,6 +453,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.user-input-response-requested",
         payload: {
           threadId: command.threadId,
+          ...(resolvedSubThreadId !== undefined ? { subThreadId: resolvedSubThreadId } : {}),
           requestId: command.requestId,
           answers: command.answers,
           createdAt: command.createdAt,
@@ -404,6 +467,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const resolvedSubThreadId = resolveSubThreadId({
+        readModel,
+        threadId: command.threadId,
+        explicitSubThreadId: command.subThreadId,
+      });
       return {
         ...withEventBase({
           aggregateKind: "thread",
@@ -414,6 +482,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.checkpoint-revert-requested",
         payload: {
           threadId: command.threadId,
+          ...(resolvedSubThreadId !== undefined ? { subThreadId: resolvedSubThreadId } : {}),
           turnCount: command.turnCount,
           createdAt: command.createdAt,
         },
@@ -426,6 +495,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const resolvedSubThreadId = resolveSubThreadId({
+        readModel,
+        threadId: command.threadId,
+        explicitSubThreadId: command.subThreadId,
+      });
       return {
         ...withEventBase({
           aggregateKind: "thread",
@@ -436,6 +510,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.session-stop-requested",
         payload: {
           threadId: command.threadId,
+          ...(resolvedSubThreadId !== undefined ? { subThreadId: resolvedSubThreadId } : {}),
           createdAt: command.createdAt,
         },
       };
@@ -446,6 +521,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         readModel,
         command,
         threadId: command.threadId,
+      });
+      const resolvedSubThreadId = resolveSubThreadId({
+        readModel,
+        threadId: command.threadId,
+        explicitSubThreadId: command.subThreadId,
       });
       return {
         ...withEventBase({
@@ -458,6 +538,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.session-set",
         payload: {
           threadId: command.threadId,
+          ...(resolvedSubThreadId !== undefined ? { subThreadId: resolvedSubThreadId } : {}),
           session: command.session,
         },
       };
@@ -469,6 +550,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const resolvedSubThreadId = resolveSubThreadId({
+        readModel,
+        threadId: command.threadId,
+        explicitSubThreadId: command.subThreadId,
+      });
       return {
         ...withEventBase({
           aggregateKind: "thread",
@@ -479,6 +565,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.message-sent",
         payload: {
           threadId: command.threadId,
+          ...(resolvedSubThreadId !== undefined ? { subThreadId: resolvedSubThreadId } : {}),
           messageId: command.messageId,
           role: "assistant",
           text: command.delta,
@@ -496,6 +583,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const resolvedSubThreadId = resolveSubThreadId({
+        readModel,
+        threadId: command.threadId,
+        explicitSubThreadId: command.subThreadId,
+      });
       return {
         ...withEventBase({
           aggregateKind: "thread",
@@ -506,6 +598,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.message-sent",
         payload: {
           threadId: command.threadId,
+          ...(resolvedSubThreadId !== undefined ? { subThreadId: resolvedSubThreadId } : {}),
           messageId: command.messageId,
           role: "assistant",
           text: "",
@@ -523,6 +616,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const resolvedSubThreadId = resolveSubThreadId({
+        readModel,
+        threadId: command.threadId,
+        explicitSubThreadId: command.subThreadId,
+      });
       return {
         ...withEventBase({
           aggregateKind: "thread",
@@ -533,6 +631,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.proposed-plan-upserted",
         payload: {
           threadId: command.threadId,
+          ...(resolvedSubThreadId !== undefined ? { subThreadId: resolvedSubThreadId } : {}),
           proposedPlan: command.proposedPlan,
         },
       };
@@ -544,6 +643,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const resolvedSubThreadId = resolveSubThreadId({
+        readModel,
+        threadId: command.threadId,
+        explicitSubThreadId: command.subThreadId,
+      });
       return {
         ...withEventBase({
           aggregateKind: "thread",
@@ -554,6 +658,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.turn-diff-completed",
         payload: {
           threadId: command.threadId,
+          ...(resolvedSubThreadId !== undefined ? { subThreadId: resolvedSubThreadId } : {}),
           turnId: command.turnId,
           checkpointTurnCount: command.checkpointTurnCount,
           checkpointRef: command.checkpointRef,
@@ -571,6 +676,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const resolvedSubThreadId = resolveSubThreadId({
+        readModel,
+        threadId: command.threadId,
+        explicitSubThreadId: command.subThreadId,
+      });
       return {
         ...withEventBase({
           aggregateKind: "thread",
@@ -581,6 +691,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.reverted",
         payload: {
           threadId: command.threadId,
+          ...(resolvedSubThreadId !== undefined ? { subThreadId: resolvedSubThreadId } : {}),
           turnCount: command.turnCount,
         },
       };
@@ -591,6 +702,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         readModel,
         command,
         threadId: command.threadId,
+      });
+      const resolvedSubThreadId = resolveSubThreadId({
+        readModel,
+        threadId: command.threadId,
+        explicitSubThreadId: command.subThreadId,
       });
       const requestId =
         typeof command.activity.payload === "object" &&
@@ -611,7 +727,114 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.activity-appended",
         payload: {
           threadId: command.threadId,
+          ...(resolvedSubThreadId !== undefined ? { subThreadId: resolvedSubThreadId } : {}),
           activity: command.activity,
+        },
+      };
+    }
+
+    case "thread.sub-thread.create": {
+      yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      const existingThread = findThreadById(readModel, command.threadId);
+      if (existingThread && findSubThreadById(existingThread, command.subThreadId)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `SubThread '${command.subThreadId}' already exists in thread '${command.threadId}'.`,
+        });
+      }
+      return {
+        ...withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        }),
+        type: "thread.sub-thread-created",
+        payload: {
+          threadId: command.threadId,
+          subThreadId: command.subThreadId,
+          title: command.title,
+          model: command.model,
+          runtimeMode: command.runtimeMode,
+          interactionMode: command.interactionMode,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "thread.sub-thread.delete": {
+      yield* requireSubThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+        subThreadId: command.subThreadId,
+      });
+      const occurredAt = nowIso();
+      return {
+        ...withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt,
+          commandId: command.commandId,
+        }),
+        type: "thread.sub-thread-deleted",
+        payload: {
+          threadId: command.threadId,
+          subThreadId: command.subThreadId,
+          deletedAt: occurredAt,
+        },
+      };
+    }
+
+    case "thread.sub-thread.meta.update": {
+      yield* requireSubThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+        subThreadId: command.subThreadId,
+      });
+      const occurredAt = nowIso();
+      return {
+        ...withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt,
+          commandId: command.commandId,
+        }),
+        type: "thread.sub-thread-meta-updated",
+        payload: {
+          threadId: command.threadId,
+          subThreadId: command.subThreadId,
+          ...(command.title !== undefined ? { title: command.title } : {}),
+          ...(command.model !== undefined ? { model: command.model } : {}),
+          updatedAt: occurredAt,
+        },
+      };
+    }
+
+    case "thread.active-sub-thread.set": {
+      yield* requireSubThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+        subThreadId: command.subThreadId,
+      });
+      return {
+        ...withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: nowIso(),
+          commandId: command.commandId,
+        }),
+        type: "thread.active-sub-thread-set",
+        payload: {
+          threadId: command.threadId,
+          subThreadId: command.subThreadId,
         },
       };
     }

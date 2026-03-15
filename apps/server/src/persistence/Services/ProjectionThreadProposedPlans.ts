@@ -1,6 +1,7 @@
 import {
   IsoDateTime,
   OrchestrationProposedPlanId,
+  SubThreadId,
   ThreadId,
   TrimmedNonEmptyString,
   TurnId,
@@ -13,6 +14,7 @@ import type { ProjectionRepositoryError } from "../Errors.ts";
 export const ProjectionThreadProposedPlan = Schema.Struct({
   planId: OrchestrationProposedPlanId,
   threadId: ThreadId,
+  subThreadId: Schema.NullOr(SubThreadId),
   turnId: Schema.NullOr(TurnId),
   planMarkdown: TrimmedNonEmptyString,
   createdAt: IsoDateTime,

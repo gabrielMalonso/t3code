@@ -10,6 +10,7 @@ import {
   RuntimeMode,
   IsoDateTime,
   OrchestrationSessionStatus,
+  SubThreadId,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -20,6 +21,7 @@ import type { ProjectionRepositoryError } from "../Errors.ts";
 
 export const ProjectionThreadSession = Schema.Struct({
   threadId: ThreadId,
+  subThreadId: Schema.NullOr(SubThreadId),
   status: OrchestrationSessionStatus,
   providerName: Schema.NullOr(Schema.String),
   runtimeMode: RuntimeMode,

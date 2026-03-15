@@ -10,6 +10,7 @@ import {
   ChatAttachment,
   OrchestrationMessageRole,
   MessageId,
+  SubThreadId,
   ThreadId,
   TurnId,
   IsoDateTime,
@@ -22,6 +23,7 @@ import type { ProjectionRepositoryError } from "../Errors.ts";
 export const ProjectionThreadMessage = Schema.Struct({
   messageId: MessageId,
   threadId: ThreadId,
+  subThreadId: Schema.NullOr(SubThreadId),
   turnId: Schema.NullOr(TurnId),
   role: OrchestrationMessageRole,
   text: Schema.String,

@@ -3,6 +3,8 @@ import {
   CommandId,
   EventId,
   type OrchestrationEvent,
+  type OrchestrationSubThread,
+  type OrchestrationThread,
   type ProviderModelOptions,
   type ProviderKind,
   type ProviderStartOptions,
@@ -68,6 +70,13 @@ const turnStartKeyForEvent = (event: ProviderIntentEvent): string =>
 
 const serverCommandId = (tag: string): CommandId =>
   CommandId.makeUnsafe(`server:${tag}:${crypto.randomUUID()}`);
+
+function getActiveSubThread(thread: OrchestrationThread): OrchestrationSubThread | undefined {
+  if (thread.activeSubThreadId) {
+    return thread.subThreads.find((sub) => sub.id === thread.activeSubThreadId);
+  }
+  return thread.subThreads[0];
+}
 
 const HANDLED_TURN_START_KEY_MAX = 10_000;
 const HANDLED_TURN_START_KEY_TTL = Duration.minutes(30);
@@ -205,14 +214,15 @@ const make = Effect.gen(function* () {
       return yield* Effect.die(new Error(`Thread '${threadId}' was not found in read model.`));
     }
 
-    const desiredRuntimeMode = thread.runtimeMode;
+    const activeSubThread = getActiveSubThread(thread);
+    const desiredRuntimeMode = activeSubThread?.runtimeMode ?? "full-access";
     const currentProvider: ProviderKind | undefined =
-      thread.session?.providerName === "codex" ||
-      thread.session?.providerName === "claudeCode" ||
-      thread.session?.providerName === "cursor"
-        ? thread.session.providerName
+      activeSubThread?.session?.providerName === "codex" ||
+      activeSubThread?.session?.providerName === "claudeCode" ||
+      activeSubThread?.session?.providerName === "cursor"
+        ? activeSubThread.session.providerName
         : undefined;
-    const desiredModel = options?.model ?? thread.model;
+    const desiredModel = options?.model ?? activeSubThread?.model ?? "";
     const preferredProvider: ProviderKind | undefined =
       options?.provider ?? currentProvider ?? inferProviderFromModel(desiredModel) ?? undefined;
     const effectiveCwd = resolveThreadWorkspaceCwd({
@@ -260,18 +270,19 @@ const make = Effect.gen(function* () {
         createdAt,
       });
 
+    const activeSession = activeSubThread?.session ?? null;
     const existingSessionThreadId =
-      thread.session && thread.session.status !== "stopped" ? thread.id : null;
+      activeSession && activeSession.status !== "stopped" ? thread.id : null;
     if (existingSessionThreadId) {
-      const runtimeModeChanged = thread.runtimeMode !== thread.session?.runtimeMode;
+      const runtimeModeChanged = desiredRuntimeMode !== activeSession?.runtimeMode;
       const providerChanged =
         options?.provider !== undefined && options.provider !== currentProvider;
-      const activeSession = yield* resolveActiveSession(existingSessionThreadId);
+      const _resolvedActiveSession = yield* resolveActiveSession(existingSessionThreadId);
       const sessionModelSwitch =
         currentProvider === undefined
           ? "in-session"
           : (yield* providerService.getCapabilities(currentProvider)).sessionModelSwitch;
-      const modelChanged = options?.model !== undefined && options.model !== activeSession?.model;
+      const modelChanged = options?.model !== undefined && options.model !== activeSubThread?.model;
       const shouldRestartForModelChange = modelChanged && sessionModelSwitch === "restart-session";
 
       if (!runtimeModeChanged && !providerChanged && !shouldRestartForModelChange) {
@@ -281,14 +292,14 @@ const make = Effect.gen(function* () {
       const resumeCursor =
         providerChanged || shouldRestartForModelChange
           ? undefined
-          : (activeSession?.resumeCursor ?? undefined);
+          : (_resolvedActiveSession?.resumeCursor ?? undefined);
       yield* Effect.logInfo("provider command reactor restarting provider session", {
         threadId,
         existingSessionThreadId,
         currentProvider,
         desiredProvider: options?.provider ?? currentProvider,
-        currentRuntimeMode: thread.session?.runtimeMode,
-        desiredRuntimeMode: thread.runtimeMode,
+        currentRuntimeMode: activeSession?.runtimeMode,
+        desiredRuntimeMode,
         runtimeModeChanged,
         providerChanged,
         modelChanged,
@@ -384,7 +395,10 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const userMessages = thread.messages.filter((message) => message.role === "user");
+    const activeSubThreadForBranch = getActiveSubThread(thread);
+    const userMessages = (activeSubThreadForBranch?.messages ?? []).filter(
+      (message) => message.role === "user",
+    );
     if (userMessages.length !== 1 || userMessages[0]?.id !== input.messageId) {
       return;
     }
@@ -445,7 +459,10 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const message = thread.messages.find((entry) => entry.id === event.payload.messageId);
+    const activeSubThreadForTurn = getActiveSubThread(thread);
+    const message = (activeSubThreadForTurn?.messages ?? []).find(
+      (entry) => entry.id === event.payload.messageId,
+    );
     if (!message || message.role !== "user") {
       yield* appendProviderFailureActivity({
         threadId: event.payload.threadId,
@@ -491,7 +508,9 @@ const make = Effect.gen(function* () {
     if (!thread) {
       return;
     }
-    const hasSession = thread.session && thread.session.status !== "stopped";
+    const activeSubForInterrupt = getActiveSubThread(thread);
+    const hasSession =
+      activeSubForInterrupt?.session && activeSubForInterrupt.session.status !== "stopped";
     if (!hasSession) {
       return yield* appendProviderFailureActivity({
         threadId: event.payload.threadId,
@@ -514,7 +533,9 @@ const make = Effect.gen(function* () {
     if (!thread) {
       return;
     }
-    const hasSession = thread.session && thread.session.status !== "stopped";
+    const activeSubForApproval = getActiveSubThread(thread);
+    const hasSession =
+      activeSubForApproval?.session && activeSubForApproval.session.status !== "stopped";
     if (!hasSession) {
       return yield* appendProviderFailureActivity({
         threadId: event.payload.threadId,
@@ -559,7 +580,9 @@ const make = Effect.gen(function* () {
     if (!thread) {
       return;
     }
-    const hasSession = thread.session && thread.session.status !== "stopped";
+    const activeSubForUserInput = getActiveSubThread(thread);
+    const hasSession =
+      activeSubForUserInput?.session && activeSubForUserInput.session.status !== "stopped";
     if (!hasSession) {
       return yield* appendProviderFailureActivity({
         threadId: event.payload.threadId,
@@ -602,7 +625,8 @@ const make = Effect.gen(function* () {
     }
 
     const now = event.payload.createdAt;
-    if (thread.session && thread.session.status !== "stopped") {
+    const activeSubForStop = getActiveSubThread(thread);
+    if (activeSubForStop?.session && activeSubForStop.session.status !== "stopped") {
       yield* providerService.stopSession({ threadId: thread.id });
     }
 
@@ -611,10 +635,10 @@ const make = Effect.gen(function* () {
       session: {
         threadId: thread.id,
         status: "stopped",
-        providerName: thread.session?.providerName ?? null,
-        runtimeMode: thread.session?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
+        providerName: activeSubForStop?.session?.providerName ?? null,
+        runtimeMode: activeSubForStop?.session?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
         activeTurnId: null,
-        lastError: thread.session?.lastError ?? null,
+        lastError: activeSubForStop?.session?.lastError ?? null,
         updatedAt: now,
       },
       createdAt: now,
@@ -626,7 +650,8 @@ const make = Effect.gen(function* () {
       switch (event.type) {
         case "thread.runtime-mode-set": {
           const thread = yield* resolveThread(event.payload.threadId);
-          if (!thread?.session || thread.session.status === "stopped") {
+          const activeSub = thread ? getActiveSubThread(thread) : undefined;
+          if (!activeSub?.session || activeSub.session.status === "stopped") {
             return;
           }
           const cachedProviderOptions = threadProviderOptions.get(event.payload.threadId);

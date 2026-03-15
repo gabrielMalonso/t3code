@@ -45,6 +45,7 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
       sql`
         INSERT INTO projection_turns (
           thread_id,
+          sub_thread_id,
           turn_id,
           pending_message_id,
           assistant_message_id,
@@ -59,6 +60,7 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
         )
         VALUES (
           ${row.threadId},
+          ${row.subThreadId},
           ${row.turnId},
           ${row.pendingMessageId},
           ${row.assistantMessageId},
@@ -73,6 +75,7 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
         )
         ON CONFLICT (thread_id, turn_id)
         DO UPDATE SET
+          sub_thread_id = excluded.sub_thread_id,
           pending_message_id = excluded.pending_message_id,
           assistant_message_id = excluded.assistant_message_id,
           state = excluded.state,
@@ -160,6 +163,7 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
       sql`
         SELECT
           thread_id AS "threadId",
+          sub_thread_id AS "subThreadId",
           turn_id AS "turnId",
           pending_message_id AS "pendingMessageId",
           assistant_message_id AS "assistantMessageId",
@@ -191,6 +195,7 @@ const makeProjectionTurnRepository = Effect.gen(function* () {
       sql`
         SELECT
           thread_id AS "threadId",
+          sub_thread_id AS "subThreadId",
           turn_id AS "turnId",
           pending_message_id AS "pendingMessageId",
           assistant_message_id AS "assistantMessageId",
