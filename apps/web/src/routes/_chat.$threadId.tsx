@@ -1,5 +1,11 @@
 import { ThreadId } from "@t3tools/contracts";
-import { createFileRoute, retainSearchParams, useNavigate } from "@tanstack/react-router";
+import {
+  Outlet,
+  createFileRoute,
+  retainSearchParams,
+  useMatch,
+  useNavigate,
+} from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { useComposerDraftStore } from "../composerDraftStore";
@@ -7,11 +13,14 @@ import { useStore } from "../store";
 import { getActiveSubThread } from "../types";
 
 /**
- * Redirect route: when navigating to /$threadId (without a subThreadId),
- * resolve the active sub-thread and redirect to /$threadId/$subThreadId.
+ * Parent layout for /$threadId routes.
  *
- * This ensures backward-compatible URLs still work and always land on the
- * correct sub-thread view.
+ * When the URL already includes a $subThreadId child segment, we render
+ * <Outlet /> so the child route (`_chat.$threadId.$subThreadId`) takes over.
+ *
+ * When the URL is just /$threadId (no child), we either:
+ *  - redirect to /$threadId/$subThreadId (for server threads), or
+ *  - render the DraftThreadFallback inline (for draft threads).
  */
 function ChatThreadRedirectView() {
   const threadsHydrated = useStore((store) => store.threadsHydrated);
@@ -25,7 +34,15 @@ function ChatThreadRedirectView() {
     Object.hasOwn(store.draftThreadsByThreadId, threadId),
   );
 
+  // Check if the child sub-thread route is already matched.
+  const hasChildMatch = useMatch({
+    from: "/_chat/$threadId/$subThreadId",
+    shouldThrow: false,
+  });
+
   useEffect(() => {
+    // Skip redirect logic when the child route is already active.
+    if (hasChildMatch) return;
     if (!threadsHydrated) return;
 
     // If the thread doesn't exist (not a server thread and not a draft), go home
@@ -46,17 +63,15 @@ function ChatThreadRedirectView() {
         return;
       }
     }
-  }, [draftThreadExists, navigate, search, thread, threadsHydrated, threadId]);
+  }, [draftThreadExists, hasChildMatch, navigate, search, thread, threadsHydrated, threadId]);
 
-  // For draft threads that haven't been created on the server yet, render them
-  // directly. Once the thread is created on the server (after first message send),
-  // the store will update, `thread` will be defined, and the effect above will
-  // redirect to the sub-thread URL.
+  // When the child route is matched, render it via Outlet.
+  if (hasChildMatch) return <Outlet />;
+
   if (!threadsHydrated) return null;
-  if (thread) return null; // Will redirect via the effect
 
-  // Draft thread: render inline with a lazy import of the original ChatView
-  // to avoid circular dependency issues.
+  // Draft thread: render inline. Once promoted to a server thread, the effect
+  // above will redirect to the sub-thread URL.
   return <DraftThreadFallback threadId={threadId} />;
 }
 

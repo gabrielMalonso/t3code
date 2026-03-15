@@ -2036,7 +2036,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       ? "worktree"
       : isLocalDraftThread
         ? (draftThread?.envMode ?? DEFAULT_ENV_MODE)
-        : DEFAULT_ENV_MODE;
+        : "local";
 
   useEffect(() => {
     if (phase !== "running") return;
