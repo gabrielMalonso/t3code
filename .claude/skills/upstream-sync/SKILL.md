@@ -42,6 +42,7 @@ Para cada novo commit upstream:
 3. **Verificar por arquivos modificados**: `git show <hash> --stat` e comparar se os mesmos arquivos foram alterados localmente
 
 Classificar cada commit em:
+
 - **Ja sincronizado** — existe localmente (por hash, PR, ou reimplementacao)
 - **Novo simples** — mudanca isolada sem conflito previsto (CSS, docs, config, chore)
 - **Novo moderado** — feature/fix que toca areas comuns mas sem sobreposicao direta
@@ -78,12 +79,14 @@ Formato:
 ### 6. Perguntar ao usuario
 
 Apos o relatorio, perguntar:
+
 - "Quer que eu traga os commits simples agora?"
 - "Quer revisar os moderados/especiais individualmente?"
 
 ### 7. Atualizar changelog
 
 Apos qualquer sync realizado, atualizar `.context/upstream-sync.md`:
+
 - Atualizar "Ultimo sync" com a nova data
 - Atualizar "Ultimo commit upstream sincronizado"
 - Adicionar entrada no historico
