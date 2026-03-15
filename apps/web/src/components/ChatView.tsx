@@ -1582,9 +1582,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
 
       if (input.model !== undefined && input.model !== serverActiveSubThread.model) {
         await api.orchestration.dispatchCommand({
-          type: "thread.meta.update",
+          type: "thread.sub-thread.meta.update",
           commandId: newCommandId(),
           threadId: input.threadId,
+          subThreadId: serverActiveSubThread.id,
           model: input.model,
         });
       }

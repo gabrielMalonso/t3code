@@ -1,5 +1,6 @@
 import type { OrchestrationLatestTurn, ProviderInteractionMode } from "@t3tools/contracts";
-import type { ProposedPlan, SubThread, Thread, ThreadSession } from "../types";
+import type { ProposedPlan, Thread, ThreadSession } from "../types";
+import { getActiveSubThread } from "../types";
 import { cn } from "../lib/utils";
 import { findLatestProposedPlan, isLatestTurnSettled } from "../session-logic";
 
@@ -33,8 +34,7 @@ interface ThreadStatusInput {
  * Derives the status input from a Thread by reading the active sub-thread.
  */
 export function deriveThreadStatusInput(thread: Thread): ThreadStatusInput {
-  const activeSub: SubThread | undefined =
-    thread.subThreads.find((s) => s.id === thread.activeSubThreadId) ?? thread.subThreads[0];
+  const activeSub = getActiveSubThread(thread);
   return {
     interactionMode: activeSub?.interactionMode ?? "default",
     implementationThreadId: thread.implementationThreadId,

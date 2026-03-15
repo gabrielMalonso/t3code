@@ -13,7 +13,13 @@ import {
   resolveModelSlugForProvider,
 } from "@t3tools/shared/model";
 import { create } from "zustand";
-import { type ChatMessage, type Project, type SubThread, type Thread } from "./types";
+import {
+  type ChatMessage,
+  type Project,
+  type SubThread,
+  type Thread,
+  getActiveSubThread,
+} from "./types";
 import { Debouncer } from "@tanstack/react-pacer";
 
 // ── State ────────────────────────────────────────────────────────────
@@ -401,8 +407,7 @@ export function markThreadVisited(
 
 export function markThreadUnread(state: AppState, threadId: ThreadId): AppState {
   const threads = updateThread(state.threads, threadId, (thread) => {
-    const activeSub =
-      thread.subThreads.find((s) => s.id === thread.activeSubThreadId) ?? thread.subThreads[0];
+    const activeSub = getActiveSubThread(thread);
     const latestTurn = activeSub?.latestTurn ?? null;
     if (!latestTurn?.completedAt) return thread;
     const latestTurnCompletedAtMs = Date.parse(latestTurn.completedAt);

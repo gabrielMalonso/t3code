@@ -66,13 +66,6 @@ function checkpointStatusFromRuntime(status: string | undefined): "ready" | "mis
   }
 }
 
-function getActiveSubThread(thread: OrchestrationThread): OrchestrationSubThread | undefined {
-  if (thread.activeSubThreadId) {
-    return thread.subThreads.find((sub) => sub.id === thread.activeSubThreadId);
-  }
-  return thread.subThreads[0];
-}
-
 const serverCommandId = (tag: string): CommandId =>
   CommandId.makeUnsafe(`server:${tag}:${crypto.randomUUID()}`);
 
@@ -344,7 +337,7 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const activeSub = getActiveSubThread(thread);
+    const activeSub = resolveActiveSubThread(thread);
 
     // When a primary turn is active, only that turn may produce completion checkpoints.
     if (activeSub?.session?.activeTurnId && !sameId(activeSub.session.activeTurnId, turnId)) {
@@ -426,7 +419,7 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const activeSubForPlaceholder = getActiveSubThread(thread);
+    const activeSubForPlaceholder = resolveActiveSubThread(thread);
     const subCheckpointsForPlaceholder = activeSubForPlaceholder?.checkpoints ?? [];
 
     // If a real checkpoint already exists for this turn, skip.
