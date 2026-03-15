@@ -207,9 +207,10 @@ const extendReplacementRangeForTrailingSpace = (
 
 interface ChatViewProps {
   threadId: ThreadId;
+  tabBar?: React.ReactNode;
 }
 
-export default function ChatView({ threadId }: ChatViewProps) {
+export default function ChatView({ threadId, tabBar }: ChatViewProps) {
   const threads = useStore((store) => store.threads);
   const projects = useStore((store) => store.projects);
   const markThreadVisited = useStore((store) => store.markThreadVisited);
@@ -3624,6 +3625,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
           onToggleDiff={onToggleDiff}
         />
       </header>
+
+      {tabBar}
 
       {/* Error banner */}
       <ProviderHealthBanner status={activeProviderStatus} />
