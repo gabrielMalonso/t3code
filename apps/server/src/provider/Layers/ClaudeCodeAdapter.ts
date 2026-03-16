@@ -339,9 +339,7 @@ function buildUserMessage(
     const filePath = attachmentPaths.get(attachment.id);
     if (attachment.type === "image") {
       if (filePath) {
-        fragments.push(
-          `[Attached image: ${attachment.name}]\nRead the image file at: ${filePath}`,
-        );
+        fragments.push(`[Attached image: ${attachment.name}]\nRead the image file at: ${filePath}`);
       } else {
         fragments.push(
           `Attached image: ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes).`,
