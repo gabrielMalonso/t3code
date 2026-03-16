@@ -11,7 +11,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent
 
 ### 1. Ler o changelog local
 
-Leia o arquivo `.context/upstream-sync.md` no diretorio do workspace.
+Leia o arquivo `.claude/upstream-sync.md` no diretorio do workspace.
 
 - Extraia o **ultimo commit upstream sincronizado** (hash e data)
 - Extraia a lista de **mudancas locais exclusivas** (reimplementacoes)
@@ -85,7 +85,7 @@ Apos o relatorio, perguntar:
 
 ### 7. Atualizar changelog
 
-Apos qualquer sync realizado, atualizar `.context/upstream-sync.md`:
+Apos qualquer sync realizado, atualizar `.claude/upstream-sync.md`:
 
 - Atualizar "Ultimo sync" com a nova data
 - Atualizar "Ultimo commit upstream sincronizado"
