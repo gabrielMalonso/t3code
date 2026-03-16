@@ -338,9 +338,13 @@ function buildUserMessage(
   for (const attachment of input.attachments ?? []) {
     const filePath = attachmentPaths.get(attachment.id);
     if (attachment.type === "image") {
-      fragments.push(
-        `Attached image: ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes).`,
-      );
+      if (filePath) {
+        fragments.push(`[Attached image: ${attachment.name}]\nRead the image file at: ${filePath}`);
+      } else {
+        fragments.push(
+          `Attached image: ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes).`,
+        );
+      }
     } else if (filePath) {
       fragments.push(`[Attached file: ${attachment.name}]\nRead the file at: ${filePath}`);
     } else {
@@ -2031,10 +2035,9 @@ function makeClaudeCodeAdapter(options?: ClaudeCodeAdapterLiveOptions) {
           },
         });
 
-        // Resolve disk paths for non-image attachments so the model can read them.
+        // Resolve disk paths for attachments so the model can read them.
         const attachmentPaths = new Map<string, string>();
         for (const attachment of input.attachments ?? []) {
-          if (attachment.type === "image") continue;
           const filePath = resolveAttachmentPath({
             stateDir: serverConfig.stateDir,
             attachment,
