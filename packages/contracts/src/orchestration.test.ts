@@ -3,17 +3,21 @@ import { it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
 import {
+  ChatAttachment,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
   OrchestrationGetTurnDiffInput,
   OrchestrationLatestTurn,
   OrchestrationProposedPlan,
   OrchestrationSession,
+  PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES,
+  PROVIDER_SEND_TURN_MAX_TEXT_FILE_BYTES,
   ProjectCreateCommand,
   ThreadTurnStartCommand,
   ThreadCreatedPayload,
   ThreadTurnDiff,
   ThreadTurnStartRequestedPayload,
+  UploadChatAttachment,
 } from "./orchestration";
 
 const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffInput);
@@ -27,6 +31,8 @@ const decodeOrchestrationLatestTurn = Schema.decodeUnknownEffect(OrchestrationLa
 const decodeOrchestrationProposedPlan = Schema.decodeUnknownEffect(OrchestrationProposedPlan);
 const decodeOrchestrationSession = Schema.decodeUnknownEffect(OrchestrationSession);
 const decodeThreadCreatedPayload = Schema.decodeUnknownEffect(ThreadCreatedPayload);
+const decodeChatAttachment = Schema.decodeUnknownEffect(ChatAttachment);
+const decodeUploadChatAttachment = Schema.decodeUnknownEffect(UploadChatAttachment);
 
 it.effect("parses turn diff input when fromTurnCount <= toTurnCount", () =>
   Effect.gen(function* () {
@@ -313,5 +319,116 @@ it.effect("preserves proposed plan implementation metadata when present", () =>
     });
     assert.strictEqual(parsed.implementedAt, "2026-01-02T00:00:00.000Z");
     assert.strictEqual(parsed.implementationThreadId, "thread-2");
+  }),
+);
+
+// --- Document attachment tests ---
+
+it.effect("accepts a valid PDF document attachment", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeChatAttachment({
+      type: "document",
+      id: "doc-1",
+      name: "report.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 1024,
+    });
+    assert.strictEqual(parsed.type, "document");
+    assert.strictEqual(parsed.id, "doc-1");
+    assert.strictEqual(parsed.name, "report.pdf");
+    assert.strictEqual(parsed.mimeType, "application/pdf");
+    assert.strictEqual(parsed.sizeBytes, 1024);
+  }),
+);
+
+it.effect("rejects document attachment exceeding 30MB", () =>
+  Effect.gen(function* () {
+    const result = yield* Effect.exit(
+      decodeChatAttachment({
+        type: "document",
+        id: "doc-too-large",
+        name: "huge.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES + 1,
+      }),
+    );
+    assert.strictEqual(result._tag, "Failure");
+  }),
+);
+
+it.effect("accepts a valid text file attachment", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeChatAttachment({
+      type: "text_file",
+      id: "txt-1",
+      name: "notes.txt",
+      mimeType: "text/plain",
+      sizeBytes: 2048,
+    });
+    assert.strictEqual(parsed.type, "text_file");
+    assert.strictEqual(parsed.id, "txt-1");
+    assert.strictEqual(parsed.name, "notes.txt");
+    assert.strictEqual(parsed.mimeType, "text/plain");
+    assert.strictEqual(parsed.sizeBytes, 2048);
+  }),
+);
+
+it.effect("rejects text file attachment exceeding 5MB", () =>
+  Effect.gen(function* () {
+    const result = yield* Effect.exit(
+      decodeChatAttachment({
+        type: "text_file",
+        id: "txt-too-large",
+        name: "huge.txt",
+        mimeType: "text/plain",
+        sizeBytes: PROVIDER_SEND_TURN_MAX_TEXT_FILE_BYTES + 1,
+      }),
+    );
+    assert.strictEqual(result._tag, "Failure");
+  }),
+);
+
+it.effect("rejects document with non-PDF mimeType", () =>
+  Effect.gen(function* () {
+    const result = yield* Effect.exit(
+      decodeChatAttachment({
+        type: "document",
+        id: "doc-wrong-mime",
+        name: "document.docx",
+        mimeType: "application/msword",
+        sizeBytes: 1024,
+      }),
+    );
+    assert.strictEqual(result._tag, "Failure");
+  }),
+);
+
+it.effect("accepts UploadChatDocumentAttachment with dataUrl", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeUploadChatAttachment({
+      type: "document",
+      name: "upload.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 5000,
+      dataUrl: "data:application/pdf;base64,JVBERi0xLjQ=",
+    });
+    assert.strictEqual(parsed.type, "document");
+    assert.strictEqual(parsed.name, "upload.pdf");
+    assert.strictEqual(parsed.dataUrl, "data:application/pdf;base64,JVBERi0xLjQ=");
+  }),
+);
+
+it.effect("accepts UploadChatTextFileAttachment with dataUrl", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeUploadChatAttachment({
+      type: "text_file",
+      name: "readme.md",
+      mimeType: "text/markdown",
+      sizeBytes: 512,
+      dataUrl: "data:text/markdown;base64,IyBIZWxsbw==",
+    });
+    assert.strictEqual(parsed.type, "text_file");
+    assert.strictEqual(parsed.name, "readme.md");
+    assert.strictEqual(parsed.dataUrl, "data:text/markdown;base64,IyBIZWxsbw==");
   }),
 );
