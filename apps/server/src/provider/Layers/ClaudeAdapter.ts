@@ -522,6 +522,11 @@ function buildUserMessageEffect(
         ),
       );
 
+      sdkContent.push({
+        type: "text" as const,
+        text: `[Attached image: ${attachment.name}]\nRead the image file at: ${attachmentPath}`,
+      });
+
       sdkContent.push(
         buildClaudeImageContentBlock({
           mimeType: attachment.mimeType,

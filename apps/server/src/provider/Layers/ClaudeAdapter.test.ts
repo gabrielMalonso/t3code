@@ -564,6 +564,10 @@ describe("ClaudeAdapterLive", () => {
           text: "What's in this image?",
         },
         {
+          type: "text",
+          text: `[Attached image: diagram.png]\nRead the image file at: ${attachmentPath}`,
+        },
+        {
           type: "image",
           source: {
             type: "base64",
