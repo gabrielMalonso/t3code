@@ -184,9 +184,11 @@ import {
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 
 const ATTACHMENT_PREVIEW_HANDOFF_TTL_MS = 5000;
-const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB`;
-const DOCUMENT_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES / (1024 * 1024))}MB`;
-const TEXT_FILE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_TEXT_FILE_BYTES / (1024 * 1024))}MB`;
+const ATTACHMENT_SIZE_LIMIT: Record<"image" | "document" | "text_file", { maxBytes: number; label: string }> = {
+  image: { maxBytes: PROVIDER_SEND_TURN_MAX_IMAGE_BYTES, label: `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB` },
+  document: { maxBytes: PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES, label: `${Math.round(PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES / (1024 * 1024))}MB` },
+  text_file: { maxBytes: PROVIDER_SEND_TURN_MAX_TEXT_FILE_BYTES, label: `${Math.round(PROVIDER_SEND_TURN_MAX_TEXT_FILE_BYTES / (1024 * 1024))}MB` },
+};
 const FILES_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more files without additional text. Respond using the conversation context and the attached file(s).]";
 const EMPTY_ACTIVITIES: OrchestrationThreadActivity[] = [];
@@ -2284,16 +2286,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
         error = `Unsupported file type for '${file.name}'.`;
         continue;
       }
-      if (kind === "image" && file.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
-        error = `'${file.name}' exceeds the ${IMAGE_SIZE_LIMIT_LABEL} attachment limit.`;
-        continue;
-      }
-      if (kind === "document" && file.size > PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES) {
-        error = `'${file.name}' exceeds the ${DOCUMENT_SIZE_LIMIT_LABEL} attachment limit.`;
-        continue;
-      }
-      if (kind === "text_file" && file.size > PROVIDER_SEND_TURN_MAX_TEXT_FILE_BYTES) {
-        error = `'${file.name}' exceeds the ${TEXT_FILE_SIZE_LIMIT_LABEL} attachment limit.`;
+      const sizeLimit = ATTACHMENT_SIZE_LIMIT[kind];
+      if (file.size > sizeLimit.maxBytes) {
+        error = `'${file.name}' exceeds the ${sizeLimit.label} attachment limit.`;
         continue;
       }
       if (nextAttachmentCount >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
@@ -2541,28 +2536,19 @@ export default function ChatView({ threadId }: ChatViewProps) {
       effort: selectedPromptEffort,
       text: messageTextForSend || FILES_ONLY_BOOTSTRAP_PROMPT,
     });
-    const imageAttachmentsPromise = Promise.all(
-      composerImagesSnapshot.map(async (image) => ({
-        type: "image" as const,
-        name: image.name,
-        mimeType: image.mimeType,
-        sizeBytes: image.sizeBytes,
-        dataUrl: await readFileAsDataUrl(image.file),
+    const allAttachmentSnapshots = [
+      ...composerImagesSnapshot.map((a) => ({ type: "image" as const, name: a.name, mimeType: a.mimeType, sizeBytes: a.sizeBytes, file: a.file })),
+      ...composerDocumentsSnapshot.map((a) => ({ type: a.type as "document" | "text_file", name: a.name, mimeType: a.mimeType, sizeBytes: a.sizeBytes, file: a.file })),
+    ];
+    const turnAttachmentsPromise = Promise.all(
+      allAttachmentSnapshots.map(async (a) => ({
+        type: a.type,
+        name: a.name,
+        mimeType: a.mimeType,
+        sizeBytes: a.sizeBytes,
+        dataUrl: await readFileAsDataUrl(a.file),
       })),
     );
-    const documentAttachmentsPromise = Promise.all(
-      composerDocumentsSnapshot.map(async (doc) => ({
-        type: doc.type as "document" | "text_file",
-        name: doc.name,
-        mimeType: doc.mimeType,
-        sizeBytes: doc.sizeBytes,
-        dataUrl: await readFileAsDataUrl(doc.file),
-      })),
-    );
-    const turnAttachmentsPromise = Promise.all([
-      imageAttachmentsPromise,
-      documentAttachmentsPromise,
-    ]).then(([images, documents]) => [...images, ...documents]);
     const optimisticAttachments = [
       ...composerImagesSnapshot.map((image) => ({
         type: "image" as const,
@@ -2643,18 +2629,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
         }
       }
 
-      let firstAttachmentName: string | null = null;
-      if (composerImagesSnapshot.length > 0) {
-        const firstComposerImage = composerImagesSnapshot[0];
-        if (firstComposerImage) {
-          firstAttachmentName = firstComposerImage.name;
-        }
-      } else if (composerDocumentsSnapshot.length > 0) {
-        const firstComposerDoc = composerDocumentsSnapshot[0];
-        if (firstComposerDoc) {
-          firstAttachmentName = firstComposerDoc.name;
-        }
-      }
+      const firstAttachmentName =
+        composerImagesSnapshot[0]?.name ?? composerDocumentsSnapshot[0]?.name ?? null;
       let titleSeed = trimmed;
       if (!titleSeed) {
         if (firstAttachmentName) {

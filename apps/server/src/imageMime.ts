@@ -54,6 +54,13 @@ export function parseBase64DataUrl(
   return { mimeType, base64 };
 }
 
+function extractFileNameExtension(fileName: string | undefined, safeSet: Set<string>): string | null {
+  const trimmed = fileName?.trim() ?? "";
+  const match = /\.([a-z0-9]{1,8})$/i.exec(trimmed);
+  const ext = match ? `.${match[1]!.toLowerCase()}` : "";
+  return safeSet.has(ext) ? ext : null;
+}
+
 export function inferImageExtension(input: { mimeType: string; fileName?: string }): string {
   const key = input.mimeType.toLowerCase();
   const fromMime = Object.hasOwn(IMAGE_EXTENSION_BY_MIME_TYPE, key)
@@ -68,14 +75,7 @@ export function inferImageExtension(input: { mimeType: string; fileName?: string
     return fromMimeExtension;
   }
 
-  const fileName = input.fileName?.trim() ?? "";
-  const extensionMatch = /\.([a-z0-9]{1,8})$/i.exec(fileName);
-  const fileNameExtension = extensionMatch ? `.${extensionMatch[1]!.toLowerCase()}` : "";
-  if (SAFE_IMAGE_FILE_EXTENSIONS.has(fileNameExtension)) {
-    return fileNameExtension;
-  }
-
-  return ".bin";
+  return extractFileNameExtension(input.fileName, SAFE_IMAGE_FILE_EXTENSIONS) ?? ".bin";
 }
 
 export const DOCUMENT_EXTENSION_BY_MIME_TYPE: Record<string, string> = {
@@ -115,13 +115,5 @@ export function inferDocumentExtension(input: { mimeType: string; fileName?: str
     : undefined;
   if (fromTextMime) return fromTextMime;
 
-  // Fallback: try to extract from filename
-  const fileName = input.fileName?.trim() ?? "";
-  const extensionMatch = /\.([a-z0-9]{1,8})$/i.exec(fileName);
-  const fileNameExtension = extensionMatch ? `.${extensionMatch[1]!.toLowerCase()}` : "";
-  if (SAFE_DOCUMENT_FILE_EXTENSIONS.has(fileNameExtension)) {
-    return fileNameExtension;
-  }
-
-  return ".bin";
+  return extractFileNameExtension(input.fileName, SAFE_DOCUMENT_FILE_EXTENSIONS) ?? ".bin";
 }

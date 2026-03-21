@@ -1352,26 +1352,6 @@ const makeCodexAdapter = (options?: CodexAdapterLiveOptions) =>
                 );
               }
 
-              if (attachment.type === "text_file") {
-                const bytes = yield* fileSystem.readFile(attachmentPath).pipe(
-                  Effect.mapError(
-                    (cause) =>
-                      new ProviderAdapterRequestError({
-                        provider: PROVIDER,
-                        method: "turn/start",
-                        detail: toMessage(cause, "Failed to read attachment file."),
-                        cause,
-                      }),
-                  ),
-                );
-                return {
-                  type: "text_file" as const,
-                  content: new TextDecoder().decode(bytes),
-                  name: attachment.name,
-                };
-              }
-
-              // Default: image attachment
               const bytes = yield* fileSystem.readFile(attachmentPath).pipe(
                 Effect.mapError(
                   (cause) =>
@@ -1383,6 +1363,15 @@ const makeCodexAdapter = (options?: CodexAdapterLiveOptions) =>
                     }),
                 ),
               );
+
+              if (attachment.type === "text_file") {
+                return {
+                  type: "text_file" as const,
+                  content: new TextDecoder().decode(bytes),
+                  name: attachment.name,
+                };
+              }
+
               return {
                 type: "image" as const,
                 url: `data:${attachment.mimeType};base64,${Buffer.from(bytes).toString("base64")}`,

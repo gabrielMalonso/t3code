@@ -343,12 +343,16 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       (attachment) =>
         Effect.gen(function* () {
           const parsed = parseBase64DataUrl(attachment.dataUrl);
+          if (!parsed) {
+            return yield* new RouteRequestError({
+              message: `Invalid attachment payload for '${attachment.name}'.`,
+            });
+          }
 
-          // Validate mimeType and determine size limit based on attachment type
           let maxBytes: number;
           switch (attachment.type) {
             case "image": {
-              if (!parsed || !parsed.mimeType.startsWith("image/")) {
+              if (!parsed.mimeType.startsWith("image/")) {
                 return yield* new RouteRequestError({
                   message: `Invalid attachment payload for '${attachment.name}'.`,
                 });
@@ -357,7 +361,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
               break;
             }
             case "document": {
-              if (!parsed || parsed.mimeType !== "application/pdf") {
+              if (parsed.mimeType !== "application/pdf") {
                 return yield* new RouteRequestError({
                   message: `Invalid attachment payload for '${attachment.name}'.`,
                 });
@@ -366,11 +370,6 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
               break;
             }
             case "text_file": {
-              if (!parsed) {
-                return yield* new RouteRequestError({
-                  message: `Invalid attachment payload for '${attachment.name}'.`,
-                });
-              }
               maxBytes = PROVIDER_SEND_TURN_MAX_TEXT_FILE_BYTES;
               break;
             }
