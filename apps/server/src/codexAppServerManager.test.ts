@@ -576,6 +576,39 @@ describe("sendTurn", () => {
     });
   });
 
+  it("wraps text_file content in fenced delimiter block", async () => {
+    const { manager, context, sendRequest } = createSendTurnHarness();
+
+    await manager.sendTurn({
+      threadId: asThreadId("thread_1"),
+      input: "Check this file",
+      attachments: [
+        {
+          type: "text_file",
+          content: "const x = 42;",
+          name: "main.ts",
+        },
+      ],
+    });
+
+    expect(sendRequest).toHaveBeenCalledWith(context, "turn/start", {
+      threadId: "thread_1",
+      input: [
+        {
+          type: "text",
+          text: "Check this file",
+          text_elements: [],
+        },
+        {
+          type: "text",
+          text: "--- main.ts ---\nconst x = 42;\n--- end of main.ts ---",
+          text_elements: [],
+        },
+      ],
+      model: "gpt-5.3-codex",
+    });
+  });
+
   it("rejects empty turn input", async () => {
     const { manager } = createSendTurnHarness();
 

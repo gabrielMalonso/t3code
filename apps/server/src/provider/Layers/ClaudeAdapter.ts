@@ -486,18 +486,6 @@ function buildUserMessageEffect(
     }
 
     for (const attachment of input.attachments ?? []) {
-      if (attachment.type !== "image") {
-        continue;
-      }
-
-      if (!SUPPORTED_CLAUDE_IMAGE_MIME_TYPES.has(attachment.mimeType)) {
-        return yield* new ProviderAdapterRequestError({
-          provider: PROVIDER,
-          method: "turn/start",
-          detail: `Unsupported Claude image attachment type '${attachment.mimeType}'.`,
-        });
-      }
-
       const attachmentPath = resolveAttachmentPath({
         stateDir: dependencies.stateDir,
         attachment,
@@ -510,29 +498,47 @@ function buildUserMessageEffect(
         });
       }
 
-      const bytes = yield* dependencies.fileSystem.readFile(attachmentPath).pipe(
-        Effect.mapError(
-          (cause) =>
-            new ProviderAdapterRequestError({
+      switch (attachment.type) {
+        case "image": {
+          if (!SUPPORTED_CLAUDE_IMAGE_MIME_TYPES.has(attachment.mimeType)) {
+            return yield* new ProviderAdapterRequestError({
               provider: PROVIDER,
               method: "turn/start",
-              detail: toMessage(cause, "Failed to read attachment file."),
-              cause,
+              detail: `Unsupported Claude image attachment type '${attachment.mimeType}'.`,
+            });
+          }
+          const bytes = yield* dependencies.fileSystem.readFile(attachmentPath).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProviderAdapterRequestError({
+                  provider: PROVIDER,
+                  method: "turn/start",
+                  detail: toMessage(cause, "Failed to read attachment file."),
+                  cause,
+                }),
+            ),
+          );
+          sdkContent.push({
+            type: "text" as const,
+            text: `[Attached image: ${attachment.name}]\nRead the image file at: ${attachmentPath}`,
+          });
+          sdkContent.push(
+            buildClaudeImageContentBlock({
+              mimeType: attachment.mimeType,
+              bytes,
             }),
-        ),
-      );
-
-      sdkContent.push({
-        type: "text" as const,
-        text: `[Attached image: ${attachment.name}]\nRead the image file at: ${attachmentPath}`,
-      });
-
-      sdkContent.push(
-        buildClaudeImageContentBlock({
-          mimeType: attachment.mimeType,
-          bytes,
-        }),
-      );
+          );
+          break;
+        }
+        case "document":
+        case "text_file": {
+          sdkContent.push({
+            type: "text" as const,
+            text: `[Attached file: ${attachment.name}]\nRead the file at: ${attachmentPath}`,
+          });
+          break;
+        }
+      }
     }
 
     return buildUserMessage({ sdkContent });

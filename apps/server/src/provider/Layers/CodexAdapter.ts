@@ -1331,10 +1331,15 @@ const makeCodexAdapter = (options?: CodexAdapterLiveOptions) =>
 
     const sendTurn: CodexAdapterShape["sendTurn"] = (input) =>
       Effect.gen(function* () {
-        const codexAttachments = yield* Effect.forEach(
+        const codexAttachmentsMaybeNull = yield* Effect.forEach(
           input.attachments ?? [],
           (attachment) =>
             Effect.gen(function* () {
+              // Documents (e.g. PDF) are not supported by Codex — skip silently
+              if (attachment.type === "document") {
+                return null;
+              }
+
               const attachmentPath = resolveAttachmentPath({
                 stateDir: serverConfig.stateDir,
                 attachment,
@@ -1346,6 +1351,27 @@ const makeCodexAdapter = (options?: CodexAdapterLiveOptions) =>
                   new Error(`Invalid attachment id '${attachment.id}'.`),
                 );
               }
+
+              if (attachment.type === "text_file") {
+                const bytes = yield* fileSystem.readFile(attachmentPath).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new ProviderAdapterRequestError({
+                        provider: PROVIDER,
+                        method: "turn/start",
+                        detail: toMessage(cause, "Failed to read attachment file."),
+                        cause,
+                      }),
+                  ),
+                );
+                return {
+                  type: "text_file" as const,
+                  content: new TextDecoder().decode(bytes),
+                  name: attachment.name,
+                };
+              }
+
+              // Default: image attachment
               const bytes = yield* fileSystem.readFile(attachmentPath).pipe(
                 Effect.mapError(
                   (cause) =>
@@ -1363,6 +1389,9 @@ const makeCodexAdapter = (options?: CodexAdapterLiveOptions) =>
               };
             }),
           { concurrency: 1 },
+        );
+        const codexAttachments = codexAttachmentsMaybeNull.filter(
+          (a): a is NonNullable<typeof a> => a !== null,
         );
 
         return yield* Effect.tryPromise({

@@ -27,9 +27,10 @@
 - Resultado: 9/9 testes passando, typecheck 0 erros (7 packages)
 
 ### Wave 4: Server Adapter Layer
-- Status: PENDENTE
+- Status: CONCLUIDA
 - Tarefas: #4
-- Arquivos: ClaudeAdapter.ts, CodexAdapter.ts, codexAppServerManager.ts
+- Arquivos: ClaudeAdapter.ts, ClaudeAdapter.test.ts, CodexAdapter.ts, codexAppServerManager.ts, codexAppServerManager.test.ts
+- Resultado: 39/39 testes passando (ClaudeAdapter), 35/35 testes passando (codexAppServerManager), typecheck 0 erros
 
 ### Wave 5: Web Types e Store
 - Status: PENDENTE
@@ -50,6 +51,7 @@
 - Wave 1: Nenhuma descoberta inesperada. O `resolveAttachmentPath` retorna o path absoluto completo (via `path.resolve`), entao o text block no content array contem o path absoluto do attachment no disco.
 - Wave 2: Sintaxe do Effect Schema confirmada: `.check()` aceita multiplos argumentos (`Schema.isMaxLength`, `Schema.isPattern`, `Schema.isLessThanOrEqualTo`). `UploadChatAttachment` const precisou ser exportado (era `const`, mudou para `export const`) para permitir testes e uso em outros modulos.
 - Wave 3: Nenhuma descoberta inesperada. O switch em `attachmentRelativePath` compila sem default case graças ao tipo discriminado `ChatAttachment["type"]`. O `persistedAttachment` em wsServer com `type: attachment.type` (dinâmico) compila corretamente pois TypeScript infere o tipo da union.
+- Wave 4: O plano sugeria retornar `ProviderAdapterRequestError` para PDFs no Codex, mas o padrao mais seguro e skip silencioso (return null + filter), pois o usuario pode ter attachments mistos e nao queremos falhar o turn inteiro. O `Effect.forEach` no CodexAdapter retorna array que pode conter null, entao filtramos com type guard `NonNullable`. O `TextDecoder` e usado para converter bytes para string UTF-8 (text_file).
 
 ## Log de Execucao
 
@@ -69,3 +71,8 @@
   - Tarefa 3.3: Reescrita normalizacao em wsServer.ts com branch por attachment.type (image/document/text_file), limites de tamanho por tipo, persistedAttachment.type dinâmico, mensagens de erro genéricas
   - Tarefa 3.4: Adicionados 4 testes em attachmentStore.test.ts (relative path .pdf, relative path .txt, resolve .pdf do disco, resolve .txt do disco)
   - Verificacao: 9/9 testes passando, typecheck 0 erros em 7 packages
+- [2026-03-21] Wave 4 concluida: Server Adapter Layer
+  - Tarefa 4.1: Reestruturado loop de attachments em `ClaudeAdapter.ts:buildUserMessageEffect` — removido `if (attachment.type !== "image") continue`, substituido por switch com cases image/document/text_file. resolveAttachmentPath movido para ANTES do switch (compartilhado). Adicionado teste `"embeds document and text_file attachments as text-only blocks"`
+  - Tarefa 4.2: Expandido `CodexAppServerSendTurnInput.attachments` para aceitar `text_file` com content/name. Adicionado branch `else if (attachment.type === "text_file")` em `sendTurn` que wrapa conteudo em delimitadores `--- name ---`. Adicionado teste `"wraps text_file content in fenced delimiter block"`
+  - Tarefa 4.3: Reescrito `codexAttachments` em `CodexAdapter.ts:sendTurn` com branching por tipo: document retorna null (skip silencioso), text_file le bytes e converte para string UTF-8 via TextDecoder, image mantem logica existente. Array filtrado para remover nulls antes de enviar
+  - Verificacao: ClaudeAdapter 39/39 testes, codexAppServerManager 35/35 testes, typecheck 0 erros
