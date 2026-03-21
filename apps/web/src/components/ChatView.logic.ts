@@ -134,6 +134,7 @@ export function getCustomModelOptionsByProvider(settings: {
 export function deriveComposerSendState(options: {
   prompt: string;
   imageCount: number;
+  documentCount?: number;
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
 }): {
   trimmedPrompt: string;
@@ -145,12 +146,16 @@ export function deriveComposerSendState(options: {
   const sendableTerminalContexts = filterTerminalContextsWithText(options.terminalContexts);
   const expiredTerminalContextCount =
     options.terminalContexts.length - sendableTerminalContexts.length;
+  const documentCount = options.documentCount ?? 0;
   return {
     trimmedPrompt,
     sendableTerminalContexts,
     expiredTerminalContextCount,
     hasSendableContent:
-      trimmedPrompt.length > 0 || options.imageCount > 0 || sendableTerminalContexts.length > 0,
+      trimmedPrompt.length > 0 ||
+      options.imageCount > 0 ||
+      documentCount > 0 ||
+      sendableTerminalContexts.length > 0,
   };
 }
 

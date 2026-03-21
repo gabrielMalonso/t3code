@@ -39,9 +39,10 @@
 - Resultado: typecheck 0 erros (7 packages)
 
 ### Wave 6: Web UI
-- Status: PENDENTE
+- Status: CONCLUIDA
 - Tarefas: #6
-- Arquivos: ChatView.tsx, MessagesTimeline.tsx
+- Arquivos: classifyFile.ts, classifyFile.test.ts, ChatView.tsx, ChatView.logic.ts
+- Resultado: 5/5 testes classifyFile passando, 4/4 testes ChatView.logic passando, typecheck 0 erros (7 packages)
 
 ### Wave 7: Validação Final
 - Status: PENDENTE
@@ -54,6 +55,7 @@
 - Wave 3: Nenhuma descoberta inesperada. O switch em `attachmentRelativePath` compila sem default case graças ao tipo discriminado `ChatAttachment["type"]`. O `persistedAttachment` em wsServer com `type: attachment.type` (dinâmico) compila corretamente pois TypeScript infere o tipo da union.
 - Wave 4: O plano sugeria retornar `ProviderAdapterRequestError` para PDFs no Codex, mas o padrao mais seguro e skip silencioso (return null + filter), pois o usuario pode ter attachments mistos e nao queremos falhar o turn inteiro. O `Effect.forEach` no CodexAdapter retorna array que pode conter null, entao filtramos com type guard `NonNullable`. O `TextDecoder` e usado para converter bytes para string UTF-8 (text_file).
 - Wave 5: Expandir `ChatAttachment` union causou 5 erros colaterais: 3 browser test files construiam `ComposerThreadDraftState` inline sem `documents`, e `MessagesTimeline.tsx` acessava `previewUrl` diretamente no union (que agora inclui tipos sem esse campo). Ambos foram corrigidos. O fix em MessagesTimeline antecipou parte do trabalho da Wave 6 (separar images de documents na renderizacao).
+- Wave 6: Tarefa 6.5 (MessagesTimeline) ja estava feita pela Wave 5. O `deriveComposerSendState` recebeu `documentCount` como parametro opcional (backward compatible) para manter testes existentes sem mudanca. `clearComposerContent` no store ja limpa documents (feito na Wave 5). Bootstrap prompt renomeado de `IMAGE_ONLY_BOOTSTRAP_PROMPT` para `FILES_ONLY_BOOTSTRAP_PROMPT` com texto generico. Titulo de thread seed mudou de `Image:` para `File:`.
 
 ## Log de Execucao
 
@@ -85,3 +87,11 @@
   - Fix colateral: Adicionado `documents: []` em 3 arquivos de browser test (ClaudeTraitsPicker, CodexTraitsPicker, CompactComposerControlsMenu) que construiam ComposerThreadDraftState inline
   - Fix colateral: Atualizado MessagesTimeline.tsx para filtrar attachments por tipo — `userImages` (type === "image") renderiza em grid com `<img>`, `userDocuments` (type !== "image") renderiza como chips com nome
   - Verificacao: typecheck 0 erros em 7 packages
+- [2026-03-21] Wave 6 concluida: Web UI (ChatView + classifyFile)
+  - Tarefa 6.1: Criado `apps/web/src/lib/classifyFile.ts` — classifica File em "image"|"document"|"text_file"|null via MIME type + fallback por extensao
+  - Tarefa 6.2: Refatorado upload em ChatView.tsx — `addComposerImages` renomeado para `addComposerFiles`, classificacao via `classifyFile()`, validacao de tamanho por tipo (10MB image, 30MB document, 5MB text_file), contagem combinada images+documents <= MAX_ATTACHMENTS, `onComposerPaste` aceita todos os tipos suportados (nao apenas imagens), `onComposerDrop` usa `addComposerFiles`, mensagens de erro genéricas ("files" em vez de "images"), bootstrap prompt generico para files
+  - Tarefa 6.3: Adicionada secao de document chips no composer — renderiza apos grid de imagens, mostra nome truncado + botao X para remover, usa `removeComposerDocumentFromDraft`
+  - Tarefa 6.4: `turnAttachmentsPromise` separado em `imageAttachmentsPromise` + `documentAttachmentsPromise` concatenados. `optimisticAttachments` inclui images e documents. `hasSendableContent` considera `documentCount`. Titulo de thread seed: `File:` em vez de `Image:`. Retry restaura documents. Verificacao de slot vazio no catch inclui `composerDocumentsRef`
+  - Tarefa 6.5: Ja feita pela Wave 5 (MessagesTimeline ja separa userImages de userDocuments)
+  - Tarefa 6.6: Criado `apps/web/src/lib/classifyFile.test.ts` — 5 testes (image, document, text_file, known extensions, unsupported). Atualizado `deriveComposerSendState` com `documentCount` opcional (backward compatible)
+  - Verificacao: 5/5 testes classifyFile, 4/4 testes ChatView.logic, typecheck 0 erros em 7 packages
