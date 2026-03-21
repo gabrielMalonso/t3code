@@ -45,8 +45,14 @@
 - Resultado: 5/5 testes classifyFile passando, 4/4 testes ChatView.logic passando, typecheck 0 erros (7 packages)
 
 ### Wave 7: Validação Final
-- Status: PENDENTE
+- Status: CONCLUIDA
 - Tarefas: #7
+- Resultado: typecheck 0 erros, lint 0 warnings, 527/527 testes passando (2 skipped)
+
+### Simplificação Final
+- Status: CONCLUIDA
+- Commit: 1d5a3280
+- Mudanças: extractFileNameExtension helper, hoisted null-check wsServer, dedup readFile CodexAdapter, ATTACHMENT_SIZE_LIMIT lookup map ChatView, simplificado firstAttachmentName e turnAttachmentsPromise
 
 ## Descobertas dos Subagentes
 
