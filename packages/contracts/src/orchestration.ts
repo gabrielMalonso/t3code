@@ -124,16 +124,26 @@ export const ChatDocumentAttachment = Schema.Struct({
   type: Schema.Literal("document"),
   id: ChatAttachmentId,
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
-  mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(100), Schema.isPattern(/^application\/pdf$/i)),
-  sizeBytes: NonNegativeInt.check(Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES)),
+  mimeType: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(100),
+    Schema.isPattern(/^application\/pdf$/i),
+  ),
+  sizeBytes: NonNegativeInt.check(
+    Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES),
+  ),
 });
 export type ChatDocumentAttachment = typeof ChatDocumentAttachment.Type;
 
 const UploadChatDocumentAttachment = Schema.Struct({
   type: Schema.Literal("document"),
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
-  mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(100), Schema.isPattern(/^application\/pdf$/i)),
-  sizeBytes: NonNegativeInt.check(Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES)),
+  mimeType: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(100),
+    Schema.isPattern(/^application\/pdf$/i),
+  ),
+  sizeBytes: NonNegativeInt.check(
+    Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES),
+  ),
   dataUrl: TrimmedNonEmptyString.check(
     Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_DOCUMENT_DATA_URL_CHARS),
   ),
@@ -145,7 +155,9 @@ export const ChatTextFileAttachment = Schema.Struct({
   id: ChatAttachmentId,
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
   mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
-  sizeBytes: NonNegativeInt.check(Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_TEXT_FILE_BYTES)),
+  sizeBytes: NonNegativeInt.check(
+    Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_TEXT_FILE_BYTES),
+  ),
 });
 export type ChatTextFileAttachment = typeof ChatTextFileAttachment.Type;
 
@@ -153,16 +165,26 @@ const UploadChatTextFileAttachment = Schema.Struct({
   type: Schema.Literal("text_file"),
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
   mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
-  sizeBytes: NonNegativeInt.check(Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_TEXT_FILE_BYTES)),
+  sizeBytes: NonNegativeInt.check(
+    Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_TEXT_FILE_BYTES),
+  ),
   dataUrl: TrimmedNonEmptyString.check(
     Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_TEXT_FILE_DATA_URL_CHARS),
   ),
 });
 export type UploadChatTextFileAttachment = typeof UploadChatTextFileAttachment.Type;
 
-export const ChatAttachment = Schema.Union([ChatImageAttachment, ChatDocumentAttachment, ChatTextFileAttachment]);
+export const ChatAttachment = Schema.Union([
+  ChatImageAttachment,
+  ChatDocumentAttachment,
+  ChatTextFileAttachment,
+]);
 export type ChatAttachment = typeof ChatAttachment.Type;
-export const UploadChatAttachment = Schema.Union([UploadChatImageAttachment, UploadChatDocumentAttachment, UploadChatTextFileAttachment]);
+export const UploadChatAttachment = Schema.Union([
+  UploadChatImageAttachment,
+  UploadChatDocumentAttachment,
+  UploadChatTextFileAttachment,
+]);
 export type UploadChatAttachment = typeof UploadChatAttachment.Type;
 
 export const ProjectScriptIcon = Schema.Literals([

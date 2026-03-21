@@ -185,10 +185,22 @@ import {
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 
 const ATTACHMENT_PREVIEW_HANDOFF_TTL_MS = 5000;
-const ATTACHMENT_SIZE_LIMIT: Record<"image" | "document" | "text_file", { maxBytes: number; label: string }> = {
-  image: { maxBytes: PROVIDER_SEND_TURN_MAX_IMAGE_BYTES, label: `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB` },
-  document: { maxBytes: PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES, label: `${Math.round(PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES / (1024 * 1024))}MB` },
-  text_file: { maxBytes: PROVIDER_SEND_TURN_MAX_TEXT_FILE_BYTES, label: `${Math.round(PROVIDER_SEND_TURN_MAX_TEXT_FILE_BYTES / (1024 * 1024))}MB` },
+const ATTACHMENT_SIZE_LIMIT: Record<
+  "image" | "document" | "text_file",
+  { maxBytes: number; label: string }
+> = {
+  image: {
+    maxBytes: PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+    label: `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB`,
+  },
+  document: {
+    maxBytes: PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES,
+    label: `${Math.round(PROVIDER_SEND_TURN_MAX_DOCUMENT_BYTES / (1024 * 1024))}MB`,
+  },
+  text_file: {
+    maxBytes: PROVIDER_SEND_TURN_MAX_TEXT_FILE_BYTES,
+    label: `${Math.round(PROVIDER_SEND_TURN_MAX_TEXT_FILE_BYTES / (1024 * 1024))}MB`,
+  },
 };
 const FILES_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more files without additional text. Respond using the conversation context and the attached file(s).]";
@@ -2538,8 +2550,20 @@ export default function ChatView({ threadId }: ChatViewProps) {
       text: messageTextForSend || FILES_ONLY_BOOTSTRAP_PROMPT,
     });
     const allAttachmentSnapshots = [
-      ...composerImagesSnapshot.map((a) => ({ type: "image" as const, name: a.name, mimeType: a.mimeType, sizeBytes: a.sizeBytes, file: a.file })),
-      ...composerDocumentsSnapshot.map((a) => ({ type: a.type as "document" | "text_file", name: a.name, mimeType: a.mimeType, sizeBytes: a.sizeBytes, file: a.file })),
+      ...composerImagesSnapshot.map((a) => ({
+        type: "image" as const,
+        name: a.name,
+        mimeType: a.mimeType,
+        sizeBytes: a.sizeBytes,
+        file: a.file,
+      })),
+      ...composerDocumentsSnapshot.map((a) => ({
+        type: a.type as "document" | "text_file",
+        name: a.name,
+        mimeType: a.mimeType,
+        sizeBytes: a.sizeBytes,
+        file: a.file,
+      })),
     ];
     const turnAttachmentsPromise = Promise.all(
       allAttachmentSnapshots.map(async (a) => ({
@@ -3808,7 +3832,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
                               key={doc.id}
                               className="flex h-10 items-center gap-2 rounded-lg border border-border/80 bg-background/70 px-3"
                             >
-                              <VscodeEntryIcon pathValue={doc.name} kind="file" theme={resolvedTheme} className="size-4 shrink-0" />
+                              <VscodeEntryIcon
+                                pathValue={doc.name}
+                                kind="file"
+                                theme={resolvedTheme}
+                                className="size-4 shrink-0"
+                              />
                               <span className="max-w-[180px] truncate text-sm">{doc.name}</span>
                               <button
                                 type="button"

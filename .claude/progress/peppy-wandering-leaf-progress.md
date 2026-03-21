@@ -9,47 +9,55 @@
 ## Waves
 
 ### Wave 1: Image Path Fix (server only)
+
 - Status: CONCLUIDA
 - Tarefas: #1
 - Arquivos: ClaudeAdapter.ts, ClaudeAdapter.test.ts
 - Resultado: 38/38 testes passando
 
 ### Wave 2: Contracts
+
 - Status: CONCLUIDA
 - Tarefas: #2
 - Arquivos: orchestration.ts, orchestration.test.ts
 - Resultado: 65/65 testes passando (7 test files)
 
 ### Wave 3: Server Storage Layer
+
 - Status: CONCLUIDA
 - Tarefas: #3
 - Arquivos: imageMime.ts, attachmentStore.ts, wsServer.ts, attachmentStore.test.ts
 - Resultado: 9/9 testes passando, typecheck 0 erros (7 packages)
 
 ### Wave 4: Server Adapter Layer
+
 - Status: CONCLUIDA
 - Tarefas: #4
 - Arquivos: ClaudeAdapter.ts, ClaudeAdapter.test.ts, CodexAdapter.ts, codexAppServerManager.ts, codexAppServerManager.test.ts
 - Resultado: 39/39 testes passando (ClaudeAdapter), 35/35 testes passando (codexAppServerManager), typecheck 0 erros
 
 ### Wave 5: Web Types e Store
+
 - Status: CONCLUIDA
 - Tarefas: #5
 - Arquivos: types.ts, store.ts, composerDraftStore.ts, MessagesTimeline.tsx, ClaudeTraitsPicker.browser.tsx, CodexTraitsPicker.browser.tsx, CompactComposerControlsMenu.browser.tsx
 - Resultado: typecheck 0 erros (7 packages)
 
 ### Wave 6: Web UI
+
 - Status: CONCLUIDA
 - Tarefas: #6
 - Arquivos: classifyFile.ts, classifyFile.test.ts, ChatView.tsx, ChatView.logic.ts
 - Resultado: 5/5 testes classifyFile passando, 4/4 testes ChatView.logic passando, typecheck 0 erros (7 packages)
 
 ### Wave 7: Validação Final
+
 - Status: CONCLUIDA
 - Tarefas: #7
 - Resultado: typecheck 0 erros, lint 0 warnings, 527/527 testes passando (2 skipped)
 
 ### Simplificação Final
+
 - Status: CONCLUIDA
 - Commit: 1d5a3280
 - Mudanças: extractFileNameExtension helper, hoisted null-check wsServer, dedup readFile CodexAdapter, ATTACHMENT_SIZE_LIMIT lookup map ChatView, simplificado firstAttachmentName e turnAttachmentsPromise

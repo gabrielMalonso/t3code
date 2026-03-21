@@ -34,6 +34,7 @@ O clone do upstream puro (para testes) tambem existe em `/Volumes/SSD1TB/Projeto
 Nossa maior inovacao. Sistema completo de sub-threads com tab bar que permite sessoes paralelas por thread.
 
 **Arquivos principais no fork (branch main):**
+
 - `packages/contracts/src/orchestration.ts` — `OrchestrationSubThread`, `SubThreadId`, 4 novos commands, 4 novos event types, `subThreadId` em quase todos os payloads
 - `packages/contracts/src/baseSchemas.ts` — `SubThreadId` type
 - `apps/server/src/orchestration/Layers/ProjectionPipeline.ts` — `projection_sub_threads` table, subThreadId propagation em todos os 9 projectors
@@ -52,6 +53,7 @@ Nossa maior inovacao. Sistema completo de sub-threads com tab bar que permite se
 Catalogo de skills com discovery, token resolution e skill-aware trigger detection.
 
 **Arquivos principais:**
+
 - `apps/server/src/codexAppServerManager.ts` — `skillCatalog`, `readCodexSkillCatalog`, `extractMentionedCodexSkillNames`, `CODEX_SKILL_TOKEN_REGEX`
 - `apps/server/src/provider/Layers/ClaudeCodeAdapter.ts` — `discoverSupportedCommands`, `extractSkillsFromSystemMessage`
 - `apps/server/src/skillsDiscovery.ts` — Modulo de discovery
@@ -65,6 +67,7 @@ Catalogo de skills com discovery, token resolution e skill-aware trigger detecti
 Suporte a PDF e text files como attachments alem de imagens.
 
 **Arquivos principais:**
+
 - `packages/contracts/src/orchestration.ts` — `ChatDocumentAttachment`, `ChatTextFileAttachment`, `UploadChatDocumentAttachment`, `UploadChatTextFileAttachment`
 - `apps/web/src/composerDraftStore.ts` — `ComposerDocumentAttachment`, `addDocument`, `removeDocument`
 - `apps/web/src/components/ChatView.tsx` — `composerDocuments`, handlers
@@ -75,6 +78,7 @@ Suporte a PDF e text files como attachments alem de imagens.
 Sistema de modelo favorito global para novos chats.
 
 **Arquivos principais:**
+
 - `apps/web/src/appSettings.ts` — `FavoriteModelSchema`, `getFavoriteModel`, `toggleFavoriteModel`
 - `apps/web/src/components/ChatView.tsx` — Fallback para favorite model
 - `apps/web/src/components/chat/ProviderModelPicker.tsx` — Star buttons
@@ -84,6 +88,7 @@ Sistema de modelo favorito global para novos chats.
 Suporte para rodar dentro do Electron asar bundle.
 
 **Arquivos principais:**
+
 - `apps/server/src/provider/Layers/ClaudeCodeAdapter.ts` — `RUNNING_INSIDE_ASAR`, `fixAsarPath()`, `makeAsarSpawnOverride()`
 
 ### 6. Cursor Provider (terceiro provider)
@@ -91,6 +96,7 @@ Suporte para rodar dentro do Electron asar bundle.
 Infraestrutura para Cursor como terceiro provider.
 
 **Arquivos principais:**
+
 - `packages/contracts/src/model.ts` — `CursorModelOptions`, `CURSOR_MODEL_FAMILY_OPTIONS`, cursor model slugs
 - `packages/contracts/src/orchestration.ts` — `"cursor"` em `ProviderKind`
 - `apps/server/src/provider/Layers/ProviderSessionDirectory.ts` — `"cursor"` em `decodeProviderKind`
@@ -110,25 +116,26 @@ Infraestrutura para Cursor como terceiro provider.
 O upstream usa `"claudeAgent"` como provider kind. Nosso fork usa `"claudeCode"`. Ao reimplementar, devemos usar o naming do upstream (`"claudeAgent"`) para manter compatibilidade.
 
 Da mesma forma:
+
 - Upstream: `ClaudeAdapter` / Fork: `ClaudeCodeAdapter`
 - Upstream: `ClaudeModelOptions` / Fork: `ClaudeCodeModelOptions`
 - Upstream: `ClaudeProviderStartOptions` / Fork: `ClaudeCodeProviderStartOptions`
 
 ## Classificacao preliminar de dificuldade
 
-| Feature | Dificuldade | Justificativa |
-|---|---|---|
-| Favorite Model | Facil | ~50 linhas em appSettings + pequenas mudancas em ChatView e ProviderModelPicker |
-| Approval Timeout | Facil | ~5 linhas no ClaudeAdapter |
-| Thinking tone | Facil | 1 literal em contracts |
-| toolName/diffStats no WorkLogEntry | Facil | ~40 linhas em session-logic |
-| Image path fix | Facil | Mudanca localizada no adapter |
-| Electron/Asar support | Facil-Medio | ~60 linhas no adapter, mas precisa testar com Electron |
-| Document Attachments | Medio | Contracts + composerDraftStore + ChatView + server handler |
-| Smart tool dedup | Medio | session-logic refactor |
-| Skills System | Medio-Dificil | Varios modulos novos (discovery, cache, composerSkills) + integracao |
-| Cursor Provider | Medio-Dificil | Permeia contracts, session directory, appSettings, UI |
-| Sub-threads | Dificil | Permeia TODA a stack, requer migrations, muda modelo de dados fundamental |
+| Feature                            | Dificuldade   | Justificativa                                                                   |
+| ---------------------------------- | ------------- | ------------------------------------------------------------------------------- |
+| Favorite Model                     | Facil         | ~50 linhas em appSettings + pequenas mudancas em ChatView e ProviderModelPicker |
+| Approval Timeout                   | Facil         | ~5 linhas no ClaudeAdapter                                                      |
+| Thinking tone                      | Facil         | 1 literal em contracts                                                          |
+| toolName/diffStats no WorkLogEntry | Facil         | ~40 linhas em session-logic                                                     |
+| Image path fix                     | Facil         | Mudanca localizada no adapter                                                   |
+| Electron/Asar support              | Facil-Medio   | ~60 linhas no adapter, mas precisa testar com Electron                          |
+| Document Attachments               | Medio         | Contracts + composerDraftStore + ChatView + server handler                      |
+| Smart tool dedup                   | Medio         | session-logic refactor                                                          |
+| Skills System                      | Medio-Dificil | Varios modulos novos (discovery, cache, composerSkills) + integracao            |
+| Cursor Provider                    | Medio-Dificil | Permeia contracts, session directory, appSettings, UI                           |
+| Sub-threads                        | Dificil       | Permeia TODA a stack, requer migrations, muda modelo de dados fundamental       |
 
 ## Notas importantes
 

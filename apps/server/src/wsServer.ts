@@ -74,7 +74,7 @@ import {
   resolveAttachmentPath,
   resolveAttachmentPathById,
 } from "./attachmentStore.ts";
-import { parseBase64DataUrl } from "./imageMime.ts";
+import { parseBase64DataUrl, TEXT_FILE_EXTENSION_BY_MIME_TYPE } from "./imageMime.ts";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService.ts";
 import { expandHomePath } from "./os-jank.ts";
 import { makeServerPushBus } from "./wsServer/pushBus.ts";
@@ -370,6 +370,14 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
               break;
             }
             case "text_file": {
+              if (
+                !parsed.mimeType.startsWith("text/") &&
+                !Object.hasOwn(TEXT_FILE_EXTENSION_BY_MIME_TYPE, parsed.mimeType)
+              ) {
+                return yield* new RouteRequestError({
+                  message: `Invalid attachment payload for '${attachment.name}'.`,
+                });
+              }
               maxBytes = PROVIDER_SEND_TURN_MAX_TEXT_FILE_BYTES;
               break;
             }

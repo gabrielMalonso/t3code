@@ -54,7 +54,10 @@ export function parseBase64DataUrl(
   return { mimeType, base64 };
 }
 
-function extractFileNameExtension(fileName: string | undefined, safeSet: Set<string>): string | null {
+function extractFileNameExtension(
+  fileName: string | undefined,
+  safeSet: Set<string>,
+): string | null {
   const trimmed = fileName?.trim() ?? "";
   const match = /\.([a-z0-9]{1,8})$/i.exec(trimmed);
   const ext = match ? `.${match[1]!.toLowerCase()}` : "";
