@@ -43,6 +43,7 @@ import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { MessageCopyButton } from "./MessageCopyButton";
 import { computeMessageDurationStart, normalizeCompactToolLabel } from "./MessagesTimeline.logic";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
+import { VscodeEntryIcon } from "./VscodeEntryIcon";
 import {
   deriveDisplayedUserMessageState,
   type ParsedTerminalContextEntry,
@@ -408,6 +409,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                         key={doc.id}
                         className="flex items-center gap-2 rounded-md border border-border/60 bg-background/50 px-2.5 py-1.5 text-xs text-foreground/80"
                       >
+                        <VscodeEntryIcon pathValue={doc.name} kind="file" theme={resolvedTheme} className="size-3.5 shrink-0" />
                         <span className="truncate">{doc.name}</span>
                       </div>
                     ))}

@@ -160,6 +160,7 @@ import { ComposerPendingApprovalActions } from "./chat/ComposerPendingApprovalAc
 import { ClaudeTraitsMenuContent, ClaudeTraitsPicker } from "./chat/ClaudeTraitsPicker";
 import { CodexTraitsMenuContent, CodexTraitsPicker } from "./chat/CodexTraitsPicker";
 import { CompactComposerControlsMenu } from "./chat/CompactComposerControlsMenu";
+import { VscodeEntryIcon } from "./chat/VscodeEntryIcon";
 import { ComposerPendingApprovalPanel } from "./chat/ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./chat/ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./chat/ComposerPlanFollowUpBanner";
@@ -3807,6 +3808,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                               key={doc.id}
                               className="flex h-10 items-center gap-2 rounded-lg border border-border/80 bg-background/70 px-3"
                             >
+                              <VscodeEntryIcon pathValue={doc.name} kind="file" theme={resolvedTheme} className="size-4 shrink-0" />
                               <span className="max-w-[180px] truncate text-sm">{doc.name}</span>
                               <button
                                 type="button"
