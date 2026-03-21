@@ -33,9 +33,10 @@
 - Resultado: 39/39 testes passando (ClaudeAdapter), 35/35 testes passando (codexAppServerManager), typecheck 0 erros
 
 ### Wave 5: Web Types e Store
-- Status: PENDENTE
+- Status: CONCLUIDA
 - Tarefas: #5
-- Arquivos: types.ts, store.ts, composerDraftStore.ts
+- Arquivos: types.ts, store.ts, composerDraftStore.ts, MessagesTimeline.tsx, ClaudeTraitsPicker.browser.tsx, CodexTraitsPicker.browser.tsx, CompactComposerControlsMenu.browser.tsx
+- Resultado: typecheck 0 erros (7 packages)
 
 ### Wave 6: Web UI
 - Status: PENDENTE
@@ -52,6 +53,7 @@
 - Wave 2: Sintaxe do Effect Schema confirmada: `.check()` aceita multiplos argumentos (`Schema.isMaxLength`, `Schema.isPattern`, `Schema.isLessThanOrEqualTo`). `UploadChatAttachment` const precisou ser exportado (era `const`, mudou para `export const`) para permitir testes e uso em outros modulos.
 - Wave 3: Nenhuma descoberta inesperada. O switch em `attachmentRelativePath` compila sem default case graças ao tipo discriminado `ChatAttachment["type"]`. O `persistedAttachment` em wsServer com `type: attachment.type` (dinâmico) compila corretamente pois TypeScript infere o tipo da union.
 - Wave 4: O plano sugeria retornar `ProviderAdapterRequestError` para PDFs no Codex, mas o padrao mais seguro e skip silencioso (return null + filter), pois o usuario pode ter attachments mistos e nao queremos falhar o turn inteiro. O `Effect.forEach` no CodexAdapter retorna array que pode conter null, entao filtramos com type guard `NonNullable`. O `TextDecoder` e usado para converter bytes para string UTF-8 (text_file).
+- Wave 5: Expandir `ChatAttachment` union causou 5 erros colaterais: 3 browser test files construiam `ComposerThreadDraftState` inline sem `documents`, e `MessagesTimeline.tsx` acessava `previewUrl` diretamente no union (que agora inclui tipos sem esse campo). Ambos foram corrigidos. O fix em MessagesTimeline antecipou parte do trabalho da Wave 6 (separar images de documents na renderizacao).
 
 ## Log de Execucao
 
@@ -76,3 +78,10 @@
   - Tarefa 4.2: Expandido `CodexAppServerSendTurnInput.attachments` para aceitar `text_file` com content/name. Adicionado branch `else if (attachment.type === "text_file")` em `sendTurn` que wrapa conteudo em delimitadores `--- name ---`. Adicionado teste `"wraps text_file content in fenced delimiter block"`
   - Tarefa 4.3: Reescrito `codexAttachments` em `CodexAdapter.ts:sendTurn` com branching por tipo: document retorna null (skip silencioso), text_file le bytes e converte para string UTF-8 via TextDecoder, image mantem logica existente. Array filtrado para remover nulls antes de enviar
   - Verificacao: ClaudeAdapter 39/39 testes, codexAppServerManager 35/35 testes, typecheck 0 erros
+- [2026-03-21] Wave 5 concluida: Web Types e Store
+  - Tarefa 5.1: Adicionadas interfaces `ChatDocumentAttachment` e `ChatTextFileAttachment` em types.ts, expandido union `ChatAttachment` para 3 tipos
+  - Tarefa 5.2: Reescrito mapeamento de attachments em store.ts — `type` agora vem do dado real (nao hardcoded "image"), `previewUrl` so gerado para `attachment.type === "image"`
+  - Tarefa 5.3: Adicionada `ComposerDocumentAttachment` interface em composerDraftStore.ts, campo `documents: ComposerDocumentAttachment[]` ao draft state, metodos `addDocument`/`addDocuments`/`removeDocument`, `COMPOSER_DRAFT_STORAGE_VERSION` incrementado de 2 para 3, documents NAO persistidos no localStorage
+  - Fix colateral: Adicionado `documents: []` em 3 arquivos de browser test (ClaudeTraitsPicker, CodexTraitsPicker, CompactComposerControlsMenu) que construiam ComposerThreadDraftState inline
+  - Fix colateral: Atualizado MessagesTimeline.tsx para filtrar attachments por tipo — `userImages` (type === "image") renderiza em grid com `<img>`, `userDocuments` (type !== "image") renderiza como chips com nome
+  - Verificacao: typecheck 0 erros em 7 packages

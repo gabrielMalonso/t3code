@@ -355,7 +355,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       {row.kind === "message" &&
         row.message.role === "user" &&
         (() => {
-          const userImages = row.message.attachments ?? [];
+          const userAttachments = row.message.attachments ?? [];
+          const userImages = userAttachments.filter((a) => a.type === "image");
+          const userDocuments = userAttachments.filter((a) => a.type !== "image");
           const displayedUserMessage = deriveDisplayedUserMessageState(row.message.text);
           const terminalContexts = displayedUserMessage.contexts;
           const canRevertAgentWork = revertTurnCountByUserMessageId.has(row.message.id);
@@ -365,7 +367,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                 {userImages.length > 0 && (
                   <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
                     {userImages.map(
-                      (image: NonNullable<TimelineMessage["attachments"]>[number]) => (
+                      (image) => (
                         <div
                           key={image.id}
                           className="overflow-hidden rounded-lg border border-border/80 bg-background/70"
@@ -397,6 +399,18 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                         </div>
                       ),
                     )}
+                  </div>
+                )}
+                {userDocuments.length > 0 && (
+                  <div className="mb-2 flex flex-col gap-1">
+                    {userDocuments.map((doc) => (
+                      <div
+                        key={doc.id}
+                        className="flex items-center gap-2 rounded-md border border-border/60 bg-background/50 px-2.5 py-1.5 text-xs text-foreground/80"
+                      >
+                        <span className="truncate">{doc.name}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
                 {(displayedUserMessage.visibleText.trim().length > 0 ||

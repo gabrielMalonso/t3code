@@ -24,6 +24,7 @@ async function mountMenu(props?: {
   draftsByThreadId[threadId] = {
     prompt: props?.prompt ?? "",
     images: [],
+    documents: [],
     nonPersistedImageIds: [],
     persistedAttachments: [],
     terminalContexts: [],
