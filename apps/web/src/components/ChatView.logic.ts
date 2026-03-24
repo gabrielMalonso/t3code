@@ -3,6 +3,7 @@ import { type ChatMessage, type Thread } from "../types";
 import { randomUUID } from "~/lib/utils";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import { Schema } from "effect";
+import { normalizeSlashCommandToken } from "../composer-logic";
 import {
   filterTerminalContextsWithText,
   stripInlineTerminalContextPlaceholders,
@@ -79,17 +80,6 @@ export type SendPhase = "idle" | "preparing-worktree" | "sending-turn";
 export interface PullRequestDialogState {
   initialReference: string | null;
   key: number;
-}
-
-function normalizeSlashCommandToken(value: string | null | undefined): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const token = value.trim().split(/\s+/, 1)[0]?.toLowerCase() ?? "";
-  if (!token.startsWith("/")) {
-    return null;
-  }
-  return token.length > 1 ? token : null;
 }
 
 export function resolveProviderSlashCommandBypassForRetry(input: {

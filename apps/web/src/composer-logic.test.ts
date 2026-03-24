@@ -4,9 +4,12 @@ import {
   clampCollapsedComposerCursor,
   collapseExpandedComposerCursor,
   detectComposerTrigger,
+  detectComposerTriggerWithProviderSlashBypass,
   expandCollapsedComposerCursor,
   isCollapsedCursorAdjacentToInlineToken,
+  normalizeSlashCommandToken,
   parseStandaloneComposerSlashCommand,
+  promptStartsWithSlashCommand,
   replaceTextRange,
 } from "./composer-logic";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
@@ -122,6 +125,50 @@ describe("detectComposerTrigger", () => {
     expect(trigger).not.toBeNull();
     expect(trigger?.kind).toBe("path");
     expect(trigger?.query).toBe("");
+  });
+});
+
+describe("detectComposerTriggerWithProviderSlashBypass", () => {
+  it("suppresses the local /model trigger when a Claude provider slash bypass is active", () => {
+    expect(
+      detectComposerTriggerWithProviderSlashBypass({
+        text: "/model ",
+        cursor: "/model ".length,
+        provider: "claudeAgent",
+        bypassSlashCommand: "/model",
+      }),
+    ).toBeNull();
+  });
+
+  it("keeps regular provider slash commands visible when no collision bypass is active", () => {
+    expect(
+      detectComposerTriggerWithProviderSlashBypass({
+        text: "/review",
+        cursor: "/review".length,
+        provider: "claudeAgent",
+        bypassSlashCommand: null,
+      }),
+    ).toEqual({
+      kind: "slash-command",
+      query: "review",
+      rangeStart: 0,
+      rangeEnd: "/review".length,
+    });
+  });
+});
+
+describe("normalizeSlashCommandToken", () => {
+  it("returns the first normalized slash command token", () => {
+    expect(normalizeSlashCommandToken(" /Plan extra args ")).toBe("/plan");
+    expect(normalizeSlashCommandToken("plain text")).toBeNull();
+  });
+});
+
+describe("promptStartsWithSlashCommand", () => {
+  it("accepts prompts that start with the exact slash command token", () => {
+    expect(promptStartsWithSlashCommand("/plan review the patch", "/plan")).toBe(true);
+    expect(promptStartsWithSlashCommand("/plan\nreview the patch", "/plan")).toBe(true);
+    expect(promptStartsWithSlashCommand("please /plan", "/plan")).toBe(false);
   });
 });
 

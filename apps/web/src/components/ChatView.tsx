@@ -40,9 +40,11 @@ import {
   clampCollapsedComposerCursor,
   type ComposerTrigger,
   collapseExpandedComposerCursor,
-  detectComposerTrigger,
+  detectComposerTriggerWithProviderSlashBypass,
   expandCollapsedComposerCursor,
+  LOCAL_APP_SLASH_COMMANDS,
   parseStandaloneComposerSlashCommand,
+  promptStartsWithSlashCommand,
   replaceTextRange,
 } from "../composer-logic";
 import {
@@ -206,8 +208,6 @@ function formatOutgoingPrompt(params: {
 const COMPOSER_PATH_QUERY_DEBOUNCE_MS = 120;
 const SCRIPT_TERMINAL_COLS = 120;
 const SCRIPT_TERMINAL_ROWS = 30;
-const LOCAL_APP_SLASH_COMMANDS = new Set(["/model", "/plan", "/default"]);
-
 const extendReplacementRangeForTrailingSpace = (
   text: string,
   rangeEnd: number,
@@ -218,68 +218,6 @@ const extendReplacementRangeForTrailingSpace = (
   }
   return text[rangeEnd] === " " ? rangeEnd + 1 : rangeEnd;
 };
-
-function normalizeSlashCommandToken(value: string | null | undefined): string | null {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const token = value.trim().split(/\s+/, 1)[0]?.toLowerCase() ?? "";
-  if (!token.startsWith("/")) {
-    return null;
-  }
-  return token.length > 1 ? token : null;
-}
-
-function promptStartsWithSlashCommand(text: string, command: string): boolean {
-  return (
-    text === command ||
-    text.startsWith(`${command} `) ||
-    text.startsWith(`${command}\n`) ||
-    text.startsWith(`${command}\t`)
-  );
-}
-
-function detectComposerTriggerWithProviderSlashBypass(input: {
-  text: string;
-  cursor: number;
-  provider: ProviderKind;
-  bypassSlashCommand: string | null;
-}): ComposerTrigger | null {
-  const trigger = detectComposerTrigger(input.text, input.cursor);
-  if (input.provider !== "claudeAgent") {
-    return trigger;
-  }
-
-  const bypassSlashCommand = normalizeSlashCommandToken(input.bypassSlashCommand);
-  if (!bypassSlashCommand || !LOCAL_APP_SLASH_COMMANDS.has(bypassSlashCommand)) {
-    return trigger;
-  }
-
-  const lineStart = input.text.lastIndexOf("\n", Math.max(0, input.cursor - 1)) + 1;
-  const linePrefix = input.text.slice(lineStart, input.cursor).trimEnd();
-  if (!promptStartsWithSlashCommand(linePrefix, bypassSlashCommand)) {
-    return trigger;
-  }
-
-  if (bypassSlashCommand === "/model") {
-    if (
-      trigger?.kind === "slash-model" ||
-      (trigger?.kind === "slash-command" && trigger.query.trim().toLowerCase() === "model")
-    ) {
-      return null;
-    }
-    return trigger;
-  }
-
-  if (
-    trigger?.kind === "slash-command" &&
-    trigger.query.trim().toLowerCase() === bypassSlashCommand.slice(1)
-  ) {
-    return null;
-  }
-
-  return trigger;
-}
 
 const syncTerminalContextsByIds = (
   contexts: ReadonlyArray<TerminalContextDraft>,
@@ -3462,6 +3400,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
           trigger.rangeEnd,
           replacement,
         );
+        const previousProviderSlashCommand = selectedProviderSlashCommandRef.current;
+        selectedProviderSlashCommandRef.current = LOCAL_APP_SLASH_COMMANDS.has(item.command)
+          ? item.command
+          : null;
         const applied = applyPromptReplacement(
           trigger.rangeStart,
           replacementRangeEnd,
@@ -3469,10 +3411,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
           { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
         );
         if (applied) {
-          selectedProviderSlashCommandRef.current = LOCAL_APP_SLASH_COMMANDS.has(item.command)
-            ? item.command
-            : null;
           setComposerHighlightedItemId(null);
+        } else {
+          selectedProviderSlashCommandRef.current = previousProviderSlashCommand;
         }
         return;
       }
