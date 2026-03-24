@@ -1,4 +1,4 @@
-import { CommandId, EventId, ProjectId } from "@t3tools/contracts";
+import { CommandId, EventId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import { Effect, Layer, Schema, Stream } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -113,6 +113,68 @@ layer("OrchestrationEventStore", (it) => {
             "OrchestrationEventStore.readFromSequence:decodeRows",
           ),
         );
+      }
+    }),
+  );
+
+  it.effect("replays legacy thread.sub-thread-created rows", () =>
+    Effect.gen(function* () {
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const now = new Date().toISOString();
+      const beforeRows = yield* sql<{ readonly maxSequence: number | null }>`
+        SELECT MAX(sequence) AS "maxSequence"
+        FROM orchestration_events
+      `;
+      const sequenceExclusive = beforeRows[0]?.maxSequence ?? 0;
+
+      yield* sql`
+        INSERT INTO orchestration_events (
+          event_id,
+          aggregate_kind,
+          stream_id,
+          stream_version,
+          event_type,
+          occurred_at,
+          command_id,
+          causation_event_id,
+          correlation_id,
+          actor_kind,
+          payload_json,
+          metadata_json
+        )
+        VALUES (
+          ${EventId.makeUnsafe("evt-store-legacy-subthread")},
+          ${"thread"},
+          ${ThreadId.makeUnsafe("thread-parent")},
+          ${0},
+          ${"thread.sub-thread-created"},
+          ${now},
+          ${CommandId.makeUnsafe("cmd-store-legacy-subthread")},
+          ${null},
+          ${null},
+          ${"server"},
+          ${JSON.stringify({
+            threadId: "thread-parent",
+            subThreadId: "thread-child",
+            title: "Child thread",
+            model: "gpt-5-codex",
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            createdAt: now,
+            updatedAt: now,
+          })},
+          ${"{}"}
+        )
+      `;
+
+      const replayed = yield* Stream.runCollect(
+        eventStore.readFromSequence(sequenceExclusive, 10),
+      ).pipe(Effect.map((chunk) => Array.from(chunk)));
+      assert.equal(replayed.length, 1);
+      assert.equal(replayed[0]?.type, "thread.sub-thread-created");
+      if (replayed[0]?.type === "thread.sub-thread-created") {
+        assert.equal(String(replayed[0].payload.subThreadId), "thread-child");
       }
     }),
   );

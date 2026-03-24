@@ -61,6 +61,7 @@ describe("ProviderSessionStartInput", () => {
           binaryPath: "/usr/local/bin/claude",
           permissionMode: "plan",
           maxThinkingTokens: 12_000,
+          settingSources: ["project", "user", "local"],
         },
       },
       runtimeMode: "full-access",
@@ -72,7 +73,27 @@ describe("ProviderSessionStartInput", () => {
     expect(parsed.providerOptions?.claudeAgent?.binaryPath).toBe("/usr/local/bin/claude");
     expect(parsed.providerOptions?.claudeAgent?.permissionMode).toBe("plan");
     expect(parsed.providerOptions?.claudeAgent?.maxThinkingTokens).toBe(12_000);
+    expect(parsed.providerOptions?.claudeAgent?.settingSources).toEqual([
+      "project",
+      "user",
+      "local",
+    ]);
     expect(parsed.runtimeMode).toBe("full-access");
+  });
+
+  it("rejects unsupported claude setting sources", () => {
+    expect(() =>
+      decodeProviderSessionStartInput({
+        threadId: "thread-1",
+        provider: "claudeAgent",
+        runtimeMode: "full-access",
+        providerOptions: {
+          claudeAgent: {
+            settingSources: ["global"],
+          },
+        },
+      }),
+    ).toThrow();
   });
 });
 

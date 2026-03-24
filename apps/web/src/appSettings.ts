@@ -1,6 +1,8 @@
 import { useCallback } from "react";
 import { Option, Schema } from "effect";
 import {
+  DEFAULT_CLAUDE_SETTING_SOURCES,
+  ClaudeSettingSource,
   TrimmedNonEmptyString,
   type ProviderKind,
   type ProviderStartOptions,
@@ -52,6 +54,9 @@ const withDefaults =
 
 export const AppSettingsSchema = Schema.Struct({
   claudeBinaryPath: Schema.String.check(Schema.isMaxLength(4096)).pipe(withDefaults(() => "")),
+  claudeSettingSources: Schema.Array(ClaudeSettingSource).pipe(
+    withDefaults(() => [...DEFAULT_CLAUDE_SETTING_SOURCES]),
+  ),
   codexBinaryPath: Schema.String.check(Schema.isMaxLength(4096)).pipe(withDefaults(() => "")),
   codexHomePath: Schema.String.check(Schema.isMaxLength(4096)).pipe(withDefaults(() => "")),
   defaultThreadEnvMode: EnvMode.pipe(withDefaults(() => "local" as const satisfies EnvMode)),
@@ -93,6 +98,22 @@ const PROVIDER_CUSTOM_MODEL_CONFIG: Record<ProviderKind, ProviderCustomModelConf
 };
 export const MODEL_PROVIDER_SETTINGS = Object.values(PROVIDER_CUSTOM_MODEL_CONFIG);
 
+export function normalizeClaudeSettingSources(
+  sources: Iterable<string | null | undefined>,
+): AppSettings["claudeSettingSources"] {
+  const requested = new Set<AppSettings["claudeSettingSources"][number]>();
+  for (const source of sources) {
+    if (source === "user" || source === "project" || source === "local") {
+      requested.add(source);
+    }
+  }
+
+  const normalized = DEFAULT_CLAUDE_SETTING_SOURCES.filter(
+    (source) => requested.size === 0 || requested.has(source),
+  );
+  return normalized.length > 0 ? [...normalized] : [...DEFAULT_CLAUDE_SETTING_SOURCES];
+}
+
 export function normalizeCustomModelSlugs(
   models: Iterable<string | null | undefined>,
   provider: ProviderKind = "codex",
@@ -125,6 +146,7 @@ export function normalizeCustomModelSlugs(
 function normalizeAppSettings(settings: AppSettings): AppSettings {
   return {
     ...settings,
+    claudeSettingSources: normalizeClaudeSettingSources(settings.claudeSettingSources),
     customCodexModels: normalizeCustomModelSlugs(settings.customCodexModels, "codex"),
     customClaudeModels: normalizeCustomModelSlugs(settings.customClaudeModels, "claudeAgent"),
   };
@@ -228,8 +250,11 @@ export function getCustomModelOptionsByProvider(
 }
 
 export function getProviderStartOptions(
-  settings: Pick<AppSettings, "claudeBinaryPath" | "codexBinaryPath" | "codexHomePath">,
-): ProviderStartOptions | undefined {
+  settings: Pick<
+    AppSettings,
+    "claudeBinaryPath" | "claudeSettingSources" | "codexBinaryPath" | "codexHomePath"
+  >,
+): ProviderStartOptions {
   const providerOptions: ProviderStartOptions = {
     ...(settings.codexBinaryPath || settings.codexHomePath
       ? {
@@ -239,16 +264,12 @@ export function getProviderStartOptions(
           },
         }
       : {}),
-    ...(settings.claudeBinaryPath
-      ? {
-          claudeAgent: {
-            binaryPath: settings.claudeBinaryPath,
-          },
-        }
-      : {}),
+    claudeAgent: {
+      ...(settings.claudeBinaryPath ? { binaryPath: settings.claudeBinaryPath } : {}),
+      settingSources: normalizeClaudeSettingSources(settings.claudeSettingSources),
+    },
   };
-
-  return Object.keys(providerOptions).length > 0 ? providerOptions : undefined;
+  return providerOptions;
 }
 
 export function useAppSettings() {

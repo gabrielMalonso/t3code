@@ -1,6 +1,7 @@
 import {
   type ChatAttachment,
   CommandId,
+  DEFAULT_CLAUDE_SETTING_SOURCES,
   DEFAULT_GIT_TEXT_GENERATION_MODEL,
   EventId,
   type OrchestrationEvent,
@@ -80,6 +81,37 @@ const sameModelOptions = (
   left: ProviderModelOptions | undefined,
   right: ProviderModelOptions | undefined,
 ): boolean => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+
+function normalizeClaudeSettingSources(sources: ReadonlyArray<string> | undefined): Array<string> {
+  const requested = new Set(Array.isArray(sources) ? sources : []);
+  const ordered = DEFAULT_CLAUDE_SETTING_SOURCES.filter(
+    (source) => requested.size === 0 || requested.has(source),
+  );
+  return ordered.length > 0 ? [...ordered] : [...DEFAULT_CLAUDE_SETTING_SOURCES];
+}
+
+function normalizeClaudeProviderStartOptions(
+  input: ProviderStartOptions["claudeAgent"] | undefined,
+): Record<string, unknown> {
+  return {
+    ...(input?.binaryPath !== undefined ? { binaryPath: input.binaryPath } : {}),
+    ...(input?.permissionMode !== undefined ? { permissionMode: input.permissionMode } : {}),
+    ...(input?.maxThinkingTokens !== undefined
+      ? { maxThinkingTokens: input.maxThinkingTokens }
+      : {}),
+    settingSources: normalizeClaudeSettingSources(input?.settingSources),
+  };
+}
+
+function sameClaudeProviderOptions(
+  left: ProviderStartOptions | undefined,
+  right: ProviderStartOptions | undefined,
+): boolean {
+  return (
+    JSON.stringify(normalizeClaudeProviderStartOptions(left?.claudeAgent)) ===
+    JSON.stringify(normalizeClaudeProviderStartOptions(right?.claudeAgent))
+  );
+}
 
 function isUnknownPendingApprovalRequestError(cause: Cause.Cause<ProviderServiceError>): boolean {
   const error = Cause.squash(cause);
@@ -316,12 +348,18 @@ const make = Effect.gen(function* () {
         currentProvider === "claudeAgent" &&
         options?.modelOptions !== undefined &&
         !sameModelOptions(previousModelOptions, options.modelOptions);
+      const previousProviderOptions = threadProviderOptions.get(threadId);
+      const shouldRestartForProviderOptionsChange =
+        currentProvider === "claudeAgent" &&
+        options?.providerOptions !== undefined &&
+        !sameClaudeProviderOptions(previousProviderOptions, options.providerOptions);
 
       if (
         !runtimeModeChanged &&
         !providerChanged &&
         !shouldRestartForModelChange &&
-        !shouldRestartForModelOptionsChange
+        !shouldRestartForModelOptionsChange &&
+        !shouldRestartForProviderOptionsChange
       ) {
         return existingSessionThreadId;
       }
@@ -342,6 +380,7 @@ const make = Effect.gen(function* () {
         modelChanged,
         shouldRestartForModelChange,
         shouldRestartForModelOptionsChange,
+        shouldRestartForProviderOptionsChange,
         hasResumeCursor: resumeCursor !== undefined,
       });
       const restartedSession = yield* startProviderSession({
@@ -683,6 +722,9 @@ const make = Effect.gen(function* () {
         runtimeMode: thread.session?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
         activeTurnId: null,
         lastError: thread.session?.lastError ?? null,
+        ...(thread.session?.providerRuntimeInfo !== undefined
+          ? { providerRuntimeInfo: thread.session.providerRuntimeInfo }
+          : {}),
         updatedAt: now,
       },
       createdAt: now,

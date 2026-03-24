@@ -22,6 +22,8 @@ import {
   ApprovalRequestId,
   type CanonicalItemType,
   type CanonicalRequestType,
+  type ClaudeRuntimeCapabilities,
+  DEFAULT_CLAUDE_SETTING_SOURCES,
   EventId,
   type ProviderApprovalDecision,
   ProviderItemId,
@@ -144,6 +146,7 @@ interface ClaudeSessionContext {
   session: ProviderSession;
   readonly promptQueue: Queue.Queue<PromptQueueItem>;
   readonly query: ClaudeQueryRuntime;
+  readonly settingSources: ReadonlyArray<SettingSource>;
   streamFiber: Fiber.Fiber<void, Error> | undefined;
   readonly startedAt: string;
   readonly basePermissionMode: PermissionMode | undefined;
@@ -428,10 +431,263 @@ const SUPPORTED_CLAUDE_IMAGE_MIME_TYPES = new Set([
   "image/webp",
 ]);
 const CLAUDE_SETTING_SOURCES = [
-  "user",
-  "project",
-  "local",
+  ...DEFAULT_CLAUDE_SETTING_SOURCES,
 ] as const satisfies ReadonlyArray<SettingSource>;
+const CLAUDE_TOOLS_PRESET = {
+  type: "preset",
+  preset: "claude_code",
+} as const satisfies NonNullable<ClaudeQueryOptions["tools"]>;
+const CLAUDE_SYSTEM_PROMPT_PRESET = {
+  type: "preset",
+  preset: "claude_code",
+} as const satisfies Exclude<ClaudeQueryOptions["systemPrompt"], string>;
+const CLAUDE_SKILLS_FULL_ACCESS_ENV = "T3CODE_CLAUDE_SKILLS_FULL_ACCESS";
+const CLAUDE_ENV_EXACT_ALLOWLIST = new Set([
+  "CI",
+  "COLORTERM",
+  "EDITOR",
+  "FORCE_COLOR",
+  "HOME",
+  "LANG",
+  "LOGNAME",
+  "NO_COLOR",
+  "PATH",
+  "PWD",
+  "SHELL",
+  "TEMP",
+  "TERM",
+  "TERM_PROGRAM",
+  "TMP",
+  "TMPDIR",
+  "USER",
+  "VISUAL",
+  "XDG_CACHE_HOME",
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+]);
+const CLAUDE_ENV_PROXY_NAMES = new Set([
+  "ALL_PROXY",
+  "all_proxy",
+  "HTTP_PROXY",
+  "http_proxy",
+  "HTTPS_PROXY",
+  "https_proxy",
+  "NO_PROXY",
+  "no_proxy",
+]);
+
+function isClaudeSettingSource(value: unknown): value is SettingSource {
+  return value === "user" || value === "project" || value === "local";
+}
+
+function normalizeClaudeSettingSources(
+  sources: ReadonlyArray<SettingSource> | undefined,
+): Array<SettingSource> {
+  const requested = new Set(
+    Array.isArray(sources) ? sources.filter((source) => isClaudeSettingSource(source)) : [],
+  );
+  const normalized =
+    requested.size === 0
+      ? [...CLAUDE_SETTING_SOURCES]
+      : CLAUDE_SETTING_SOURCES.filter((source) => requested.has(source));
+  return normalized.length > 0 ? [...normalized] : [...CLAUDE_SETTING_SOURCES];
+}
+
+function sanitizeClaudeEnv(env: NodeJS.ProcessEnv): NonNullable<ClaudeQueryOptions["env"]> {
+  const filtered: Record<string, string> = {};
+
+  for (const [name, value] of Object.entries(env)) {
+    if (typeof value !== "string" || value.length === 0) {
+      continue;
+    }
+
+    const allowed =
+      CLAUDE_ENV_EXACT_ALLOWLIST.has(name) ||
+      CLAUDE_ENV_PROXY_NAMES.has(name) ||
+      name.startsWith("ANTHROPIC_") ||
+      name.startsWith("CLAUDE_") ||
+      name.startsWith("LC_") ||
+      name.startsWith("TMP");
+
+    if (allowed) {
+      filtered[name] = value;
+    }
+  }
+
+  return filtered;
+}
+
+function normalizeClaudeStringList(
+  value: unknown,
+  options?: {
+    readonly prependSlash?: boolean;
+    readonly objectKeys?: ReadonlyArray<string>;
+  },
+): {
+  readonly entries: Array<string>;
+  readonly malformed: boolean;
+} {
+  if (value === undefined) {
+    return {
+      entries: [],
+      malformed: false,
+    };
+  }
+
+  if (!Array.isArray(value)) {
+    return {
+      entries: [],
+      malformed: true,
+    };
+  }
+
+  const entries: Array<string> = [];
+  const seen = new Set<string>();
+  let malformed = false;
+  const objectKeys = options?.objectKeys ?? ["name", "command", "label", "id", "title"];
+
+  for (const item of value) {
+    let candidate: string | undefined;
+    if (typeof item === "string") {
+      candidate = item;
+    } else if (item && typeof item === "object") {
+      const record = item as Record<string, unknown>;
+      for (const key of objectKeys) {
+        const entry = record[key];
+        if (typeof entry === "string") {
+          candidate = entry;
+          break;
+        }
+      }
+    }
+
+    const normalizedCandidate = candidate?.trim();
+    if (!normalizedCandidate) {
+      malformed = true;
+      continue;
+    }
+
+    const normalized = options?.prependSlash
+      ? normalizedCandidate.startsWith("/")
+        ? normalizedCandidate
+        : `/${normalizedCandidate}`
+      : normalizedCandidate;
+    if (seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    entries.push(normalized);
+  }
+
+  return {
+    entries,
+    malformed,
+  };
+}
+
+function normalizeOptionalClaudeString(value: unknown): {
+  readonly value: string | null;
+  readonly malformed: boolean;
+} {
+  if (value === undefined || value === null) {
+    return {
+      value: null,
+      malformed: false,
+    };
+  }
+  if (typeof value !== "string") {
+    return {
+      value: null,
+      malformed: true,
+    };
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0
+    ? {
+        value: trimmed,
+        malformed: false,
+      }
+    : {
+        value: null,
+        malformed: true,
+      };
+}
+
+function buildClaudeRuntimeCapabilities(
+  initMessage: Record<string, unknown>,
+  settingSources: ReadonlyArray<SettingSource>,
+): {
+  readonly capabilities: ClaudeRuntimeCapabilities;
+  readonly warnings: Array<{
+    readonly message: string;
+    readonly detail: unknown;
+  }>;
+} {
+  const slashCommands = normalizeClaudeStringList(initMessage.slash_commands, {
+    prependSlash: true,
+  });
+  const skills = normalizeClaudeStringList(initMessage.skills);
+  const tools = normalizeClaudeStringList(initMessage.tools);
+  const plugins = normalizeClaudeStringList(initMessage.plugins, {
+    objectKeys: ["name", "id", "label", "title", "path"],
+  });
+  const claudeCodeVersion = normalizeOptionalClaudeString(initMessage.claude_code_version);
+  const cwd = normalizeOptionalClaudeString(initMessage.cwd);
+  const warnings: Array<{
+    readonly message: string;
+    readonly detail: unknown;
+  }> = [];
+
+  if (slashCommands.malformed) {
+    warnings.push({
+      message: "Claude init payload contained malformed slash command entries.",
+      detail: initMessage.slash_commands,
+    });
+  }
+  if (skills.malformed) {
+    warnings.push({
+      message: "Claude init payload contained malformed skill entries.",
+      detail: initMessage.skills,
+    });
+  }
+  if (tools.malformed) {
+    warnings.push({
+      message: "Claude init payload contained malformed tool entries.",
+      detail: initMessage.tools,
+    });
+  }
+  if (plugins.malformed) {
+    warnings.push({
+      message: "Claude init payload contained malformed plugin entries.",
+      detail: initMessage.plugins,
+    });
+  }
+  if (claudeCodeVersion.malformed) {
+    warnings.push({
+      message: "Claude init payload contained an invalid claude_code_version value.",
+      detail: initMessage.claude_code_version,
+    });
+  }
+  if (cwd.malformed) {
+    warnings.push({
+      message: "Claude init payload contained an invalid cwd value.",
+      detail: initMessage.cwd,
+    });
+  }
+
+  return {
+    capabilities: {
+      slashCommands: slashCommands.entries,
+      skills: skills.entries,
+      tools: tools.entries,
+      plugins: plugins.entries,
+      claudeCodeVersion: claudeCodeVersion.value,
+      cwd: cwd.value,
+      settingSources: [...settingSources],
+    },
+    warnings,
+  };
+}
 
 function buildPromptText(input: ProviderSendTurnInput): string {
   const requestedEffort = resolveReasoningEffortForProvider(
@@ -1846,15 +2102,27 @@ function makeClaudeAdapter(options?: ClaudeAdapterLiveOptions) {
         };
 
         switch (message.subtype) {
-          case "init":
+          case "init": {
+            const { capabilities, warnings } = buildClaudeRuntimeCapabilities(
+              message as Record<string, unknown>,
+              context.settingSources,
+            );
+            for (const warning of warnings) {
+              yield* emitRuntimeWarning(context, warning.message, warning.detail);
+            }
             yield* offerRuntimeEvent({
               ...base,
               type: "session.configured",
               payload: {
-                config: message as Record<string, unknown>,
+                config: {
+                  providerRuntimeInfo: {
+                    claudeAgent: capabilities,
+                  },
+                },
               },
             });
             return;
+          }
           case "status":
             yield* offerRuntimeEvent({
               ...base,
@@ -2423,6 +2691,20 @@ function makeClaudeAdapter(options?: ClaudeAdapterLiveOptions) {
                 } satisfies PermissionResult;
               }
 
+              if (toolName === "Skill" && !skillsExecutionEnabled) {
+                return {
+                  behavior: "deny",
+                  message: `Claude Skills are blocked in full-access until ${CLAUDE_SKILLS_FULL_ACCESS_ENV}=1. Use approval-required to run this skill.`,
+                } satisfies PermissionResult;
+              }
+
+              if (toolName === "Skill") {
+                return {
+                  behavior: "allow",
+                  updatedInput: toolInput,
+                } satisfies PermissionResult;
+              }
+
               const runtimeMode = input.runtimeMode ?? "full-access";
               if (runtimeMode === "full-access") {
                 return {
@@ -2559,6 +2841,10 @@ function makeClaudeAdapter(options?: ClaudeAdapterLiveOptions) {
             ? input.modelOptions.claudeAgent.thinking
             : undefined;
         const effectiveEffort = getEffectiveClaudeCodeEffort(effort);
+        const settingSources = normalizeClaudeSettingSources(providerOptions?.settingSources);
+        const skillsAllowedInFullAccess = process.env[CLAUDE_SKILLS_FULL_ACCESS_ENV] === "1";
+        const skillsExecutionEnabled =
+          input.runtimeMode === "approval-required" || skillsAllowedInFullAccess;
         const permissionMode =
           toPermissionMode(providerOptions?.permissionMode) ??
           (input.runtimeMode === "full-access" ? "bypassPermissions" : undefined);
@@ -2571,7 +2857,9 @@ function makeClaudeAdapter(options?: ClaudeAdapterLiveOptions) {
           ...(input.cwd ? { cwd: input.cwd } : {}),
           ...(input.model ? { model: input.model } : {}),
           pathToClaudeCodeExecutable: providerOptions?.binaryPath ?? "claude",
-          settingSources: [...CLAUDE_SETTING_SOURCES],
+          tools: CLAUDE_TOOLS_PRESET,
+          systemPrompt: CLAUDE_SYSTEM_PROMPT_PRESET,
+          settingSources,
           ...(effectiveEffort ? { effort: effectiveEffort } : {}),
           ...(permissionMode ? { permissionMode } : {}),
           ...(permissionMode === "bypassPermissions"
@@ -2583,9 +2871,10 @@ function makeClaudeAdapter(options?: ClaudeAdapterLiveOptions) {
           ...(Object.keys(settings).length > 0 ? { settings } : {}),
           ...(existingResumeSessionId ? { resume: existingResumeSessionId } : {}),
           ...(newSessionId ? { sessionId: newSessionId } : {}),
+          ...(skillsExecutionEnabled ? { allowedTools: ["Skill"] } : {}),
           includePartialMessages: true,
           canUseTool,
-          env: process.env,
+          env: sanitizeClaudeEnv(process.env),
           ...(input.cwd ? { additionalDirectories: [input.cwd] } : {}),
         };
 
@@ -2628,6 +2917,7 @@ function makeClaudeAdapter(options?: ClaudeAdapterLiveOptions) {
           session,
           promptQueue,
           query: queryRuntime,
+          settingSources,
           streamFiber: undefined,
           startedAt,
           basePermissionMode: permissionMode,
@@ -2672,6 +2962,7 @@ function makeClaudeAdapter(options?: ClaudeAdapterLiveOptions) {
                 ? { maxThinkingTokens: providerOptions.maxThinkingTokens }
                 : {}),
               ...(fastMode ? { fastMode: true } : {}),
+              settingSources,
             },
           },
           providerRefs: {},

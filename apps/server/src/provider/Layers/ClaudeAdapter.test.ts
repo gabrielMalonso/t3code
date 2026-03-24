@@ -293,8 +293,86 @@ describe("ClaudeAdapterLive", () => {
 
       const createInput = harness.getLastCreateQueryInput();
       assert.deepEqual(createInput?.options.settingSources, ["user", "project", "local"]);
+      assert.deepEqual(createInput?.options.tools, {
+        type: "preset",
+        preset: "claude_code",
+      });
+      assert.deepEqual(createInput?.options.systemPrompt, {
+        type: "preset",
+        preset: "claude_code",
+      });
+      assert.deepEqual(createInput?.options.allowedTools, ["Skill"]);
       assert.equal(createInput?.options.permissionMode, undefined);
       assert.equal(createInput?.options.allowDangerouslySkipPermissions, undefined);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("allows overriding Claude setting sources per session", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeAgent",
+        runtimeMode: "approval-required",
+        providerOptions: {
+          claudeAgent: {
+            settingSources: ["project"],
+          },
+        },
+      });
+
+      const createInput = harness.getLastCreateQueryInput();
+      assert.deepEqual(createInput?.options.settingSources, ["project"]);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("filters environment variables passed to Claude", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const previousClaudeEnv = process.env.CLAUDE_TEST_ALLOWED;
+      const previousAnthropicEnv = process.env.ANTHROPIC_TEST_ALLOWED;
+      const previousSecretEnv = process.env.AWS_SECRET_ACCESS_KEY;
+      process.env.CLAUDE_TEST_ALLOWED = "yes";
+      process.env.ANTHROPIC_TEST_ALLOWED = "yes";
+      process.env.AWS_SECRET_ACCESS_KEY = "should-not-pass";
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (previousClaudeEnv === undefined) {
+            delete process.env.CLAUDE_TEST_ALLOWED;
+          } else {
+            process.env.CLAUDE_TEST_ALLOWED = previousClaudeEnv;
+          }
+          if (previousAnthropicEnv === undefined) {
+            delete process.env.ANTHROPIC_TEST_ALLOWED;
+          } else {
+            process.env.ANTHROPIC_TEST_ALLOWED = previousAnthropicEnv;
+          }
+          if (previousSecretEnv === undefined) {
+            delete process.env.AWS_SECRET_ACCESS_KEY;
+          } else {
+            process.env.AWS_SECRET_ACCESS_KEY = previousSecretEnv;
+          }
+        }),
+      );
+
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeAgent",
+        runtimeMode: "approval-required",
+      });
+
+      const env = harness.getLastCreateQueryInput()?.options.env ?? {};
+      assert.equal(env.CLAUDE_TEST_ALLOWED, "yes");
+      assert.equal(env.ANTHROPIC_TEST_ALLOWED, "yes");
+      assert.equal("AWS_SECRET_ACCESS_KEY" in env, false);
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
@@ -768,6 +846,77 @@ describe("ClaudeAdapterLive", () => {
         assert.equal(String(turnCompleted.turnId), String(turn.turnId));
         assert.equal(turnCompleted.payload.state, "completed");
       }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("emits claude runtime capabilities from system init as session.configured", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeAgent",
+        runtimeMode: "approval-required",
+      });
+
+      yield* Stream.take(adapter.streamEvents, 3).pipe(Stream.runDrain);
+      yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "hello",
+        attachments: [],
+      });
+      yield* Stream.take(adapter.streamEvents, 1).pipe(Stream.runDrain);
+      const configuredEventFiber = yield* Stream.filter(
+        adapter.streamEvents,
+        (event) => event.type === "session.configured",
+      ).pipe(Stream.runHead, Effect.forkChild);
+      yield* Effect.yieldNow;
+
+      harness.query.emit({
+        type: "system",
+        subtype: "init",
+        apiKeySource: "user",
+        claude_code_version: "1.2.3",
+        cwd: "/tmp/claude-workspace",
+        tools: ["Bash", "Skill"],
+        mcp_servers: [{ name: "filesystem", status: "connected" }],
+        model: "claude-sonnet-4-6",
+        permissionMode: "default",
+        slash_commands: ["/plan", "/review"],
+        output_style: "default",
+        skills: ["project-audit"],
+        plugins: [{ name: "local-plugin", path: "/tmp/plugin" }],
+        uuid: "system-init-1",
+        session_id: "sdk-session-init-1",
+      } as unknown as SDKMessage);
+
+      const configuredOption = yield* Fiber.join(configuredEventFiber);
+      if (
+        configuredOption._tag !== "Some" ||
+        configuredOption.value.type !== "session.configured"
+      ) {
+        assert.fail("Expected session.configured event");
+        return;
+      }
+      const configured = configuredOption.value;
+
+      assert.deepEqual(configured.payload.config, {
+        providerRuntimeInfo: {
+          claudeAgent: {
+            slashCommands: ["/plan", "/review"],
+            skills: ["project-audit"],
+            tools: ["Bash", "Skill"],
+            plugins: ["local-plugin"],
+            claudeCodeVersion: "1.2.3",
+            cwd: "/tmp/claude-workspace",
+            settingSources: ["user", "project", "local"],
+          },
+        },
+      });
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
@@ -1998,6 +2147,98 @@ describe("ClaudeAdapterLive", () => {
 
       const permissionResult = yield* Effect.promise(() => permissionPromise);
       assert.equal((permissionResult as PermissionResult).behavior, "allow");
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("allows Skill immediately in approval-required sessions", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeAgent",
+        runtimeMode: "approval-required",
+      });
+
+      const createInput = harness.getLastCreateQueryInput();
+      assert.deepEqual(createInput?.options.allowedTools, ["Skill"]);
+      const canUseTool = createInput?.options.canUseTool;
+      assert.equal(typeof canUseTool, "function");
+      if (!canUseTool) {
+        return;
+      }
+
+      const permissionResult = yield* Effect.promise(() =>
+        canUseTool(
+          "Skill",
+          { command: "/review" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "tool-skill-allowed",
+          },
+        ),
+      );
+
+      assert.deepEqual(permissionResult, {
+        behavior: "allow",
+        updatedInput: { command: "/review" },
+      } satisfies PermissionResult);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("denies Skill in full-access unless the env flag is enabled", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const previousValue = process.env.T3CODE_CLAUDE_SKILLS_FULL_ACCESS;
+      delete process.env.T3CODE_CLAUDE_SKILLS_FULL_ACCESS;
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (previousValue === undefined) {
+            delete process.env.T3CODE_CLAUDE_SKILLS_FULL_ACCESS;
+          } else {
+            process.env.T3CODE_CLAUDE_SKILLS_FULL_ACCESS = previousValue;
+          }
+        }),
+      );
+
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeAgent",
+        runtimeMode: "full-access",
+      });
+
+      const createInput = harness.getLastCreateQueryInput();
+      assert.equal(createInput?.options.allowedTools, undefined);
+      const canUseTool = createInput?.options.canUseTool;
+      assert.equal(typeof canUseTool, "function");
+      if (!canUseTool) {
+        return;
+      }
+
+      const permissionResult = yield* Effect.promise(() =>
+        canUseTool(
+          "Skill",
+          { command: "/review" },
+          {
+            signal: new AbortController().signal,
+            toolUseID: "tool-skill-denied",
+          },
+        ),
+      );
+
+      assert.deepEqual(permissionResult, {
+        behavior: "deny",
+        message:
+          "Claude Skills are blocked in full-access until T3CODE_CLAUDE_SKILLS_FULL_ACCESS=1. Use approval-required to run this skill.",
+      } satisfies PermissionResult);
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

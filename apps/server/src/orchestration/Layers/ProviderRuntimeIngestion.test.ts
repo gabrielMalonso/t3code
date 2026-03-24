@@ -282,6 +282,51 @@ describe("ProviderRuntimeIngestion", () => {
     expect(thread.session?.lastError).toBe("turn failed");
   });
 
+  it("persists provider runtime info from session.configured events", async () => {
+    const harness = await createHarness();
+    const now = new Date().toISOString();
+
+    harness.emit({
+      type: "session.configured",
+      eventId: asEventId("evt-session-configured"),
+      provider: "claudeAgent",
+      threadId: asThreadId("thread-1"),
+      createdAt: now,
+      payload: {
+        config: {
+          providerRuntimeInfo: {
+            claudeAgent: {
+              slashCommands: ["/plan", "/review"],
+              skills: ["project-audit"],
+              tools: ["Skill", "Bash"],
+              plugins: ["filesystem"],
+              claudeCodeVersion: "1.2.3",
+              cwd: "/tmp/workspace",
+              settingSources: ["user", "project", "local"],
+            },
+          },
+        },
+      },
+    });
+
+    const thread = await waitForThread(harness.engine, (entry) =>
+      Boolean(entry.session?.providerRuntimeInfo?.claudeAgent),
+    );
+
+    expect(thread.session?.providerName).toBe("claudeAgent");
+    expect(thread.session?.providerRuntimeInfo).toEqual({
+      claudeAgent: {
+        slashCommands: ["/plan", "/review"],
+        skills: ["project-audit"],
+        tools: ["Skill", "Bash"],
+        plugins: ["filesystem"],
+        claudeCodeVersion: "1.2.3",
+        cwd: "/tmp/workspace",
+        settingSources: ["user", "project", "local"],
+      },
+    });
+  });
+
   it("applies provider session.state.changed transitions directly", async () => {
     const harness = await createHarness();
     const waitingAt = new Date().toISOString();

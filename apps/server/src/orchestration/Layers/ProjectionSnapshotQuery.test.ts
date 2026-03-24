@@ -158,17 +158,19 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           runtime_mode,
           active_turn_id,
           last_error,
+          provider_runtime_info_json,
           updated_at
         )
         VALUES (
           'thread-1',
           'running',
-          'codex',
+          'claudeAgent',
           'provider-session-1',
           'provider-thread-1',
           'approval-required',
           'turn-1',
           NULL,
+          '{"claudeAgent":{"slashCommands":["/plan","/review"],"skills":["project-audit"],"tools":["Skill","Bash"],"plugins":["filesystem"],"claudeCodeVersion":"1.2.3","cwd":"/tmp/project-1","settingSources":["user","project","local"]}}',
           '2026-02-24T00:00:07.000Z'
         )
       `;
@@ -321,10 +323,21 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           session: {
             threadId: ThreadId.makeUnsafe("thread-1"),
             status: "running",
-            providerName: "codex",
+            providerName: "claudeAgent",
             runtimeMode: "approval-required",
             activeTurnId: asTurnId("turn-1"),
             lastError: null,
+            providerRuntimeInfo: {
+              claudeAgent: {
+                slashCommands: ["/plan", "/review"],
+                skills: ["project-audit"],
+                tools: ["Skill", "Bash"],
+                plugins: ["filesystem"],
+                claudeCodeVersion: "1.2.3",
+                cwd: "/tmp/project-1",
+                settingSources: ["user", "project", "local"],
+              },
+            },
             updatedAt: "2026-02-24T00:00:07.000Z",
           },
         },

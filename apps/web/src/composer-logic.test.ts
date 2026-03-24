@@ -36,6 +36,18 @@ describe("detectComposerTrigger", () => {
     });
   });
 
+  it("treats exact /model as a slash-command trigger until arguments begin", () => {
+    const text = "/model";
+    const trigger = detectComposerTrigger(text, text.length);
+
+    expect(trigger).toEqual({
+      kind: "slash-command",
+      query: "model",
+      rangeStart: 0,
+      rangeEnd: text.length,
+    });
+  });
+
   it("detects slash model query after /model", () => {
     const text = "/model spark";
     const trigger = detectComposerTrigger(text, text.length);
@@ -55,6 +67,18 @@ describe("detectComposerTrigger", () => {
     expect(trigger).toEqual({
       kind: "slash-command",
       query: "pl",
+      rangeStart: 0,
+      rangeEnd: text.length,
+    });
+  });
+
+  it("detects arbitrary provider slash commands while typing", () => {
+    const text = "/rev";
+    const trigger = detectComposerTrigger(text, text.length);
+
+    expect(trigger).toEqual({
+      kind: "slash-command",
+      query: "rev",
       rangeStart: 0,
       rangeEnd: text.length,
     });

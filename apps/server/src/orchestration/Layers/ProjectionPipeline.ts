@@ -48,6 +48,7 @@ import {
   parseThreadSegmentFromAttachmentId,
   toSafeThreadAttachmentSegment,
 } from "../../attachmentStore.ts";
+import { legacySubThreadCreatedToThreadCreated } from "../legacyThreadEvents.ts";
 
 export const ORCHESTRATION_PROJECTOR_NAMES = {
   projects: "projection.projects",
@@ -432,6 +433,34 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
           });
           return;
 
+        case "thread.sub-thread-created": {
+          const parentRow = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isNone(parentRow)) {
+            return;
+          }
+          const payload = legacySubThreadCreatedToThreadCreated({
+            parentProjectId: parentRow.value.projectId,
+            payload: event.payload,
+          });
+          yield* projectionThreadRepository.upsert({
+            threadId: payload.threadId,
+            projectId: payload.projectId,
+            title: payload.title,
+            model: payload.model,
+            runtimeMode: payload.runtimeMode,
+            interactionMode: payload.interactionMode,
+            branch: payload.branch,
+            worktreePath: payload.worktreePath,
+            latestTurnId: null,
+            createdAt: payload.createdAt,
+            updatedAt: payload.updatedAt,
+            deletedAt: null,
+          });
+          return;
+        }
+
         case "thread.meta-updated": {
           const existingRow = yield* projectionThreadRepository.getById({
             threadId: event.payload.threadId,
@@ -763,6 +792,7 @@ const makeOrchestrationProjectionPipeline = Effect.gen(function* () {
         runtimeMode: event.payload.session.runtimeMode,
         activeTurnId: event.payload.session.activeTurnId,
         lastError: event.payload.session.lastError,
+        providerRuntimeInfo: event.payload.session.providerRuntimeInfo ?? null,
         updatedAt: event.payload.session.updatedAt,
       });
     });

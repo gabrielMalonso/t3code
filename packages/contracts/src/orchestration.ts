@@ -43,6 +43,10 @@ export const ProviderSandboxMode = Schema.Literals([
 ]);
 export type ProviderSandboxMode = typeof ProviderSandboxMode.Type;
 export const DEFAULT_PROVIDER_KIND: ProviderKind = "codex";
+export const ClaudeSettingSource = Schema.Literals(["user", "project", "local"]);
+export type ClaudeSettingSource = typeof ClaudeSettingSource.Type;
+export const DEFAULT_CLAUDE_SETTING_SOURCES = ["user", "project", "local"] as const;
+export const ClaudeSettingSources = Schema.Array(ClaudeSettingSource);
 
 export const CodexProviderStartOptions = Schema.Struct({
   binaryPath: Schema.optional(TrimmedNonEmptyString),
@@ -53,6 +57,7 @@ export const ClaudeProviderStartOptions = Schema.Struct({
   binaryPath: Schema.optional(TrimmedNonEmptyString),
   permissionMode: Schema.optional(TrimmedNonEmptyString),
   maxThinkingTokens: Schema.optional(NonNegativeInt),
+  settingSources: Schema.optional(ClaudeSettingSources),
 });
 
 export const ProviderStartOptions = Schema.Struct({
@@ -197,6 +202,22 @@ export const OrchestrationSessionStatus = Schema.Literals([
 ]);
 export type OrchestrationSessionStatus = typeof OrchestrationSessionStatus.Type;
 
+export const ClaudeRuntimeCapabilities = Schema.Struct({
+  slashCommands: Schema.Array(TrimmedNonEmptyString),
+  skills: Schema.Array(TrimmedNonEmptyString),
+  tools: Schema.Array(TrimmedNonEmptyString),
+  plugins: Schema.Array(TrimmedNonEmptyString),
+  claudeCodeVersion: Schema.NullOr(TrimmedNonEmptyString),
+  cwd: Schema.NullOr(TrimmedNonEmptyString),
+  settingSources: ClaudeSettingSources,
+});
+export type ClaudeRuntimeCapabilities = typeof ClaudeRuntimeCapabilities.Type;
+
+export const ProviderRuntimeInfo = Schema.Struct({
+  claudeAgent: Schema.optional(ClaudeRuntimeCapabilities),
+});
+export type ProviderRuntimeInfo = typeof ProviderRuntimeInfo.Type;
+
 export const OrchestrationSession = Schema.Struct({
   threadId: ThreadId,
   status: OrchestrationSessionStatus,
@@ -204,6 +225,7 @@ export const OrchestrationSession = Schema.Struct({
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(() => DEFAULT_RUNTIME_MODE)),
   activeTurnId: Schema.NullOr(TurnId),
   lastError: Schema.NullOr(TrimmedNonEmptyString),
+  providerRuntimeInfo: Schema.optional(ProviderRuntimeInfo),
   updatedAt: IsoDateTime,
 });
 export type OrchestrationSession = typeof OrchestrationSession.Type;
@@ -583,6 +605,7 @@ export const OrchestrationEventType = Schema.Literals([
   "project.meta-updated",
   "project.deleted",
   "thread.created",
+  "thread.sub-thread-created",
   "thread.deleted",
   "thread.meta-updated",
   "thread.runtime-mode-set",
@@ -641,6 +664,23 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+// Legacy compatibility for historical event-store rows emitted before
+// subthreads were normalized into standalone thread.created events.
+export const ThreadSubThreadCreatedPayload = Schema.Struct({
+  threadId: ThreadId,
+  subThreadId: ThreadId,
+  title: TrimmedNonEmptyString,
+  model: TrimmedNonEmptyString,
+  runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(() => DEFAULT_RUNTIME_MODE)),
+  interactionMode: ProviderInteractionMode.pipe(
+    Schema.withDecodingDefault(() => DEFAULT_PROVIDER_INTERACTION_MODE),
+  ),
+  branch: Schema.NullOr(TrimmedNonEmptyString).pipe(Schema.withDecodingDefault(() => null)),
+  worktreePath: Schema.NullOr(TrimmedNonEmptyString).pipe(Schema.withDecodingDefault(() => null)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -804,6 +844,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.created"),
     payload: ThreadCreatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.sub-thread-created"),
+    payload: ThreadSubThreadCreatedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,
