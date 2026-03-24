@@ -6,6 +6,7 @@ import {
   DEFAULT_CLAUDE_SETTING_SOURCES,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
+  OrchestrationEvent,
   OrchestrationGetTurnDiffInput,
   OrchestrationLatestTurn,
   OrchestrationProposedPlan,
@@ -28,6 +29,7 @@ const decodeThreadTurnStartRequestedPayload = Schema.decodeUnknownEffect(
 const decodeOrchestrationLatestTurn = Schema.decodeUnknownEffect(OrchestrationLatestTurn);
 const decodeOrchestrationProposedPlan = Schema.decodeUnknownEffect(OrchestrationProposedPlan);
 const decodeOrchestrationSession = Schema.decodeUnknownEffect(OrchestrationSession);
+const decodeOrchestrationEvent = Schema.decodeUnknownEffect(OrchestrationEvent);
 const decodeThreadCreatedPayload = Schema.decodeUnknownEffect(ThreadCreatedPayload);
 const decodeThreadSubThreadCreatedPayload = Schema.decodeUnknownEffect(
   ThreadSubThreadCreatedPayload,
@@ -182,6 +184,33 @@ it.effect("decodes legacy thread.sub-thread-created payload defaults", () =>
     assert.strictEqual(parsed.interactionMode, DEFAULT_PROVIDER_INTERACTION_MODE);
     assert.strictEqual(parsed.branch, null);
     assert.strictEqual(parsed.worktreePath, null);
+  }),
+);
+
+it.effect("decodes legacy thread.provider-skills-set events", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationEvent({
+      sequence: 12,
+      eventId: "evt-provider-skills",
+      aggregateKind: "thread",
+      aggregateId: "thread-1",
+      type: "thread.provider-skills-set",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: null,
+      causationEventId: null,
+      correlationId: null,
+      metadata: {},
+      payload: {
+        threadId: "thread-1",
+        skills: [{ name: "review" }],
+      },
+    });
+
+    assert.strictEqual(parsed.type, "thread.provider-skills-set");
+    if (parsed.type === "thread.provider-skills-set") {
+      assert.strictEqual(parsed.payload.threadId, "thread-1");
+      assert.deepStrictEqual(parsed.payload.skills, [{ name: "review" }]);
+    }
   }),
 );
 

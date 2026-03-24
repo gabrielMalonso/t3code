@@ -178,4 +178,61 @@ layer("OrchestrationEventStore", (it) => {
       }
     }),
   );
+
+  it.effect("replays legacy thread.provider-skills-set rows", () =>
+    Effect.gen(function* () {
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const now = new Date().toISOString();
+      const beforeRows = yield* sql<{ readonly maxSequence: number | null }>`
+        SELECT MAX(sequence) AS "maxSequence"
+        FROM orchestration_events
+      `;
+      const sequenceExclusive = beforeRows[0]?.maxSequence ?? 0;
+
+      yield* sql`
+        INSERT INTO orchestration_events (
+          event_id,
+          aggregate_kind,
+          stream_id,
+          stream_version,
+          event_type,
+          occurred_at,
+          command_id,
+          causation_event_id,
+          correlation_id,
+          actor_kind,
+          payload_json,
+          metadata_json
+        )
+        VALUES (
+          ${EventId.makeUnsafe("evt-store-legacy-provider-skills")},
+          ${"thread"},
+          ${ThreadId.makeUnsafe("thread-skills")},
+          ${0},
+          ${"thread.provider-skills-set"},
+          ${now},
+          ${null},
+          ${null},
+          ${null},
+          ${"server"},
+          ${JSON.stringify({
+            threadId: "thread-skills",
+            skills: [{ name: "review" }, { name: "commit" }],
+          })},
+          ${"{}"}
+        )
+      `;
+
+      const replayed = yield* Stream.runCollect(
+        eventStore.readFromSequence(sequenceExclusive, 10),
+      ).pipe(Effect.map((chunk) => Array.from(chunk)));
+      assert.equal(replayed.length, 1);
+      assert.equal(replayed[0]?.type, "thread.provider-skills-set");
+      if (replayed[0]?.type === "thread.provider-skills-set") {
+        assert.equal(String(replayed[0].payload.threadId), "thread-skills");
+        assert.deepEqual(replayed[0].payload.skills, [{ name: "review" }, { name: "commit" }]);
+      }
+    }),
+  );
 });

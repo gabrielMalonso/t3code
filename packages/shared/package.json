@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./claude": {
+      "types": "./src/claude.ts",
+      "import": "./src/claude.ts"
+    },
     "./model": {
       "types": "./src/model.ts",
       "import": "./src/model.ts"

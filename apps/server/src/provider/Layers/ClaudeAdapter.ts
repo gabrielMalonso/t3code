@@ -23,7 +23,6 @@ import {
   type CanonicalItemType,
   type CanonicalRequestType,
   type ClaudeRuntimeCapabilities,
-  DEFAULT_CLAUDE_SETTING_SOURCES,
   EventId,
   type ProviderApprovalDecision,
   ProviderItemId,
@@ -49,6 +48,7 @@ import {
   supportsClaudeThinkingToggle,
   supportsClaudeUltrathinkKeyword,
 } from "@t3tools/shared/model";
+import { normalizeClaudeSettingSources } from "@t3tools/shared/claude";
 import {
   Cause,
   DateTime,
@@ -430,9 +430,6 @@ const SUPPORTED_CLAUDE_IMAGE_MIME_TYPES = new Set([
   "image/png",
   "image/webp",
 ]);
-const CLAUDE_SETTING_SOURCES = [
-  ...DEFAULT_CLAUDE_SETTING_SOURCES,
-] as const satisfies ReadonlyArray<SettingSource>;
 const CLAUDE_TOOLS_PRESET = {
   type: "preset",
   preset: "claude_code",
@@ -447,6 +444,10 @@ const CLAUDE_ENV_EXACT_ALLOWLIST = new Set([
   "COLORTERM",
   "EDITOR",
   "FORCE_COLOR",
+  "GIT_ASKPASS",
+  "GIT_SSH",
+  "GIT_SSH_COMMAND",
+  "GPG_TTY",
   "HOME",
   "LANG",
   "LOGNAME",
@@ -454,6 +455,9 @@ const CLAUDE_ENV_EXACT_ALLOWLIST = new Set([
   "PATH",
   "PWD",
   "SHELL",
+  "SSH_AGENT_PID",
+  "SSH_ASKPASS",
+  "SSH_AUTH_SOCK",
   "TEMP",
   "TERM",
   "TERM_PROGRAM",
@@ -475,23 +479,6 @@ const CLAUDE_ENV_PROXY_NAMES = new Set([
   "NO_PROXY",
   "no_proxy",
 ]);
-
-function isClaudeSettingSource(value: unknown): value is SettingSource {
-  return value === "user" || value === "project" || value === "local";
-}
-
-function normalizeClaudeSettingSources(
-  sources: ReadonlyArray<SettingSource> | undefined,
-): Array<SettingSource> {
-  const requested = new Set(
-    Array.isArray(sources) ? sources.filter((source) => isClaudeSettingSource(source)) : [],
-  );
-  const normalized =
-    requested.size === 0
-      ? [...CLAUDE_SETTING_SOURCES]
-      : CLAUDE_SETTING_SOURCES.filter((source) => requested.has(source));
-  return normalized.length > 0 ? [...normalized] : [...CLAUDE_SETTING_SOURCES];
-}
 
 function sanitizeClaudeEnv(env: NodeJS.ProcessEnv): NonNullable<ClaudeQueryOptions["env"]> {
   const filtered: Record<string, string> = {};

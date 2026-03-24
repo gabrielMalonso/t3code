@@ -7,7 +7,6 @@ import {
   OrchestrationProposedPlanId,
   OrchestrationReadModel,
   ProjectScript,
-  ProviderRuntimeInfo,
   ThreadId,
   TurnId,
   type OrchestrationCheckpointSummary,
@@ -31,11 +30,11 @@ import {
 } from "../../persistence/Errors.ts";
 import { ProjectionCheckpoint } from "../../persistence/Services/ProjectionCheckpoints.ts";
 import { ProjectionProject } from "../../persistence/Services/ProjectionProjects.ts";
+import { ProjectionThreadSessionDbRowSchema } from "../../persistence/Schemas/ProjectionThreadSessions.ts";
 import { ProjectionState } from "../../persistence/Services/ProjectionState.ts";
 import { ProjectionThreadActivity } from "../../persistence/Services/ProjectionThreadActivities.ts";
 import { ProjectionThreadMessage } from "../../persistence/Services/ProjectionThreadMessages.ts";
 import { ProjectionThreadProposedPlan } from "../../persistence/Services/ProjectionThreadProposedPlans.ts";
-import { ProjectionThreadSession } from "../../persistence/Services/ProjectionThreadSessions.ts";
 import { ProjectionThread } from "../../persistence/Services/ProjectionThreads.ts";
 import { ORCHESTRATION_PROJECTOR_NAMES } from "./ProjectionPipeline.ts";
 import {
@@ -61,11 +60,6 @@ const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
   Struct.assign({
     payload: Schema.fromJsonString(Schema.Unknown),
     sequence: Schema.NullOr(NonNegativeInt),
-  }),
-);
-const ProjectionThreadSessionDbRowSchema = ProjectionThreadSession.mapFields(
-  Struct.assign({
-    providerRuntimeInfo: Schema.NullOr(Schema.fromJsonString(ProviderRuntimeInfo)),
   }),
 );
 const ProjectionCheckpointDbRowSchema = ProjectionCheckpoint.mapFields(

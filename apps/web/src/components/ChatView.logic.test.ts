@@ -1,7 +1,11 @@
 import { ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 
-import { buildExpiredTerminalContextToastCopy, deriveComposerSendState } from "./ChatView.logic";
+import {
+  buildExpiredTerminalContextToastCopy,
+  deriveComposerSendState,
+  resolveProviderSlashCommandBypassForRetry,
+} from "./ChatView.logic";
 
 describe("deriveComposerSendState", () => {
   it("treats expired terminal pills as non-sendable content", () => {
@@ -65,5 +69,37 @@ describe("buildExpiredTerminalContextToastCopy", () => {
       title: "Expired terminal contexts omitted from message",
       description: "Re-add it if you want that terminal output included.",
     });
+  });
+});
+
+describe("resolveProviderSlashCommandBypassForRetry", () => {
+  it("preserves a selected Claude slash command when the prompt still targets it", () => {
+    expect(
+      resolveProviderSlashCommandBypassForRetry({
+        provider: "claudeAgent",
+        selectedSlashCommand: "/plan",
+        trimmedPrompt: "/plan add regression coverage",
+      }),
+    ).toBe("/plan");
+  });
+
+  it("does not preserve bypass for non-Claude providers", () => {
+    expect(
+      resolveProviderSlashCommandBypassForRetry({
+        provider: "codex",
+        selectedSlashCommand: "/plan",
+        trimmedPrompt: "/plan add regression coverage",
+      }),
+    ).toBeNull();
+  });
+
+  it("does not preserve bypass when the prompt no longer starts with the selected command", () => {
+    expect(
+      resolveProviderSlashCommandBypassForRetry({
+        provider: "claudeAgent",
+        selectedSlashCommand: "/plan",
+        trimmedPrompt: "plain text follow-up",
+      }),
+    ).toBeNull();
   });
 });

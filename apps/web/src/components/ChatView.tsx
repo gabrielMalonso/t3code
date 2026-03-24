@@ -175,6 +175,7 @@ import {
   LastInvokedScriptByProjectSchema,
   PullRequestDialogState,
   readFileAsDataUrl,
+  resolveProviderSlashCommandBypassForRetry,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
   SendPhase,
@@ -2524,13 +2525,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
       });
       return;
     }
-    const selectedProviderSlashCommand = normalizeSlashCommandToken(
-      selectedProviderSlashCommandRef.current,
-    );
-    const shouldBypassStandaloneSlashCommand =
-      selectedProvider === "claudeAgent" &&
-      selectedProviderSlashCommand !== null &&
-      normalizeSlashCommandToken(trimmed) === selectedProviderSlashCommand;
+    const providerSlashCommandBypassForRetry = resolveProviderSlashCommandBypassForRetry({
+      provider: selectedProvider,
+      selectedSlashCommand: selectedProviderSlashCommandRef.current,
+      trimmedPrompt: trimmed,
+    });
+    const shouldBypassStandaloneSlashCommand = providerSlashCommandBypassForRetry !== null;
     const standaloneSlashCommand =
       !shouldBypassStandaloneSlashCommand &&
       composerImages.length === 0 &&
@@ -2815,6 +2815,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         setComposerCursor(collapseExpandedComposerCursor(promptForSend, promptForSend.length));
         addComposerImagesToDraft(composerImagesSnapshot.map(cloneComposerImageForRetry));
         addComposerTerminalContextsToDraft(composerTerminalContextsSnapshot);
+        selectedProviderSlashCommandRef.current = providerSlashCommandBypassForRetry;
         setComposerTrigger(
           detectComposerTriggerForCurrentContext(promptForSend, promptForSend.length),
         );

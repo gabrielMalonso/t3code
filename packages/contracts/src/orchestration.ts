@@ -606,6 +606,7 @@ export const OrchestrationEventType = Schema.Literals([
   "project.deleted",
   "thread.created",
   "thread.sub-thread-created",
+  "thread.provider-skills-set",
   "thread.deleted",
   "thread.meta-updated",
   "thread.runtime-mode-set",
@@ -683,6 +684,13 @@ export const ThreadSubThreadCreatedPayload = Schema.Struct({
   worktreePath: Schema.NullOr(TrimmedNonEmptyString).pipe(Schema.withDecodingDefault(() => null)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+});
+
+// Legacy compatibility for historical event-store rows emitted before provider
+// capabilities were folded into thread.session-set snapshots.
+export const ThreadProviderSkillsSetPayload = Schema.Struct({
+  threadId: ThreadId,
+  skills: Schema.Array(Schema.Unknown).pipe(Schema.withDecodingDefault(() => [])),
 });
 
 export const ThreadDeletedPayload = Schema.Struct({
@@ -849,6 +857,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.sub-thread-created"),
     payload: ThreadSubThreadCreatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.provider-skills-set"),
+    payload: ThreadProviderSkillsSetPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

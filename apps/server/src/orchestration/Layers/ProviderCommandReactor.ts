@@ -1,7 +1,6 @@
 import {
   type ChatAttachment,
   CommandId,
-  DEFAULT_CLAUDE_SETTING_SOURCES,
   DEFAULT_GIT_TEXT_GENERATION_MODEL,
   EventId,
   type OrchestrationEvent,
@@ -16,6 +15,7 @@ import {
 } from "@t3tools/contracts";
 import { Cache, Cause, Duration, Effect, Layer, Option, Schema, Stream } from "effect";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+import { normalizeClaudeSettingSources } from "@t3tools/shared/claude";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import { GitCore } from "../../git/Services/GitCore.ts";
@@ -81,14 +81,6 @@ const sameModelOptions = (
   left: ProviderModelOptions | undefined,
   right: ProviderModelOptions | undefined,
 ): boolean => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
-
-function normalizeClaudeSettingSources(sources: ReadonlyArray<string> | undefined): Array<string> {
-  const requested = new Set(Array.isArray(sources) ? sources : []);
-  const ordered = DEFAULT_CLAUDE_SETTING_SOURCES.filter(
-    (source) => requested.size === 0 || requested.has(source),
-  );
-  return ordered.length > 0 ? [...ordered] : [...DEFAULT_CLAUDE_SETTING_SOURCES];
-}
 
 function normalizeClaudeProviderStartOptions(
   input: ProviderStartOptions["claudeAgent"] | undefined,

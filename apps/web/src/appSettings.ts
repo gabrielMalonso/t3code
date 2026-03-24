@@ -13,6 +13,7 @@ import {
   normalizeModelSlug,
   resolveSelectableModel,
 } from "@t3tools/shared/model";
+import { normalizeClaudeSettingSources } from "@t3tools/shared/claude";
 import { useLocalStorage } from "./hooks/useLocalStorage";
 import { EnvMode } from "./components/BranchToolbar.logic";
 
@@ -98,21 +99,7 @@ const PROVIDER_CUSTOM_MODEL_CONFIG: Record<ProviderKind, ProviderCustomModelConf
 };
 export const MODEL_PROVIDER_SETTINGS = Object.values(PROVIDER_CUSTOM_MODEL_CONFIG);
 
-export function normalizeClaudeSettingSources(
-  sources: Iterable<string | null | undefined>,
-): AppSettings["claudeSettingSources"] {
-  const requested = new Set<AppSettings["claudeSettingSources"][number]>();
-  for (const source of sources) {
-    if (source === "user" || source === "project" || source === "local") {
-      requested.add(source);
-    }
-  }
-
-  const normalized = DEFAULT_CLAUDE_SETTING_SOURCES.filter(
-    (source) => requested.size === 0 || requested.has(source),
-  );
-  return normalized.length > 0 ? [...normalized] : [...DEFAULT_CLAUDE_SETTING_SOURCES];
-}
+export { normalizeClaudeSettingSources } from "@t3tools/shared/claude";
 
 export function normalizeCustomModelSlugs(
   models: Iterable<string | null | undefined>,

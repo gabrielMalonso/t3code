@@ -338,9 +338,13 @@ describe("ClaudeAdapterLive", () => {
     return Effect.gen(function* () {
       const previousClaudeEnv = process.env.CLAUDE_TEST_ALLOWED;
       const previousAnthropicEnv = process.env.ANTHROPIC_TEST_ALLOWED;
+      const previousSshAgentEnv = process.env.SSH_AUTH_SOCK;
+      const previousGitSshCommandEnv = process.env.GIT_SSH_COMMAND;
       const previousSecretEnv = process.env.AWS_SECRET_ACCESS_KEY;
       process.env.CLAUDE_TEST_ALLOWED = "yes";
       process.env.ANTHROPIC_TEST_ALLOWED = "yes";
+      process.env.SSH_AUTH_SOCK = "/tmp/test-ssh-agent.sock";
+      process.env.GIT_SSH_COMMAND = "ssh -i ~/.ssh/test";
       process.env.AWS_SECRET_ACCESS_KEY = "should-not-pass";
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
@@ -353,6 +357,16 @@ describe("ClaudeAdapterLive", () => {
             delete process.env.ANTHROPIC_TEST_ALLOWED;
           } else {
             process.env.ANTHROPIC_TEST_ALLOWED = previousAnthropicEnv;
+          }
+          if (previousSshAgentEnv === undefined) {
+            delete process.env.SSH_AUTH_SOCK;
+          } else {
+            process.env.SSH_AUTH_SOCK = previousSshAgentEnv;
+          }
+          if (previousGitSshCommandEnv === undefined) {
+            delete process.env.GIT_SSH_COMMAND;
+          } else {
+            process.env.GIT_SSH_COMMAND = previousGitSshCommandEnv;
           }
           if (previousSecretEnv === undefined) {
             delete process.env.AWS_SECRET_ACCESS_KEY;
@@ -372,6 +386,8 @@ describe("ClaudeAdapterLive", () => {
       const env = harness.getLastCreateQueryInput()?.options.env ?? {};
       assert.equal(env.CLAUDE_TEST_ALLOWED, "yes");
       assert.equal(env.ANTHROPIC_TEST_ALLOWED, "yes");
+      assert.equal(env.SSH_AUTH_SOCK, "/tmp/test-ssh-agent.sock");
+      assert.equal(env.GIT_SSH_COMMAND, "ssh -i ~/.ssh/test");
       assert.equal("AWS_SECRET_ACCESS_KEY" in env, false);
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),

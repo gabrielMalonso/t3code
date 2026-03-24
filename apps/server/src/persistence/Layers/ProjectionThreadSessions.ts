@@ -1,23 +1,16 @@
-import { ProviderRuntimeInfo } from "@t3tools/contracts";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
-import { Effect, Layer, Schema, Struct } from "effect";
+import { Effect, Layer } from "effect";
 
 import { toPersistenceSqlError } from "../Errors.ts";
+import { ProjectionThreadSessionDbRowSchema } from "../Schemas/ProjectionThreadSessions.ts";
 
 import {
-  ProjectionThreadSession,
   ProjectionThreadSessionRepository,
   type ProjectionThreadSessionRepositoryShape,
   DeleteProjectionThreadSessionInput,
   GetProjectionThreadSessionInput,
 } from "../Services/ProjectionThreadSessions.ts";
-
-const ProjectionThreadSessionDbRowSchema = ProjectionThreadSession.mapFields(
-  Struct.assign({
-    providerRuntimeInfo: Schema.NullOr(Schema.fromJsonString(ProviderRuntimeInfo)),
-  }),
-);
 
 const makeProjectionThreadSessionRepository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

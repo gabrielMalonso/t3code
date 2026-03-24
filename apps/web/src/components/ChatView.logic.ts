@@ -1,4 +1,4 @@
-import { ProjectId, type ThreadId } from "@t3tools/contracts";
+import { ProjectId, type ProviderKind, type ThreadId } from "@t3tools/contracts";
 import { type ChatMessage, type Thread } from "../types";
 import { randomUUID } from "~/lib/utils";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
@@ -79,6 +79,33 @@ export type SendPhase = "idle" | "preparing-worktree" | "sending-turn";
 export interface PullRequestDialogState {
   initialReference: string | null;
   key: number;
+}
+
+function normalizeSlashCommandToken(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const token = value.trim().split(/\s+/, 1)[0]?.toLowerCase() ?? "";
+  if (!token.startsWith("/")) {
+    return null;
+  }
+  return token.length > 1 ? token : null;
+}
+
+export function resolveProviderSlashCommandBypassForRetry(input: {
+  provider: ProviderKind;
+  selectedSlashCommand: string | null | undefined;
+  trimmedPrompt: string;
+}): string | null {
+  if (input.provider !== "claudeAgent") {
+    return null;
+  }
+
+  const selectedSlashCommand = normalizeSlashCommandToken(input.selectedSlashCommand);
+  const promptSlashCommand = normalizeSlashCommandToken(input.trimmedPrompt);
+  return selectedSlashCommand !== null && promptSlashCommand === selectedSlashCommand
+    ? selectedSlashCommand
+    : null;
 }
 
 export function readFileAsDataUrl(file: File): Promise<string> {
