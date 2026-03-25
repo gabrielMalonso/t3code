@@ -22,8 +22,10 @@ import {
   ThreadRuntimeModeSetPayload,
   ThreadRevertedPayload,
   ThreadSessionSetPayload,
+  ThreadSubThreadCreatedPayload,
   ThreadTurnDiffCompletedPayload,
 } from "./Schemas.ts";
+import { legacySubThreadCreatedToThreadCreated } from "./legacyThreadEvents.ts";
 
 type ThreadPatch = Partial<Omit<OrchestrationThread, "id" | "projectId">>;
 const MAX_THREAD_MESSAGES = 2_000;
@@ -41,6 +43,35 @@ function updateThread(
   patch: ThreadPatch,
 ): OrchestrationThread[] {
   return threads.map((thread) => (thread.id === threadId ? { ...thread, ...patch } : thread));
+}
+
+function buildProjectedThread(
+  payload: Schema.Schema.Type<typeof ThreadCreatedPayload>,
+  eventType: OrchestrationEvent["type"],
+): Effect.Effect<OrchestrationThread, OrchestrationProjectorDecodeError> {
+  return decodeForEvent(
+    OrchestrationThread,
+    {
+      id: payload.threadId,
+      projectId: payload.projectId,
+      title: payload.title,
+      modelSelection: payload.modelSelection,
+      runtimeMode: payload.runtimeMode,
+      interactionMode: payload.interactionMode,
+      branch: payload.branch,
+      worktreePath: payload.worktreePath,
+      latestTurn: null,
+      createdAt: payload.createdAt,
+      updatedAt: payload.updatedAt,
+      deletedAt: null,
+      messages: [],
+      activities: [],
+      checkpoints: [],
+      session: null,
+    },
+    eventType,
+    "thread",
+  );
 }
 
 function decodeForEvent<A>(
@@ -246,28 +277,34 @@ export function projectEvent(
           event.type,
           "payload",
         );
-        const thread: OrchestrationThread = yield* decodeForEvent(
-          OrchestrationThread,
-          {
-            id: payload.threadId,
-            projectId: payload.projectId,
-            title: payload.title,
-            modelSelection: payload.modelSelection,
-            runtimeMode: payload.runtimeMode,
-            interactionMode: payload.interactionMode,
-            branch: payload.branch,
-            worktreePath: payload.worktreePath,
-            latestTurn: null,
-            createdAt: payload.createdAt,
-            updatedAt: payload.updatedAt,
-            deletedAt: null,
-            messages: [],
-            activities: [],
-            checkpoints: [],
-            session: null,
-          },
+        const thread = yield* buildProjectedThread(payload, event.type);
+        const existing = nextBase.threads.find((entry) => entry.id === thread.id);
+        return {
+          ...nextBase,
+          threads: existing
+            ? nextBase.threads.map((entry) => (entry.id === thread.id ? thread : entry))
+            : [...nextBase.threads, thread],
+        };
+      });
+
+    case "thread.sub-thread-created":
+      return Effect.gen(function* () {
+        const payload = yield* decodeForEvent(
+          ThreadSubThreadCreatedPayload,
+          event.payload,
           event.type,
-          "thread",
+          "payload",
+        );
+        const parentThread = nextBase.threads.find((entry) => entry.id === payload.threadId);
+        if (!parentThread) {
+          return nextBase;
+        }
+        const thread = yield* buildProjectedThread(
+          legacySubThreadCreatedToThreadCreated({
+            parentProjectId: parentThread.projectId,
+            payload,
+          }),
+          event.type,
         );
         const existing = nextBase.threads.find((entry) => entry.id === thread.id);
         return {

@@ -1,5 +1,6 @@
 import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
+import { type ProviderKind } from "@t3tools/contracts";
 
 export type ComposerTriggerKind = "path" | "slash-command" | "slash-model";
 export type ComposerSlashCommand = "model" | "plan" | "default";
@@ -11,7 +12,8 @@ export interface ComposerTrigger {
   rangeEnd: number;
 }
 
-const SLASH_COMMANDS: readonly ComposerSlashCommand[] = ["model", "plan", "default"];
+export const LOCAL_APP_SLASH_COMMANDS = new Set(["/model", "/plan", "/default"]);
+
 const isInlineTokenSegment = (
   segment: { type: "text"; text: string } | { type: "mention" } | { type: "terminal-context" },
 ): boolean => segment.type !== "text";
@@ -192,24 +194,12 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
   if (linePrefix.startsWith("/")) {
     const commandMatch = /^\/(\S*)$/.exec(linePrefix);
     if (commandMatch) {
-      const commandQuery = commandMatch[1] ?? "";
-      if (commandQuery.toLowerCase() === "model") {
-        return {
-          kind: "slash-model",
-          query: "",
-          rangeStart: lineStart,
-          rangeEnd: cursor,
-        };
-      }
-      if (SLASH_COMMANDS.some((command) => command.startsWith(commandQuery.toLowerCase()))) {
-        return {
-          kind: "slash-command",
-          query: commandQuery,
-          rangeStart: lineStart,
-          rangeEnd: cursor,
-        };
-      }
-      return null;
+      return {
+        kind: "slash-command",
+        query: commandMatch[1] ?? "",
+        rangeStart: lineStart,
+        rangeEnd: cursor,
+      };
     }
 
     const modelMatch = /^\/model(?:\s+(.*))?$/.exec(linePrefix);
@@ -235,6 +225,68 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
     rangeStart: tokenStart,
     rangeEnd: cursor,
   };
+}
+
+export function normalizeSlashCommandToken(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const token = value.trim().split(/\s+/, 1)[0]?.toLowerCase() ?? "";
+  if (!token.startsWith("/")) {
+    return null;
+  }
+  return token.length > 1 ? token : null;
+}
+
+export function promptStartsWithSlashCommand(text: string, command: string): boolean {
+  return (
+    text === command ||
+    text.startsWith(`${command} `) ||
+    text.startsWith(`${command}\n`) ||
+    text.startsWith(`${command}\t`)
+  );
+}
+
+export function detectComposerTriggerWithProviderSlashBypass(input: {
+  text: string;
+  cursor: number;
+  provider: ProviderKind;
+  bypassSlashCommand: string | null;
+}): ComposerTrigger | null {
+  const trigger = detectComposerTrigger(input.text, input.cursor);
+  if (input.provider !== "claudeAgent") {
+    return trigger;
+  }
+
+  const bypassSlashCommand = normalizeSlashCommandToken(input.bypassSlashCommand);
+  if (!bypassSlashCommand || !LOCAL_APP_SLASH_COMMANDS.has(bypassSlashCommand)) {
+    return trigger;
+  }
+
+  const lineStart = input.text.lastIndexOf("\n", Math.max(0, input.cursor - 1)) + 1;
+  const linePrefix = input.text.slice(lineStart, input.cursor).trimEnd();
+  if (!promptStartsWithSlashCommand(linePrefix, bypassSlashCommand)) {
+    return trigger;
+  }
+
+  if (bypassSlashCommand === "/model") {
+    if (
+      trigger?.kind === "slash-model" ||
+      (trigger?.kind === "slash-command" && trigger.query.trim().toLowerCase() === "model")
+    ) {
+      return null;
+    }
+    return trigger;
+  }
+
+  if (
+    trigger?.kind === "slash-command" &&
+    trigger.query.trim().toLowerCase() === bypassSlashCommand.slice(1)
+  ) {
+    return null;
+  }
+
+  return trigger;
 }
 
 export function parseStandaloneComposerSlashCommand(

@@ -3,9 +3,9 @@ import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 import { Effect, Layer } from "effect";
 
 import { toPersistenceSqlError } from "../Errors.ts";
+import { ProjectionThreadSessionDbRowSchema } from "../Schemas/ProjectionThreadSessions.ts";
 
 import {
-  ProjectionThreadSession,
   ProjectionThreadSessionRepository,
   type ProjectionThreadSessionRepositoryShape,
   DeleteProjectionThreadSessionInput,
@@ -16,7 +16,7 @@ const makeProjectionThreadSessionRepository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 
   const upsertProjectionThreadSessionRow = SqlSchema.void({
-    Request: ProjectionThreadSession,
+    Request: ProjectionThreadSessionDbRowSchema,
     execute: (row) =>
       sql`
         INSERT INTO projection_thread_sessions (
@@ -26,6 +26,7 @@ const makeProjectionThreadSessionRepository = Effect.gen(function* () {
           runtime_mode,
           active_turn_id,
           last_error,
+          provider_runtime_info_json,
           updated_at
         )
         VALUES (
@@ -35,6 +36,7 @@ const makeProjectionThreadSessionRepository = Effect.gen(function* () {
           ${row.runtimeMode},
           ${row.activeTurnId},
           ${row.lastError},
+          ${row.providerRuntimeInfo},
           ${row.updatedAt}
         )
         ON CONFLICT (thread_id)
@@ -44,13 +46,14 @@ const makeProjectionThreadSessionRepository = Effect.gen(function* () {
           runtime_mode = excluded.runtime_mode,
           active_turn_id = excluded.active_turn_id,
           last_error = excluded.last_error,
+          provider_runtime_info_json = excluded.provider_runtime_info_json,
           updated_at = excluded.updated_at
       `,
   });
 
   const getProjectionThreadSessionRow = SqlSchema.findOneOption({
     Request: GetProjectionThreadSessionInput,
-    Result: ProjectionThreadSession,
+    Result: ProjectionThreadSessionDbRowSchema,
     execute: ({ threadId }) =>
       sql`
         SELECT
@@ -60,6 +63,7 @@ const makeProjectionThreadSessionRepository = Effect.gen(function* () {
           runtime_mode AS "runtimeMode",
           active_turn_id AS "activeTurnId",
           last_error AS "lastError",
+          provider_runtime_info_json AS "providerRuntimeInfo",
           updated_at AS "updatedAt"
         FROM projection_thread_sessions
         WHERE thread_id = ${threadId}

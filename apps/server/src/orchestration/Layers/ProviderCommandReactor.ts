@@ -15,6 +15,7 @@ import {
 } from "@t3tools/contracts";
 import { Cache, Cause, Duration, Effect, Equal, Layer, Option, Schema, Stream } from "effect";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
+import { normalizeClaudeSettingSources } from "@t3tools/shared/claude";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import { GitCore } from "../../git/Services/GitCore.ts";
@@ -74,6 +75,30 @@ const HANDLED_TURN_START_KEY_TTL = Duration.minutes(30);
 const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 const WORKTREE_BRANCH_PREFIX = "t3code";
 const TEMP_WORKTREE_BRANCH_PATTERN = new RegExp(`^${WORKTREE_BRANCH_PREFIX}\\/[0-9a-f]{8}$`);
+
+function normalizeClaudeProviderStartOptions(
+  input: ProviderStartOptions["claudeAgent"] | undefined,
+): Record<string, unknown> {
+  return {
+    ...(input?.binaryPath !== undefined ? { binaryPath: input.binaryPath } : {}),
+    ...(input?.permissionMode !== undefined ? { permissionMode: input.permissionMode } : {}),
+    ...(input?.maxThinkingTokens !== undefined
+      ? { maxThinkingTokens: input.maxThinkingTokens }
+      : {}),
+    settingSources: normalizeClaudeSettingSources(input?.settingSources),
+  };
+}
+
+function sameClaudeProviderOptions(
+  left: ProviderStartOptions | undefined,
+  right: ProviderStartOptions | undefined,
+): boolean {
+  return (
+    JSON.stringify(normalizeClaudeProviderStartOptions(left?.claudeAgent)) ===
+    JSON.stringify(normalizeClaudeProviderStartOptions(right?.claudeAgent))
+  );
+}
+
 
 function isUnknownPendingApprovalRequestError(cause: Cause.Cause<ProviderServiceError>): boolean {
   const error = Cause.squash(cause);
@@ -302,12 +327,18 @@ const make = Effect.gen(function* () {
         currentProvider === "claudeAgent" &&
         requestedModelSelection !== undefined &&
         !Equal.equals(previousModelSelection, requestedModelSelection);
+      const previousProviderOptions = threadProviderOptions.get(threadId);
+      const shouldRestartForProviderOptionsChange =
+        currentProvider === "claudeAgent" &&
+        options?.providerOptions !== undefined &&
+        !sameClaudeProviderOptions(previousProviderOptions, options.providerOptions);
 
       if (
         !runtimeModeChanged &&
         !providerChanged &&
         !shouldRestartForModelChange &&
-        !shouldRestartForModelSelectionChange
+        !shouldRestartForModelSelectionChange &&
+        !shouldRestartForProviderOptionsChange
       ) {
         return existingSessionThreadId;
       }
@@ -328,6 +359,7 @@ const make = Effect.gen(function* () {
         modelChanged,
         shouldRestartForModelChange,
         shouldRestartForModelSelectionChange,
+        shouldRestartForProviderOptionsChange,
         hasResumeCursor: resumeCursor !== undefined,
       });
       const restartedSession = yield* startProviderSession(
@@ -669,6 +701,9 @@ const make = Effect.gen(function* () {
         runtimeMode: thread.session?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
         activeTurnId: null,
         lastError: thread.session?.lastError ?? null,
+        ...(thread.session?.providerRuntimeInfo !== undefined
+          ? { providerRuntimeInfo: thread.session.providerRuntimeInfo }
+          : {}),
         updatedAt: now,
       },
       createdAt: now,

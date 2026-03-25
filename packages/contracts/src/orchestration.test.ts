@@ -3,8 +3,10 @@ import { it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
 import {
+  DEFAULT_CLAUDE_SETTING_SOURCES,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
+  OrchestrationEvent,
   OrchestrationGetTurnDiffInput,
   OrchestrationLatestTurn,
   ProjectCreatedPayload,
@@ -15,6 +17,7 @@ import {
   ThreadMetaUpdatedPayload,
   ThreadTurnStartCommand,
   ThreadCreatedPayload,
+  ThreadSubThreadCreatedPayload,
   ThreadTurnDiff,
   ThreadTurnStartRequestedPayload,
 } from "./orchestration";
@@ -31,8 +34,12 @@ const decodeThreadTurnStartRequestedPayload = Schema.decodeUnknownEffect(
 const decodeOrchestrationLatestTurn = Schema.decodeUnknownEffect(OrchestrationLatestTurn);
 const decodeOrchestrationProposedPlan = Schema.decodeUnknownEffect(OrchestrationProposedPlan);
 const decodeOrchestrationSession = Schema.decodeUnknownEffect(OrchestrationSession);
+const decodeOrchestrationEvent = Schema.decodeUnknownEffect(OrchestrationEvent);
 const decodeThreadCreatedPayload = Schema.decodeUnknownEffect(ThreadCreatedPayload);
 const decodeThreadMetaUpdatedPayload = Schema.decodeUnknownEffect(ThreadMetaUpdatedPayload);
+const decodeThreadSubThreadCreatedPayload = Schema.decodeUnknownEffect(
+  ThreadSubThreadCreatedPayload,
+);
 
 it.effect("parses turn diff input when fromTurnCount <= toTurnCount", () =>
   Effect.gen(function* () {
@@ -227,6 +234,51 @@ it.effect("decodes thread.meta-updated payloads with explicit provider", () =>
   }),
 );
 
+it.effect("decodes legacy thread.sub-thread-created payload defaults", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeThreadSubThreadCreatedPayload({
+      threadId: "thread-parent",
+      subThreadId: "thread-child",
+      title: "Child thread",
+      model: "gpt-5.4",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    assert.strictEqual(parsed.runtimeMode, DEFAULT_RUNTIME_MODE);
+    assert.strictEqual(parsed.interactionMode, DEFAULT_PROVIDER_INTERACTION_MODE);
+    assert.strictEqual(parsed.branch, null);
+    assert.strictEqual(parsed.worktreePath, null);
+  }),
+);
+
+it.effect("decodes legacy thread.provider-skills-set events", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationEvent({
+      sequence: 12,
+      eventId: "evt-provider-skills",
+      aggregateKind: "thread",
+      aggregateId: "thread-1",
+      type: "thread.provider-skills-set",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: null,
+      causationEventId: null,
+      correlationId: null,
+      metadata: {},
+      payload: {
+        threadId: "thread-1",
+        skills: [{ name: "review" }],
+      },
+    });
+
+    assert.strictEqual(parsed.type, "thread.provider-skills-set");
+    if (parsed.type === "thread.provider-skills-set") {
+      assert.strictEqual(parsed.payload.threadId, "thread-1");
+      assert.deepStrictEqual(parsed.payload.skills, [{ name: "review" }]);
+    }
+  }),
+);
+
 it.effect("accepts provider-scoped model options in thread.turn.start", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeThreadTurnStartCommand({
@@ -348,6 +400,43 @@ it.effect("decodes orchestration session runtime mode defaults", () =>
       updatedAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.runtimeMode, DEFAULT_RUNTIME_MODE);
+  }),
+);
+
+it.effect("decodes provider runtime info for claude sessions", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationSession({
+      threadId: "thread-1",
+      status: "ready",
+      providerName: "claudeAgent",
+      runtimeMode: "approval-required",
+      activeTurnId: null,
+      lastError: null,
+      providerRuntimeInfo: {
+        claudeAgent: {
+          slashCommands: ["/plan", "/review"],
+          skills: ["project-audit"],
+          tools: ["Skill", "Bash"],
+          plugins: ["filesystem"],
+          claudeCodeVersion: "1.2.3",
+          cwd: "/tmp/workspace",
+          settingSources: [...DEFAULT_CLAUDE_SETTING_SOURCES],
+        },
+      },
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    assert.deepStrictEqual(parsed.providerRuntimeInfo, {
+      claudeAgent: {
+        slashCommands: ["/plan", "/review"],
+        skills: ["project-audit"],
+        tools: ["Skill", "Bash"],
+        plugins: ["filesystem"],
+        claudeCodeVersion: "1.2.3",
+        cwd: "/tmp/workspace",
+        settingSources: [...DEFAULT_CLAUDE_SETTING_SOURCES],
+      },
+    });
   }),
 );
 

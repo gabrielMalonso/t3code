@@ -2,13 +2,18 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDownIcon, PlusIcon, RotateCcwIcon, Undo2Icon, XIcon } from "lucide-react";
 import { type ReactNode, useCallback, useState } from "react";
-import { type ProviderKind, DEFAULT_GIT_TEXT_GENERATION_MODEL } from "@t3tools/contracts";
+import {
+  type ProviderKind,
+  DEFAULT_CLAUDE_SETTING_SOURCES,
+  DEFAULT_GIT_TEXT_GENERATION_MODEL,
+} from "@t3tools/contracts";
 import { getModelOptions, normalizeModelSlug } from "@t3tools/shared/model";
 import {
   getAppModelOptions,
   getCustomModelsForProvider,
   MAX_CUSTOM_MODEL_LENGTH,
   MODEL_PROVIDER_SETTINGS,
+  normalizeClaudeSettingSources,
   patchCustomModels,
   useAppSettings,
 } from "../appSettings";
@@ -188,12 +193,16 @@ function SettingResetButton({ label, onClick }: { label: string; onClick: () => 
 function SettingsRouteView() {
   const { theme, setTheme } = useTheme();
   const { settings, defaults, updateSettings, resetSettings } = useAppSettings();
+  const claudeSettingSources = normalizeClaudeSettingSources(settings.claudeSettingSources);
+  const defaultClaudeSettingSources = normalizeClaudeSettingSources(defaults.claudeSettingSources);
+  const claudeSettingSourcesDirty =
+    JSON.stringify(claudeSettingSources) !== JSON.stringify(defaultClaudeSettingSources);
   const serverConfigQuery = useQuery(serverConfigQueryOptions());
   const [isOpeningKeybindings, setIsOpeningKeybindings] = useState(false);
   const [openKeybindingsError, setOpenKeybindingsError] = useState<string | null>(null);
   const [openInstallProviders, setOpenInstallProviders] = useState<Record<ProviderKind, boolean>>({
     codex: Boolean(settings.codexBinaryPath || settings.codexHomePath),
-    claudeAgent: Boolean(settings.claudeBinaryPath),
+    claudeAgent: Boolean(settings.claudeBinaryPath || claudeSettingSourcesDirty),
   });
   const [selectedCustomModelProvider, setSelectedCustomModelProvider] =
     useState<ProviderKind>("codex");
@@ -247,6 +256,7 @@ function SettingsRouteView() {
     : savedCustomModelRows.slice(0, 5);
   const isInstallSettingsDirty =
     settings.claudeBinaryPath !== defaults.claudeBinaryPath ||
+    claudeSettingSourcesDirty ||
     settings.codexBinaryPath !== defaults.codexBinaryPath ||
     settings.codexHomePath !== defaults.codexHomePath;
   const changedSettingLabels = [
@@ -813,6 +823,7 @@ function SettingsRouteView() {
                       onClick={() => {
                         updateSettings({
                           claudeBinaryPath: defaults.claudeBinaryPath,
+                          claudeSettingSources: [...DEFAULT_CLAUDE_SETTING_SOURCES],
                           codexBinaryPath: defaults.codexBinaryPath,
                           codexHomePath: defaults.codexHomePath,
                         });
@@ -833,7 +844,8 @@ function SettingsRouteView() {
                         providerSettings.provider === "codex"
                           ? settings.codexBinaryPath !== defaults.codexBinaryPath ||
                             settings.codexHomePath !== defaults.codexHomePath
-                          : settings.claudeBinaryPath !== defaults.claudeBinaryPath;
+                          : settings.claudeBinaryPath !== defaults.claudeBinaryPath ||
+                            claudeSettingSourcesDirty;
                       const binaryPathValue =
                         providerSettings.binaryPathKey === "claudeBinaryPath"
                           ? claudeBinaryPath
@@ -930,6 +942,96 @@ function SettingsRouteView() {
                                         </span>
                                       ) : null}
                                     </label>
+                                  ) : null}
+
+                                  {providerSettings.provider === "claudeAgent" ? (
+                                    <div className="rounded-lg border border-border/70 bg-muted/20 p-3">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <div>
+                                          <p className="text-xs font-medium text-foreground">
+                                            Cloud Code setting sources
+                                          </p>
+                                          <p className="mt-1 text-xs text-muted-foreground">
+                                            Order is fixed as user, project, local. Loading user or
+                                            local settings can change Claude behavior between
+                                            machines.
+                                          </p>
+                                        </div>
+                                        {claudeSettingSourcesDirty ? (
+                                          <Button
+                                            size="xs"
+                                            variant="ghost"
+                                            onClick={() =>
+                                              updateSettings({
+                                                claudeSettingSources: [
+                                                  ...DEFAULT_CLAUDE_SETTING_SOURCES,
+                                                ],
+                                              })
+                                            }
+                                          >
+                                            Reset
+                                          </Button>
+                                        ) : null}
+                                      </div>
+                                      <div className="mt-3 space-y-2">
+                                        {(
+                                          [
+                                            {
+                                              value: "user",
+                                              label: "User",
+                                              description:
+                                                "~/.claude settings and skills for the current OS user.",
+                                            },
+                                            {
+                                              value: "project",
+                                              label: "Project",
+                                              description:
+                                                "Checked-in .claude settings and project skills in this workspace.",
+                                            },
+                                            {
+                                              value: "local",
+                                              label: "Local",
+                                              description:
+                                                "Machine-local project overrides such as .claude/settings.local.json.",
+                                            },
+                                          ] as const
+                                        ).map((source) => (
+                                          <div
+                                            key={source.value}
+                                            className="flex items-start justify-between gap-3 rounded-md border border-border/60 bg-background px-3 py-2"
+                                          >
+                                            <div className="min-w-0">
+                                              <p className="text-xs font-medium text-foreground">
+                                                {source.label}
+                                              </p>
+                                              <p className="mt-1 text-xs text-muted-foreground">
+                                                {source.description}
+                                              </p>
+                                            </div>
+                                            <Switch
+                                              checked={claudeSettingSources.includes(source.value)}
+                                              onCheckedChange={(checked) => {
+                                                const nextSources = checked
+                                                  ? normalizeClaudeSettingSources([
+                                                      ...claudeSettingSources,
+                                                      source.value,
+                                                    ])
+                                                  : claudeSettingSources.filter(
+                                                      (entry) => entry !== source.value,
+                                                    );
+                                                if (nextSources.length === 0) {
+                                                  return;
+                                                }
+                                                updateSettings({
+                                                  claudeSettingSources: nextSources,
+                                                });
+                                              }}
+                                              aria-label={`Enable Claude ${source.label.toLowerCase()} setting source`}
+                                            />
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
                                   ) : null}
                                 </div>
                               </div>

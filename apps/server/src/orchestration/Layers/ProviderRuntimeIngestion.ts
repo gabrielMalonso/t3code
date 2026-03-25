@@ -7,13 +7,14 @@ import {
   type OrchestrationProposedPlanId,
   CheckpointRef,
   isToolLifecycleItemType,
+  ProviderRuntimeInfo,
   ThreadId,
   type ThreadTokenUsageSnapshot,
   TurnId,
   type OrchestrationThreadActivity,
   type ProviderRuntimeEvent,
 } from "@t3tools/contracts";
-import { Cache, Cause, Duration, Effect, Layer, Option, Ref, Stream } from "effect";
+import { Cache, Cause, Duration, Effect, Layer, Option, Ref, Schema, Stream } from "effect";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
@@ -117,6 +118,28 @@ function runtimePayloadRecord(event: ProviderRuntimeEvent): Record<string, unkno
     return undefined;
   }
   return payload as Record<string, unknown>;
+}
+
+const decodeProviderRuntimeInfo = Schema.decodeUnknownSync(ProviderRuntimeInfo);
+
+function providerRuntimeInfoFromConfiguredEvent(
+  event: Extract<ProviderRuntimeEvent, { type: "session.configured" }>,
+): ProviderRuntimeInfo | undefined {
+  const config = runtimePayloadRecord(event)?.config;
+  if (!config || typeof config !== "object") {
+    return undefined;
+  }
+
+  const providerRuntimeInfo = (config as Record<string, unknown>).providerRuntimeInfo;
+  if (!providerRuntimeInfo || typeof providerRuntimeInfo !== "object") {
+    return undefined;
+  }
+
+  try {
+    return decodeProviderRuntimeInfo(providerRuntimeInfo);
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeRuntimeTurnState(
@@ -953,6 +976,28 @@ const make = Effect.gen(function* () {
           ? yield* getSourceProposedPlanReferenceForAcceptedTurnStart(thread.id, eventTurnId)
           : null;
 
+      if (event.type === "session.configured") {
+        const providerRuntimeInfo = providerRuntimeInfoFromConfiguredEvent(event);
+        if (providerRuntimeInfo) {
+          yield* orchestrationEngine.dispatch({
+            type: "thread.session.set",
+            commandId: providerCommandId(event, "thread-session-configured"),
+            threadId: thread.id,
+            session: {
+              threadId: thread.id,
+              status: thread.session?.status ?? "ready",
+              providerName: event.provider,
+              runtimeMode: thread.session?.runtimeMode ?? "full-access",
+              activeTurnId: thread.session?.activeTurnId ?? null,
+              lastError: thread.session?.lastError ?? null,
+              providerRuntimeInfo,
+              updatedAt: now,
+            },
+            createdAt: now,
+          });
+        }
+      }
+
       if (
         event.type === "session.started" ||
         event.type === "session.state.changed" ||
@@ -1025,6 +1070,9 @@ const make = Effect.gen(function* () {
               runtimeMode: thread.session?.runtimeMode ?? "full-access",
               activeTurnId: nextActiveTurnId,
               lastError,
+              ...(thread.session?.providerRuntimeInfo !== undefined
+                ? { providerRuntimeInfo: thread.session.providerRuntimeInfo }
+                : {}),
               updatedAt: now,
             },
             createdAt: now,
@@ -1194,6 +1242,9 @@ const make = Effect.gen(function* () {
               runtimeMode: thread.session?.runtimeMode ?? "full-access",
               activeTurnId: eventTurnId ?? null,
               lastError: runtimeErrorMessage,
+              ...(thread.session?.providerRuntimeInfo !== undefined
+                ? { providerRuntimeInfo: thread.session.providerRuntimeInfo }
+                : {}),
               updatedAt: now,
             },
             createdAt: now,

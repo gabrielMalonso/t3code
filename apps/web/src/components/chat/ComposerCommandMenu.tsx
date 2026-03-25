@@ -19,7 +19,11 @@ export type ComposerCommandItem =
   | {
       id: string;
       type: "slash-command";
-      command: ComposerSlashCommand;
+      source: "app" | "provider";
+      command: string;
+      localCommand?: ComposerSlashCommand;
+      provider?: ProviderKind;
+      groupLabel: string;
       label: string;
       description: string;
     }
@@ -52,15 +56,29 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
     >
       <div className="relative overflow-hidden rounded-xl border border-border/80 bg-popover/96 shadow-lg/8 backdrop-blur-xs">
         <CommandList className="max-h-64">
-          {props.items.map((item) => (
-            <ComposerCommandMenuItem
-              key={item.id}
-              item={item}
-              resolvedTheme={props.resolvedTheme}
-              isActive={props.activeItemId === item.id}
-              onSelect={props.onSelect}
-            />
-          ))}
+          {props.items.map((item, index) => {
+            const previous = index > 0 ? props.items[index - 1] : null;
+            const previousSlashCommand = previous?.type === "slash-command" ? previous : null;
+            const showGroupLabel =
+              item.type === "slash-command" &&
+              (!previousSlashCommand || previousSlashCommand.groupLabel !== item.groupLabel);
+
+            return (
+              <div key={item.id}>
+                {showGroupLabel ? (
+                  <div className="px-3 pt-2 pb-1 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
+                    {item.groupLabel}
+                  </div>
+                ) : null}
+                <ComposerCommandMenuItem
+                  item={item}
+                  resolvedTheme={props.resolvedTheme}
+                  isActive={props.activeItemId === item.id}
+                  onSelect={props.onSelect}
+                />
+              </div>
+            );
+          })}
         </CommandList>
         {props.items.length === 0 && (
           <p className="px-3 py-2 text-muted-foreground/70 text-xs">
@@ -104,7 +122,13 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
         />
       ) : null}
       {props.item.type === "slash-command" ? (
-        <BotIcon className="size-4 text-muted-foreground/80" />
+        props.item.source === "provider" ? (
+          <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+            Claude
+          </Badge>
+        ) : (
+          <BotIcon className="size-4 text-muted-foreground/80" />
+        )
       ) : null}
       {props.item.type === "model" ? (
         <Badge variant="outline" className="px-1.5 py-0 text-[10px]">

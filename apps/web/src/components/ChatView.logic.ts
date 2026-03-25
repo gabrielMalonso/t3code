@@ -1,8 +1,9 @@
-import { ProjectId, type ModelSelection, type ThreadId } from "@t3tools/contracts";
+import { ProjectId, type ModelSelection, type ProviderKind, type ThreadId } from "@t3tools/contracts";
 import { type ChatMessage, type Thread } from "../types";
 import { randomUUID } from "~/lib/utils";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import { Schema } from "effect";
+import { normalizeSlashCommandToken } from "../composer-logic";
 import {
   filterTerminalContextsWithText,
   stripInlineTerminalContextPlaceholders,
@@ -79,6 +80,22 @@ export type SendPhase = "idle" | "preparing-worktree" | "sending-turn";
 export interface PullRequestDialogState {
   initialReference: string | null;
   key: number;
+}
+
+export function resolveProviderSlashCommandBypassForRetry(input: {
+  provider: ProviderKind;
+  selectedSlashCommand: string | null | undefined;
+  trimmedPrompt: string;
+}): string | null {
+  if (input.provider !== "claudeAgent") {
+    return null;
+  }
+
+  const selectedSlashCommand = normalizeSlashCommandToken(input.selectedSlashCommand);
+  const promptSlashCommand = normalizeSlashCommandToken(input.trimmedPrompt);
+  return selectedSlashCommand !== null && promptSlashCommand === selectedSlashCommand
+    ? selectedSlashCommand
+    : null;
 }
 
 export function readFileAsDataUrl(file: File): Promise<string> {

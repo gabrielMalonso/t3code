@@ -1,10 +1,12 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
+import { DEFAULT_CLAUDE_SETTING_SOURCES } from "@t3tools/contracts";
 
 import {
   AppSettingsSchema,
   DEFAULT_SIDEBAR_PROJECT_SORT_ORDER,
   DEFAULT_SIDEBAR_THREAD_SORT_ORDER,
+  normalizeClaudeSettingSources,
   DEFAULT_TIMESTAMP_FORMAT,
   getAppModelOptions,
   getCustomModelOptionsByProvider,
@@ -136,12 +138,14 @@ describe("getProviderStartOptions", () => {
     expect(
       getProviderStartOptions({
         claudeBinaryPath: "/usr/local/bin/claude",
+        claudeSettingSources: [...DEFAULT_CLAUDE_SETTING_SOURCES],
         codexBinaryPath: "",
         codexHomePath: "/Users/you/.codex",
       }),
     ).toEqual({
       claudeAgent: {
         binaryPath: "/usr/local/bin/claude",
+        settingSources: ["user", "project", "local"],
       },
       codex: {
         homePath: "/Users/you/.codex",
@@ -149,14 +153,33 @@ describe("getProviderStartOptions", () => {
     });
   });
 
-  it("returns undefined when no provider overrides are configured", () => {
+  it("always includes claude setting sources so reverting to defaults can restart sessions", () => {
     expect(
       getProviderStartOptions({
         claudeBinaryPath: "",
+        claudeSettingSources: [...DEFAULT_CLAUDE_SETTING_SOURCES],
         codexBinaryPath: "",
         codexHomePath: "",
       }),
-    ).toBeUndefined();
+    ).toEqual({
+      claudeAgent: {
+        settingSources: ["user", "project", "local"],
+      },
+    });
+  });
+});
+
+describe("normalizeClaudeSettingSources", () => {
+  it("deduplicates and restores the canonical source order", () => {
+    expect(normalizeClaudeSettingSources(["local", "project", "local", "user"])).toEqual([
+      "user",
+      "project",
+      "local",
+    ]);
+  });
+
+  it("falls back to the default sources when the selection is empty", () => {
+    expect(normalizeClaudeSettingSources([])).toEqual(["user", "project", "local"]);
   });
 });
 
@@ -252,6 +275,7 @@ describe("AppSettingsSchema", () => {
       ),
     ).toMatchObject({
       claudeBinaryPath: "",
+      claudeSettingSources: ["user", "project", "local"],
       codexBinaryPath: "/usr/local/bin/codex",
       codexHomePath: "",
       defaultThreadEnvMode: "local",

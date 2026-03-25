@@ -97,6 +97,67 @@ describe("orchestration projector", () => {
     ]);
   });
 
+  it("applies legacy thread.sub-thread-created events using the parent project", async () => {
+    const now = new Date().toISOString();
+    const model = await Effect.runPromise(
+      projectEvent(
+        createEmptyReadModel(now),
+        makeEvent({
+          sequence: 1,
+          type: "thread.created",
+          aggregateKind: "thread",
+          aggregateId: "thread-parent",
+          occurredAt: now,
+          commandId: "cmd-thread-parent",
+          payload: {
+            threadId: "thread-parent",
+            projectId: "project-1",
+            title: "Parent",
+            modelSelection: { provider: "codex", model: "gpt-5-codex" },
+            runtimeMode: "full-access",
+            branch: null,
+            worktreePath: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ),
+    );
+
+    const next = await Effect.runPromise(
+      projectEvent(
+        model,
+        makeEvent({
+          sequence: 2,
+          type: "thread.sub-thread-created",
+          aggregateKind: "thread",
+          aggregateId: "thread-parent",
+          occurredAt: now,
+          commandId: "cmd-thread-child",
+          payload: {
+            threadId: "thread-parent",
+            subThreadId: "thread-child",
+            title: "Child",
+            model: "gpt-5-codex",
+            runtimeMode: "approval-required",
+            interactionMode: "default",
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ),
+    );
+
+    const child = next.threads.find((thread) => thread.id === "thread-child");
+    expect(child).toMatchObject({
+      id: "thread-child",
+      projectId: "project-1",
+      title: "Child",
+      runtimeMode: "approval-required",
+      interactionMode: "default",
+    });
+  });
+
   it("fails when event payload cannot be decoded by runtime schema", async () => {
     const now = new Date().toISOString();
     const model = createEmptyReadModel(now);

@@ -4,6 +4,7 @@ import type {
   OrchestrationProposedPlanId,
   OrchestrationSessionStatus,
   OrchestrationThreadActivity,
+  ProviderRuntimeInfo,
   ProjectScript as ContractProjectScript,
   ThreadId,
   ProjectId,
@@ -118,4 +119,5 @@ export interface ThreadSession {
   updatedAt: string;
   lastError?: string;
   orchestrationStatus: OrchestrationSessionStatus;
+  providerRuntimeInfo?: ProviderRuntimeInfo;
 }
