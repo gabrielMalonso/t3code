@@ -233,6 +233,32 @@ describe("store read model sync", () => {
     expect(next.threads[0]?.updatedAt).toBe("2026-02-27T00:05:00.000Z");
   });
 
+  it("maps thread loop state from the read model", () => {
+    const initialState = makeState(makeThread());
+    const readModel = makeReadModel(
+      makeReadModelThread({
+        loop: {
+          enabled: true,
+          prompt: "Check the deployment",
+          intervalMinutes: 30,
+          nextRunAt: "2026-02-27T00:30:00.000Z",
+          lastRunAt: null,
+          lastError: null,
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+        },
+      }),
+    );
+
+    const next = syncServerReadModel(initialState, readModel);
+
+    expect(next.threads[0]?.loop).toMatchObject({
+      enabled: true,
+      intervalMinutes: 30,
+      prompt: "Check the deployment",
+    });
+  });
+
   it("maps archivedAt from the read model", () => {
     const initialState = makeState(makeThread());
     const archivedAt = "2026-02-28T00:00:00.000Z";
@@ -246,6 +272,40 @@ describe("store read model sync", () => {
     );
 
     expect(next.threads[0]?.archivedAt).toBe(archivedAt);
+  });
+
+  it("applies thread.loop-upserted and thread.loop-deleted domain events", () => {
+    const initialState = makeState(makeThread());
+
+    const withLoop = applyOrchestrationEvent(
+      initialState,
+      makeEvent("thread.loop-upserted", {
+        threadId: ThreadId.makeUnsafe("thread-1"),
+        loop: {
+          enabled: true,
+          prompt: "Check the deployment",
+          intervalMinutes: 15,
+          nextRunAt: "2026-02-27T00:15:00.000Z",
+          lastRunAt: null,
+          lastError: null,
+          createdAt: "2026-02-27T00:00:00.000Z",
+          updatedAt: "2026-02-27T00:00:00.000Z",
+        },
+      }),
+    );
+    expect(withLoop.threads[0]?.loop).toMatchObject({
+      enabled: true,
+      intervalMinutes: 15,
+    });
+
+    const deleted = applyOrchestrationEvent(
+      withLoop,
+      makeEvent("thread.loop-deleted", {
+        threadId: ThreadId.makeUnsafe("thread-1"),
+        deletedAt: "2026-02-27T00:01:00.000Z",
+      }),
+    );
+    expect(deleted.threads[0]?.loop ?? null).toBeNull();
   });
 
   it("replaces projects using snapshot order during recovery", () => {

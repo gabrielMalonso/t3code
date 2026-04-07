@@ -174,6 +174,31 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       `;
 
       yield* sql`
+        INSERT INTO projection_thread_loops (
+          thread_id,
+          enabled,
+          prompt,
+          interval_minutes,
+          next_run_at,
+          last_run_at,
+          last_error,
+          created_at,
+          updated_at
+        )
+        VALUES (
+          'thread-1',
+          1,
+          'Check the inbox',
+          5,
+          '2026-02-24T00:10:00.000Z',
+          NULL,
+          NULL,
+          '2026-02-24T00:00:07.500Z',
+          '2026-02-24T00:00:07.500Z'
+        )
+      `;
+
+      yield* sql`
         INSERT INTO projection_turns (
           thread_id,
           turn_id,
@@ -333,6 +358,16 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             activeTurnId: asTurnId("turn-1"),
             lastError: null,
             updatedAt: "2026-02-24T00:00:07.000Z",
+          },
+          loop: {
+            enabled: true,
+            prompt: "Check the inbox",
+            intervalMinutes: 5,
+            nextRunAt: "2026-02-24T00:10:00.000Z",
+            lastRunAt: null,
+            lastError: null,
+            createdAt: "2026-02-24T00:00:07.500Z",
+            updatedAt: "2026-02-24T00:00:07.500Z",
           },
         },
       ]);

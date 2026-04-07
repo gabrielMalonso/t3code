@@ -404,6 +404,62 @@ it.effect("accepts a source proposed plan reference in thread.turn.start", () =>
   }),
 );
 
+it.effect("decodes thread.loop.upsert commands", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationCommand({
+      type: "thread.loop.upsert",
+      commandId: "cmd-loop-upsert",
+      threadId: "thread-1",
+      enabled: true,
+      prompt: "check the deploy",
+      intervalMinutes: 30,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    assert.strictEqual(parsed.type, "thread.loop.upsert");
+    if (parsed.type !== "thread.loop.upsert") {
+      throw new Error("Expected thread.loop.upsert command.");
+    }
+    assert.strictEqual(parsed.intervalMinutes, 30);
+    assert.strictEqual(parsed.prompt, "check the deploy");
+  }),
+);
+
+it.effect("decodes thread.loop-upserted events", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "event-loop-upserted",
+      aggregateKind: "thread",
+      aggregateId: "thread-1",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-loop-upsert",
+      causationEventId: null,
+      correlationId: "cmd-loop-upsert",
+      metadata: {},
+      type: "thread.loop-upserted",
+      payload: {
+        threadId: "thread-1",
+        loop: {
+          enabled: true,
+          prompt: "check the deploy",
+          intervalMinutes: 30,
+          nextRunAt: "2026-01-01T00:30:00.000Z",
+          lastRunAt: null,
+          lastError: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+    });
+    assert.strictEqual(parsed.type, "thread.loop-upserted");
+    if (parsed.type !== "thread.loop-upserted") {
+      throw new Error("Expected thread.loop-upserted event.");
+    }
+    assert.strictEqual(parsed.payload.loop.intervalMinutes, 30);
+    assert.strictEqual(parsed.payload.loop.nextRunAt, "2026-01-01T00:30:00.000Z");
+  }),
+);
+
 it.effect(
   "decodes thread.turn-start-requested defaults for provider, runtime mode, and interaction mode",
   () =>

@@ -18,6 +18,8 @@ import {
   ThreadCreatedPayload,
   ThreadDeletedPayload,
   ThreadInteractionModeSetPayload,
+  ThreadLoopDeletedPayload,
+  ThreadLoopUpsertedPayload,
   ThreadMetaUpdatedPayload,
   ThreadProposedPlanUpsertedPayload,
   ThreadRuntimeModeSetPayload,
@@ -268,6 +270,7 @@ export function projectEvent(
             activities: [],
             checkpoints: [],
             session: null,
+            loop: null,
           },
           event.type,
           "thread",
@@ -353,6 +356,28 @@ export function projectEvent(
           threads: updateThread(nextBase.threads, payload.threadId, {
             interactionMode: payload.interactionMode,
             updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
+    case "thread.loop-upserted":
+      return decodeForEvent(ThreadLoopUpsertedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            loop: payload.loop,
+            updatedAt: event.occurredAt,
+          }),
+        })),
+      );
+
+    case "thread.loop-deleted":
+      return decodeForEvent(ThreadLoopDeletedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            loop: null,
+            updatedAt: event.occurredAt,
           }),
         })),
       );

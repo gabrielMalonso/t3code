@@ -15,6 +15,7 @@ import {
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
   activePlan: boolean;
   interactionMode: ProviderInteractionMode;
+  loopMenuContent?: ReactNode;
   planSidebarOpen: boolean;
   runtimeMode: RuntimeMode;
   traitsMenuContent?: ReactNode;
@@ -66,6 +67,12 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
           <MenuRadioItem value="approval-required">Supervised</MenuRadioItem>
           <MenuRadioItem value="full-access">Full access</MenuRadioItem>
         </MenuRadioGroup>
+        {props.loopMenuContent ? (
+          <>
+            <MenuDivider />
+            {props.loopMenuContent}
+          </>
+        ) : null}
         {props.activePlan ? (
           <>
             <MenuDivider />
