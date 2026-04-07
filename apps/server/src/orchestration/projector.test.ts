@@ -289,6 +289,7 @@ describe("orchestration projector", () => {
           commandId: "cmd-thread-loop-delete",
           payload: {
             threadId: "thread-1",
+            deletedAt,
           },
         }),
       ),

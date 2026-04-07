@@ -25,6 +25,8 @@ import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import type { ThreadLoop } from "~/types";
 
+const THREAD_LOOP_INTERVAL_PRESETS = [1, 5, 15, 30, 60, 240] as const;
+
 function formatThreadLoopInterval(intervalMinutes: number): string {
   if (intervalMinutes % 60 === 0) {
     const hours = intervalMinutes / 60;
@@ -198,6 +200,23 @@ export default function ThreadLoopControl(props: {
               value={intervalMinutes}
               onChange={(event) => setIntervalMinutes(event.target.value)}
             />
+            <div className="flex flex-wrap gap-2">
+              {THREAD_LOOP_INTERVAL_PRESETS.map((presetMinutes) => {
+                const selected = intervalMinutes === String(presetMinutes);
+                return (
+                  <Button
+                    key={presetMinutes}
+                    type="button"
+                    size="sm"
+                    variant={selected ? "secondary" : "outline"}
+                    className="h-8"
+                    onClick={() => setIntervalMinutes(String(presetMinutes))}
+                  >
+                    {formatThreadLoopInterval(presetMinutes)}
+                  </Button>
+                );
+              })}
+            </div>
             <p className="text-muted-foreground text-xs">Interval in minutes.</p>
           </div>
 
@@ -224,7 +243,7 @@ export default function ThreadLoopControl(props: {
               </div>
               {props.loop.lastError ? (
                 <div className="space-y-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
-                  <div className="font-medium text-amber-700 text-xs">Last error</div>
+                  <div className="font-medium text-amber-700 text-xs">Last automatic run error</div>
                   <div className="text-xs text-amber-800">{props.loop.lastError}</div>
                 </div>
               ) : null}
