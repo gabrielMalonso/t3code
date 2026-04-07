@@ -260,34 +260,50 @@ export default function ThreadLoopControl(props: {
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      {/* ---- Trigger area: chip + optional quick pause/play ---- */}
-      <div className="flex items-center gap-0.5">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <SheetTrigger
-                render={
-                  <button
-                    type="button"
-                    className={[
-                      "inline-flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap border font-medium outline-none transition-colors duration-150",
-                      "h-7 rounded-md px-2 text-xs sm:h-6 sm:text-[0.6875rem]",
-                      "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-                      props.loop ? "rounded-r-none border-r-0" : "",
-                      statusChipClasses[status],
-                    ].join(" ")}
-                  />
-                }
-              />
-            }
-          >
-            <LoopChipLabel loop={props.loop} status={status} compact={props.compact} />
-          </TooltipTrigger>
-          <TooltipPopup className="max-w-56 whitespace-pre-line">{tooltipText}</TooltipPopup>
-        </Tooltip>
+      {/* ---- Trigger area ---- */}
+      {status === "unconfigured" ? (
+        /* Idle: matches the other ghost buttons in the composer bar */
+        <SheetTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="sm"
+              className="shrink-0 whitespace-nowrap px-2 text-muted-foreground/70 hover:text-foreground/80 sm:px-3"
+              type="button"
+              title={tooltipText}
+            />
+          }
+        >
+          <RepeatIcon className="size-4" />
+          <span className={props.compact ? "sr-only" : "sr-only sm:not-sr-only"}>Loop</span>
+        </SheetTrigger>
+      ) : (
+        /* Active/paused/error: chip style with quick pause/resume */
+        <div className="flex items-center gap-0.5">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <SheetTrigger
+                  render={
+                    <button
+                      type="button"
+                      className={[
+                        "inline-flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap border font-medium outline-none transition-colors duration-150",
+                        "h-8 rounded-lg px-2 text-xs sm:h-7 sm:text-[0.6875rem]",
+                        "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+                        "rounded-r-none border-r-0",
+                        statusChipClasses[status],
+                      ].join(" ")}
+                    />
+                  }
+                />
+              }
+            >
+              <LoopChipLabel loop={props.loop} status={status} compact={props.compact} />
+            </TooltipTrigger>
+            <TooltipPopup className="max-w-56 whitespace-pre-line">{tooltipText}</TooltipPopup>
+          </Tooltip>
 
-        {/* Quick pause/resume toggle — only when loop exists */}
-        {props.loop ? (
           <Tooltip>
             <TooltipTrigger
               render={
@@ -297,7 +313,7 @@ export default function ThreadLoopControl(props: {
                   onClick={(event) => void handleQuickTogglePause(event)}
                   className={[
                     "inline-flex shrink-0 cursor-pointer items-center justify-center border border-l-0 outline-none transition-colors duration-150",
-                    "h-7 w-7 rounded-md rounded-l-none sm:h-6 sm:w-6",
+                    "h-8 w-8 rounded-lg rounded-l-none sm:h-7 sm:w-7",
                     "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
                     "disabled:pointer-events-none disabled:opacity-50",
                     statusChipClasses[status],
@@ -305,16 +321,16 @@ export default function ThreadLoopControl(props: {
                 />
               }
             >
-              {props.loop.enabled ? (
+              {props.loop?.enabled ? (
                 <PauseIcon className="size-3 fill-current" />
               ) : (
                 <PlayIcon className="size-3 fill-current" />
               )}
             </TooltipTrigger>
-            <TooltipPopup>{props.loop.enabled ? "Pause loop" : "Resume loop"}</TooltipPopup>
+            <TooltipPopup>{props.loop?.enabled ? "Pause loop" : "Resume loop"}</TooltipPopup>
           </Tooltip>
-        ) : null}
-      </div>
+        </div>
+      )}
 
       {/* ---- Sheet panel ---- */}
       <SheetContent side="right">
