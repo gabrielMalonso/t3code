@@ -257,7 +257,12 @@ describe("ThreadLoopScheduler", () => {
     const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
     assert.isTrue(commands.some((command) => command.type === "thread.turn.start"));
     assert.isTrue(
-      commands.some((command) => command.type === "thread.loop.sync" && "patch" in command),
+      commands.some(
+        (command) =>
+          command.type === "thread.loop.sync" &&
+          command.patch.nextRunAt !== undefined &&
+          typeof command.patch.lastRunAt === "string",
+      ),
     );
   });
 
@@ -278,6 +283,14 @@ describe("ThreadLoopScheduler", () => {
 
     const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
     assert.isFalse(commands.some((command) => command.type === "thread.turn.start"));
+    assert.isTrue(
+      commands.some(
+        (command) =>
+          command.type === "thread.loop.sync" &&
+          command.patch.nextRunAt !== undefined &&
+          command.patch.lastRunAt === undefined,
+      ),
+    );
     assert.isTrue(
       commands.some(
         (command) =>

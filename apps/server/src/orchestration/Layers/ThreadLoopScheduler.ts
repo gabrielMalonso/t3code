@@ -125,24 +125,54 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         continue;
       }
 
-      yield* syncLoopPatch({
-        threadId: loop.threadId,
-        createdAt: nowIso,
-        patch: {
-          nextRunAt,
-        },
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning("thread loop scheduler failed to sync next run", {
-            threadId: loop.threadId,
-            cause: Cause.pretty(cause),
-          }),
-        ),
-      );
-
       const readModel = yield* orchestrationEngine.getReadModel();
       const thread = readModel.threads.find((entry) => entry.id === loop.threadId);
-      if (!thread?.loop?.enabled) {
+      if (!thread) {
+        yield* projectionThreadLoopRepository
+          .deleteByThreadId({
+            threadId: loop.threadId,
+          })
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("thread loop scheduler failed to delete orphaned loop row", {
+                threadId: loop.threadId,
+                cause: Cause.pretty(cause),
+              }),
+            ),
+          );
+        continue;
+      }
+      if (!thread.loop) {
+        yield* projectionThreadLoopRepository
+          .deleteByThreadId({
+            threadId: loop.threadId,
+          })
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("thread loop scheduler failed to delete stale loop row", {
+                threadId: loop.threadId,
+                cause: Cause.pretty(cause),
+              }),
+            ),
+          );
+        continue;
+      }
+      if (!thread.loop.enabled) {
+        yield* syncLoopPatch({
+          threadId: loop.threadId,
+          createdAt: nowIso,
+          patch: {
+            enabled: false,
+            nextRunAt: null,
+          },
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("thread loop scheduler failed to sync disabled loop", {
+              threadId: loop.threadId,
+              cause: Cause.pretty(cause),
+            }),
+          ),
+        );
         continue;
       }
       if (thread.archivedAt !== null) {
@@ -164,6 +194,20 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         continue;
       }
       if (isThreadLoopBusy(thread)) {
+        yield* syncLoopPatch({
+          threadId: loop.threadId,
+          createdAt: nowIso,
+          patch: {
+            nextRunAt,
+          },
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("thread loop scheduler failed to sync next run", {
+              threadId: loop.threadId,
+              cause: Cause.pretty(cause),
+            }),
+          ),
+        );
         yield* appendLoopActivity({
           threadId: loop.threadId,
           kind: "loop.tick.skipped",
@@ -177,6 +221,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         threadId: loop.threadId,
         createdAt: nowIso,
         patch: {
+          nextRunAt,
           lastRunAt: nowIso,
           lastError: null,
         },
