@@ -369,7 +369,7 @@ export default function ThreadLoopControl(props: {
             </Label>
 
             {/* [-] input [+] stepper row */}
-            <div className="flex items-center justify-center gap-2">
+            <div className="flex items-center gap-2">
               <Button
                 type="button"
                 variant="outline"
@@ -412,7 +412,7 @@ export default function ThreadLoopControl(props: {
             </div>
 
             {/* Preset chips row */}
-            <div className="flex flex-wrap justify-center gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
               {THREAD_LOOP_INTERVAL_PRESETS.map((presetMinutes) => {
                 const selected = intervalMinutes === String(presetMinutes);
                 return (
