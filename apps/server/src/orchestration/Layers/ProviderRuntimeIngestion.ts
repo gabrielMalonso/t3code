@@ -1149,13 +1149,14 @@ const make = Effect.fn("make")(function* () {
     }
 
     const shouldClearTurnState =
-      event.type === "turn.completed" ||
-      event.type === "turn.aborted" ||
-      event.type === "session.exited" ||
-      (event.type === "session.state.changed" &&
-        shouldClearTurnStateForRuntimeSessionStatus(
-          orchestrationSessionStatusFromRuntimeState(event.payload.state),
-        ));
+      shouldApplyThreadLifecycle &&
+      (event.type === "turn.completed" ||
+        event.type === "turn.aborted" ||
+        event.type === "session.exited" ||
+        (event.type === "session.state.changed" &&
+          shouldClearTurnStateForRuntimeSessionStatus(
+            orchestrationSessionStatusFromRuntimeState(event.payload.state),
+          )));
 
     if (shouldClearTurnState) {
       yield* clearTurnStateForSession(thread.id);

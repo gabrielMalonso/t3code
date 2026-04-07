@@ -449,6 +449,7 @@ describe("ThreadLoopScheduler", () => {
       await seedRuntime.runPromise(sql`DELETE FROM projection_threads`);
       await seedRuntime.runPromise(sql`DELETE FROM projection_thread_sessions`);
       await seedRuntime.runPromise(sql`DELETE FROM projection_thread_loops`);
+      await seedRuntime.runPromise(sql`DELETE FROM projection_turns`);
 
       await seedRuntime.runPromise(sql`
         INSERT INTO projection_projects (
@@ -516,12 +517,46 @@ describe("ThreadLoopScheduler", () => {
         )
         VALUES (
           'thread-restart',
-          'ready',
+          'running',
           'codex',
           'full-access',
           'turn-zombie-restart',
           NULL,
           '2026-04-07T11:00:04.000Z'
+        )
+      `);
+      await seedRuntime.runPromise(sql`
+        INSERT INTO projection_turns (
+          thread_id,
+          turn_id,
+          pending_message_id,
+          source_proposed_plan_thread_id,
+          source_proposed_plan_id,
+          assistant_message_id,
+          state,
+          requested_at,
+          started_at,
+          completed_at,
+          checkpoint_turn_count,
+          checkpoint_ref,
+          checkpoint_status,
+          checkpoint_files_json
+        )
+        VALUES (
+          'thread-restart',
+          'turn-zombie-restart',
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          'running',
+          '2026-04-07T11:00:04.000Z',
+          '2026-04-07T11:00:04.000Z',
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          '[]'
         )
       `);
       await seedRuntime.runPromise(sql`
@@ -563,7 +598,10 @@ describe("ThreadLoopScheduler", () => {
       const bootThread = bootReadModel.threads.find(
         (thread) => thread.id === asThreadId("thread-restart"),
       );
+      assert.equal(bootThread?.session?.status, "interrupted");
       assert.equal(bootThread?.session?.activeTurnId, null);
+      assert.equal(bootThread?.latestTurn?.state, "interrupted");
+      assert.equal(bootThread?.latestTurn?.completedAt, "2026-04-07T11:00:04.000Z");
 
       await restartRuntime.runPromise(scheduler.start().pipe(Scope.provide(scope)));
 
