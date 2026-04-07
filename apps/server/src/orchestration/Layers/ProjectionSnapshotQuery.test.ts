@@ -352,10 +352,10 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           ],
           session: {
             threadId: ThreadId.makeUnsafe("thread-1"),
-            status: "running",
+            status: "interrupted",
             providerName: "codex",
             runtimeMode: "approval-required",
-            activeTurnId: asTurnId("turn-1"),
+            activeTurnId: null,
             lastError: null,
             updatedAt: "2026-02-24T00:00:07.000Z",
           },
@@ -559,24 +559,75 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           )
       `;
 
-      const snapshot = yield* snapshotQuery.getSnapshot();
-      const sessionByThreadId = new Map(
-        snapshot.threads.map((thread) => [thread.id, thread.session] as const),
-      );
+      yield* sql`
+        INSERT INTO projection_turns (
+          thread_id,
+          turn_id,
+          pending_message_id,
+          source_proposed_plan_thread_id,
+          source_proposed_plan_id,
+          assistant_message_id,
+          state,
+          requested_at,
+          started_at,
+          completed_at,
+          checkpoint_turn_count,
+          checkpoint_ref,
+          checkpoint_status,
+          checkpoint_files_json
+        )
+        VALUES (
+          'thread-running',
+          'turn-live',
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          'running',
+          '2026-03-01T00:01:04.000Z',
+          '2026-03-01T00:01:04.000Z',
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          '[]'
+        )
+      `;
 
-      assert.equal(sessionByThreadId.get(ThreadId.makeUnsafe("thread-ready"))?.activeTurnId, null);
+      const snapshot = yield* snapshotQuery.getSnapshot();
+      const threadById = new Map(snapshot.threads.map((thread) => [thread.id, thread] as const));
+
       assert.equal(
-        sessionByThreadId.get(ThreadId.makeUnsafe("thread-stopped"))?.activeTurnId,
+        threadById.get(ThreadId.makeUnsafe("thread-ready"))?.session?.activeTurnId,
         null,
       );
       assert.equal(
-        sessionByThreadId.get(ThreadId.makeUnsafe("thread-interrupted"))?.activeTurnId,
+        threadById.get(ThreadId.makeUnsafe("thread-stopped"))?.session?.activeTurnId,
         null,
       );
-      assert.equal(sessionByThreadId.get(ThreadId.makeUnsafe("thread-error"))?.activeTurnId, null);
       assert.equal(
-        sessionByThreadId.get(ThreadId.makeUnsafe("thread-running"))?.activeTurnId,
-        asTurnId("turn-live"),
+        threadById.get(ThreadId.makeUnsafe("thread-interrupted"))?.session?.activeTurnId,
+        null,
+      );
+      assert.equal(
+        threadById.get(ThreadId.makeUnsafe("thread-error"))?.session?.activeTurnId,
+        null,
+      );
+      assert.equal(
+        threadById.get(ThreadId.makeUnsafe("thread-running"))?.session?.status,
+        "interrupted",
+      );
+      assert.equal(
+        threadById.get(ThreadId.makeUnsafe("thread-running"))?.session?.activeTurnId,
+        null,
+      );
+      assert.equal(
+        threadById.get(ThreadId.makeUnsafe("thread-running"))?.latestTurn?.state,
+        "interrupted",
+      );
+      assert.equal(
+        threadById.get(ThreadId.makeUnsafe("thread-running"))?.latestTurn?.completedAt,
+        "2026-03-01T00:01:04.000Z",
       );
     }),
   );

@@ -47,7 +47,7 @@ import {
   type ProjectionThreadCheckpointContext,
   type ProjectionSnapshotQueryShape,
 } from "../Services/ProjectionSnapshotQuery.ts";
-import { sanitizeSessionActiveTurn } from "../sessionState.ts";
+import { sanitizeBootLatestTurnState, sanitizeBootSessionState } from "../sessionState.ts";
 
 const decodeReadModel = Schema.decodeUnknownEffect(OrchestrationReadModel);
 const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
@@ -172,6 +172,7 @@ function toPersistenceSqlOrDecodeError(sqlOperation: string, decodeOperation: st
 
 const makeProjectionSnapshotQuery = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const processStartedAt = new Date().toISOString();
 
   const listProjectRows = SqlSchema.findAll({
     Request: Schema.Void,
@@ -685,16 +686,32 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             updatedAt = maxIso(updatedAt, row.updatedAt);
             sessionsByThread.set(
               row.threadId,
-              sanitizeSessionActiveTurn({
-                threadId: row.threadId,
-                status: row.status,
-                providerName: row.providerName,
-                runtimeMode: row.runtimeMode,
-                activeTurnId: row.activeTurnId,
-                lastError: row.lastError,
-                updatedAt: row.updatedAt,
-              }),
+              sanitizeBootSessionState(
+                {
+                  threadId: row.threadId,
+                  status: row.status,
+                  providerName: row.providerName,
+                  runtimeMode: row.runtimeMode,
+                  activeTurnId: row.activeTurnId,
+                  lastError: row.lastError,
+                  updatedAt: row.updatedAt,
+                },
+                processStartedAt,
+              ),
             );
+          }
+
+          for (const [threadId, latestTurn] of latestTurnByThread.entries()) {
+            const session = sessionsByThread.get(threadId) ?? null;
+            const sanitizedLatestTurn = sanitizeBootLatestTurnState(
+              latestTurn,
+              session,
+              processStartedAt,
+            );
+            latestTurnByThread.set(threadId, sanitizedLatestTurn);
+            if (sanitizedLatestTurn.completedAt !== null) {
+              updatedAt = maxIso(updatedAt, sanitizedLatestTurn.completedAt);
+            }
           }
 
           for (const row of threadLoopRows) {

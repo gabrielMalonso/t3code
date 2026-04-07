@@ -541,6 +541,101 @@ describe("ProviderRuntimeIngestion", () => {
     ).toBe(false);
   });
 
+  it("does not clear active turn buffers when a different turn is aborted", async () => {
+    const harness = await createHarness();
+    const now = new Date().toISOString();
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-turn-started-live-turn"),
+      provider: "codex",
+      threadId: asThreadId("thread-1"),
+      createdAt: now,
+      turnId: asTurnId("turn-live"),
+      payload: {},
+    });
+
+    await waitForThread(
+      harness.engine,
+      (thread) =>
+        thread.session?.status === "running" && thread.session?.activeTurnId === "turn-live",
+    );
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-message-delta-live-turn"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-live"),
+      itemId: asItemId("item-live"),
+      payload: {
+        streamKind: "assistant_text",
+        delta: "live text",
+      },
+    });
+    harness.emit({
+      type: "turn.proposed.delta",
+      eventId: asEventId("evt-plan-delta-live-turn"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-live"),
+      payload: {
+        delta: "# Live plan",
+      },
+    });
+
+    harness.emit({
+      type: "turn.aborted",
+      eventId: asEventId("evt-turn-aborted-stale"),
+      provider: "codex",
+      createdAt: new Date().toISOString(),
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-stale"),
+      payload: {
+        reason: "Stale abort",
+      },
+    });
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-turn-completed-live-turn"),
+      provider: "codex",
+      createdAt: new Date().toISOString(),
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-live"),
+      payload: {
+        state: "completed",
+      },
+    });
+
+    const thread = await waitForThread(
+      harness.engine,
+      (entry) =>
+        entry.session?.status === "ready" &&
+        entry.session?.activeTurnId === null &&
+        entry.messages.some(
+          (message: ProviderRuntimeTestMessage) => message.id === "assistant:item-live",
+        ) &&
+        entry.proposedPlans.some(
+          (plan: ProviderRuntimeTestProposedPlan) => plan.id === "plan:thread-1:turn:turn-live",
+        ),
+    );
+
+    expect(thread.session?.status).toBe("ready");
+    expect(thread.session?.activeTurnId).toBeNull();
+    expect(
+      thread.messages.some(
+        (message: ProviderRuntimeTestMessage) => message.id === "assistant:item-live",
+      ),
+    ).toBe(true);
+    expect(
+      thread.proposedPlans.some(
+        (plan: ProviderRuntimeTestProposedPlan) => plan.id === "plan:thread-1:turn:turn-live",
+      ),
+    ).toBe(true);
+  });
+
   it("does not clear active turn when session/thread started arrives mid-turn", async () => {
     const harness = await createHarness();
     const now = new Date().toISOString();
