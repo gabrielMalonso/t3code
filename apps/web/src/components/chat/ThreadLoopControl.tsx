@@ -1,8 +1,10 @@
 import type { ThreadId } from "@t3tools/contracts";
 import {
   AlertCircleIcon,
+  MinusIcon,
   PauseIcon,
   PlayIcon,
+  PlusIcon,
   RefreshCwIcon,
   RepeatIcon,
   Trash2Icon,
@@ -361,11 +363,56 @@ export default function ThreadLoopControl(props: {
           )}
 
           {/* Interval */}
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <Label htmlFor="thread-loop-interval" className="text-sm">
               Interval
             </Label>
-            <div className="flex flex-wrap items-center gap-1.5">
+
+            {/* [-] input [+] stepper row */}
+            <div className="flex items-center justify-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-xs"
+                onClick={() => {
+                  const current = Number.parseInt(intervalMinutes, 10);
+                  if (Number.isInteger(current) && current > 1) {
+                    setIntervalMinutes(String(current - 1));
+                  }
+                }}
+                disabled={Number.parseInt(intervalMinutes, 10) <= 1}
+                aria-label="Decrease interval"
+              >
+                <MinusIcon className="size-3.5" />
+              </Button>
+              <Input
+                id="thread-loop-interval"
+                type="number"
+                min={1}
+                step={1}
+                value={intervalMinutes}
+                onChange={(event) => setIntervalMinutes(event.target.value)}
+                className="h-7 w-16 font-mono text-xs sm:h-6 sm:text-[0.6875rem] [&_input]:h-full [&_input]:leading-[inherit] [&_input]:px-0 [&_input]:text-center [&_input]:[appearance:textfield] [&_input]:[-moz-appearance:textfield] [&_input::-webkit-inner-spin-button]:appearance-none [&_input::-webkit-outer-spin-button]:appearance-none"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-xs"
+                onClick={() => {
+                  const current = Number.parseInt(intervalMinutes, 10);
+                  if (Number.isInteger(current)) {
+                    setIntervalMinutes(String(current + 1));
+                  }
+                }}
+                aria-label="Increase interval"
+              >
+                <PlusIcon className="size-3.5" />
+              </Button>
+              <span className="text-muted-foreground text-xs">(min)</span>
+            </div>
+
+            {/* Preset chips row */}
+            <div className="flex flex-wrap justify-center gap-1.5">
               {THREAD_LOOP_INTERVAL_PRESETS.map((presetMinutes) => {
                 const selected = intervalMinutes === String(presetMinutes);
                 return (
@@ -385,18 +432,6 @@ export default function ThreadLoopControl(props: {
                   </button>
                 );
               })}
-              <div className="flex items-center gap-1.5">
-                <Input
-                  id="thread-loop-interval"
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={intervalMinutes}
-                  onChange={(event) => setIntervalMinutes(event.target.value)}
-                  className="h-7 w-16 font-mono text-xs sm:h-6 sm:text-[0.6875rem]"
-                />
-                <span className="text-muted-foreground text-xs">min</span>
-              </div>
             </div>
           </div>
 
