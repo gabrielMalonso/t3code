@@ -27,6 +27,7 @@ import {
   type ProviderRuntimeIngestionShape,
 } from "../Services/ProviderRuntimeIngestion.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { sessionStatusAllowsActiveTurn } from "../sessionState.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerCommandId = (event: ProviderRuntimeEvent, tag: string): CommandId =>
@@ -139,6 +140,12 @@ function orchestrationSessionStatusFromRuntimeState(
     case "error":
       return "error";
   }
+}
+
+function shouldClearTurnStateForRuntimeSessionStatus(
+  status: "starting" | "running" | "ready" | "interrupted" | "stopped" | "error",
+): boolean {
+  return !sessionStatusAllowsActiveTurn(status);
 }
 
 function requestKindFromCanonicalRequestType(
@@ -899,6 +906,7 @@ const make = Effect.fn("make")(function* () {
           return true;
         case "turn.started":
           return !conflictsWithActiveTurn;
+        case "turn.aborted":
         case "turn.completed":
           if (conflictsWithActiveTurn || missingTurnForActiveTurn) {
             return false;
@@ -924,14 +932,9 @@ const make = Effect.fn("make")(function* () {
       event.type === "session.exited" ||
       event.type === "thread.started" ||
       event.type === "turn.started" ||
+      event.type === "turn.aborted" ||
       event.type === "turn.completed"
     ) {
-      const nextActiveTurnId =
-        event.type === "turn.started"
-          ? (eventTurnId ?? null)
-          : event.type === "turn.completed" || event.type === "session.exited"
-            ? null
-            : activeTurnId;
       const status = (() => {
         switch (event.type) {
           case "session.state.changed":
@@ -940,6 +943,8 @@ const make = Effect.fn("make")(function* () {
             return "running";
           case "session.exited":
             return "stopped";
+          case "turn.aborted":
+            return "interrupted";
           case "turn.completed":
             return normalizeRuntimeTurnState(event.payload.state) === "failed" ? "error" : "ready";
           case "session.started":
@@ -949,6 +954,12 @@ const make = Effect.fn("make")(function* () {
             return activeTurnId !== null ? "running" : "ready";
         }
       })();
+      const nextActiveTurnId =
+        event.type === "turn.started"
+          ? (eventTurnId ?? null)
+          : shouldClearTurnStateForRuntimeSessionStatus(status)
+            ? null
+            : activeTurnId;
       const lastError =
         event.type === "session.state.changed" && event.payload.state === "error"
           ? (event.payload.reason ?? thread.session?.lastError ?? "Provider session error")
@@ -1137,7 +1148,16 @@ const make = Effect.fn("make")(function* () {
       }
     }
 
-    if (event.type === "session.exited") {
+    const shouldClearTurnState =
+      event.type === "turn.completed" ||
+      event.type === "turn.aborted" ||
+      event.type === "session.exited" ||
+      (event.type === "session.state.changed" &&
+        shouldClearTurnStateForRuntimeSessionStatus(
+          orchestrationSessionStatusFromRuntimeState(event.payload.state),
+        ));
+
+    if (shouldClearTurnState) {
       yield* clearTurnStateForSession(thread.id);
     }
 

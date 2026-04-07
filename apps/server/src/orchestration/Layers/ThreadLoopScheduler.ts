@@ -3,6 +3,7 @@ import {
   EventId,
   MessageId,
   ThreadId,
+  type OrchestrationSessionStatus,
   type OrchestrationEvent,
 } from "@t3tools/contracts";
 import { Cause, Effect, Layer, Stream } from "effect";
@@ -15,6 +16,7 @@ import {
   type ThreadLoopSchedulerShape,
 } from "../Services/ThreadLoopScheduler.ts";
 import { computeThreadLoopNextRunAt } from "../threadLoop.ts";
+import { sessionStatusAllowsActiveTurn } from "../sessionState.ts";
 
 const THREAD_LOOP_SCHEDULER_INTERVAL_MS = 10_000;
 
@@ -23,14 +25,36 @@ const serverCommandId = (tag: string) =>
 
 const isThreadLoopBusy = (thread: {
   readonly session: {
+    readonly status: OrchestrationSessionStatus;
+    readonly activeTurnId: string | null;
+  } | null;
+}) => thread.session !== null && sessionStatusAllowsActiveTurn(thread.session.status);
+
+const describeThreadLoopState = (input: {
+  readonly threadId: ThreadId;
+  readonly loop: {
+    readonly enabled: boolean;
+    readonly intervalMinutes: number;
+    readonly nextRunAt: string | null;
+    readonly lastRunAt: string | null;
+    readonly lastError: string | null;
+  };
+  readonly session: {
     readonly status: string;
     readonly activeTurnId: string | null;
   } | null;
-}) =>
-  thread.session !== null &&
-  (thread.session.status === "running" ||
-    thread.session.status === "starting" ||
-    thread.session.activeTurnId !== null);
+  readonly archivedAt: string | null;
+}) => ({
+  threadId: input.threadId,
+  loopEnabled: input.loop.enabled,
+  intervalMinutes: input.loop.intervalMinutes,
+  nextRunAt: input.loop.nextRunAt,
+  lastRunAt: input.loop.lastRunAt,
+  lastError: input.loop.lastError,
+  archivedAt: input.archivedAt,
+  sessionStatus: input.session?.status ?? null,
+  sessionActiveTurnId: input.session?.activeTurnId ?? null,
+});
 
 export const makeThreadLoopScheduler = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
@@ -108,6 +132,18 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
     const dueLoops = yield* projectionThreadLoopRepository.listDue({
       dueBefore: nowIso,
     });
+    if (dueLoops.length > 0) {
+      yield* Effect.logInfo("thread loop scheduler found due loops", {
+        nowIso,
+        dueLoopCount: dueLoops.length,
+        dueLoops: dueLoops.map((loop) => ({
+          threadId: loop.threadId,
+          nextRunAt: loop.nextRunAt,
+          intervalMinutes: loop.intervalMinutes,
+          updatedAt: loop.updatedAt,
+        })),
+      });
+    }
 
     for (const loop of dueLoops) {
       if (loop.nextRunAt === null) {
@@ -122,12 +158,23 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         updatedAt: nowIso,
       });
       if (!claimed) {
+        yield* Effect.logInfo("thread loop scheduler claim skipped", {
+          threadId: loop.threadId,
+          expectedNextRunAt: loop.nextRunAt,
+          nextRunAt,
+          nowIso,
+        });
         continue;
       }
 
       const readModel = yield* orchestrationEngine.getReadModel();
       const thread = readModel.threads.find((entry) => entry.id === loop.threadId);
       if (!thread) {
+        yield* Effect.logWarning("thread loop scheduler deleting orphaned loop row", {
+          threadId: loop.threadId,
+          nextRunAt: loop.nextRunAt,
+          nowIso,
+        });
         yield* projectionThreadLoopRepository
           .deleteByThreadId({
             threadId: loop.threadId,
@@ -143,6 +190,11 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         continue;
       }
       if (!thread.loop) {
+        yield* Effect.logWarning("thread loop scheduler deleting stale loop row", {
+          threadId: loop.threadId,
+          nextRunAt: loop.nextRunAt,
+          nowIso,
+        });
         yield* projectionThreadLoopRepository
           .deleteByThreadId({
             threadId: loop.threadId,
@@ -158,6 +210,15 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         continue;
       }
       if (!thread.loop.enabled) {
+        yield* Effect.logInfo("thread loop scheduler found disabled loop during due tick", {
+          ...describeThreadLoopState({
+            threadId: loop.threadId,
+            loop: thread.loop,
+            session: thread.session,
+            archivedAt: thread.archivedAt,
+          }),
+          nowIso,
+        });
         yield* syncLoopPatch({
           threadId: loop.threadId,
           createdAt: nowIso,
@@ -176,6 +237,15 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         continue;
       }
       if (thread.archivedAt !== null) {
+        yield* Effect.logInfo("thread loop scheduler pausing archived thread loop", {
+          ...describeThreadLoopState({
+            threadId: loop.threadId,
+            loop: thread.loop,
+            session: thread.session,
+            archivedAt: thread.archivedAt,
+          }),
+          nowIso,
+        });
         yield* syncLoopPatch({
           threadId: loop.threadId,
           createdAt: nowIso,
@@ -194,6 +264,16 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         continue;
       }
       if (isThreadLoopBusy(thread)) {
+        yield* Effect.logInfo("thread loop scheduler skipped due loop because thread is busy", {
+          ...describeThreadLoopState({
+            threadId: loop.threadId,
+            loop: thread.loop,
+            session: thread.session,
+            archivedAt: thread.archivedAt,
+          }),
+          claimedNextRunAt: nextRunAt,
+          nowIso,
+        });
         yield* syncLoopPatch({
           threadId: loop.threadId,
           createdAt: nowIso,
@@ -217,6 +297,16 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         continue;
       }
 
+      yield* Effect.logInfo("thread loop scheduler dispatching automatic run", {
+        ...describeThreadLoopState({
+          threadId: loop.threadId,
+          loop: thread.loop,
+          session: thread.session,
+          archivedAt: thread.archivedAt,
+        }),
+        claimedNextRunAt: nextRunAt,
+        nowIso,
+      });
       yield* syncLoopPatch({
         threadId: loop.threadId,
         createdAt: nowIso,
@@ -275,6 +365,29 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
   });
 
   const start: ThreadLoopSchedulerShape["start"] = Effect.fn("start")(function* () {
+    const readModel = yield* orchestrationEngine.getReadModel();
+    const persistedLoops = yield* projectionThreadLoopRepository.listAll().pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("thread loop scheduler failed to inspect persisted loops on startup", {
+          cause: Cause.pretty(cause),
+        }).pipe(Effect.as([])),
+      ),
+    );
+    const activePersistedLoops = persistedLoops.filter((loop) => loop.enabled);
+    yield* Effect.logInfo("thread loop scheduler starting", {
+      persistedLoopCount: persistedLoops.length,
+      activePersistedLoopCount: activePersistedLoops.length,
+      activeLoops: activePersistedLoops.map((loop) => {
+        const thread = readModel.threads.find((entry) => entry.id === loop.threadId);
+        return describeThreadLoopState({
+          threadId: loop.threadId,
+          loop,
+          session: thread?.session ?? null,
+          archivedAt: thread?.archivedAt ?? null,
+        });
+      }),
+    });
+
     yield* Effect.forkScoped(
       Effect.gen(function* () {
         for (;;) {

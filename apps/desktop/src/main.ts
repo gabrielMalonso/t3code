@@ -1104,10 +1104,14 @@ function stopBackend(): void {
   if (!child) return;
 
   if (child.exitCode === null && child.signalCode === null) {
+    writeDesktopLogHeader(`stopping backend pid=${child.pid ?? "unknown"} via SIGTERM`);
     expectedBackendExitChildren.add(child);
     child.kill("SIGTERM");
     setTimeout(() => {
       if (child.exitCode === null && child.signalCode === null) {
+        writeDesktopLogHeader(
+          `backend pid=${child.pid ?? "unknown"} did not exit after SIGTERM; sending SIGKILL`,
+        );
         child.kill("SIGKILL");
       }
     }, 2_000).unref();
