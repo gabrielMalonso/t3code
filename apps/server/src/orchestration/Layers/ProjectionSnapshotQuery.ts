@@ -47,6 +47,7 @@ import {
   type ProjectionThreadCheckpointContext,
   type ProjectionSnapshotQueryShape,
 } from "../Services/ProjectionSnapshotQuery.ts";
+import { sanitizeSessionActiveTurn } from "../sessionState.ts";
 
 const decodeReadModel = Schema.decodeUnknownEffect(OrchestrationReadModel);
 const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
@@ -682,15 +683,18 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
 
           for (const row of sessionRows) {
             updatedAt = maxIso(updatedAt, row.updatedAt);
-            sessionsByThread.set(row.threadId, {
-              threadId: row.threadId,
-              status: row.status,
-              providerName: row.providerName,
-              runtimeMode: row.runtimeMode,
-              activeTurnId: row.activeTurnId,
-              lastError: row.lastError,
-              updatedAt: row.updatedAt,
-            });
+            sessionsByThread.set(
+              row.threadId,
+              sanitizeSessionActiveTurn({
+                threadId: row.threadId,
+                status: row.status,
+                providerName: row.providerName,
+                runtimeMode: row.runtimeMode,
+                activeTurnId: row.activeTurnId,
+                lastError: row.lastError,
+                updatedAt: row.updatedAt,
+              }),
+            );
           }
 
           for (const row of threadLoopRows) {

@@ -374,6 +374,213 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
     }),
   );
 
+  it.effect("sanitizes impossible session snapshots during boot hydration", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* sql`DELETE FROM projection_projects`;
+      yield* sql`DELETE FROM projection_threads`;
+      yield* sql`DELETE FROM projection_thread_sessions`;
+      yield* sql`DELETE FROM projection_state`;
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id,
+          title,
+          workspace_root,
+          default_model_selection_json,
+          scripts_json,
+          created_at,
+          updated_at,
+          deleted_at
+        )
+        VALUES (
+          'project-sanitize',
+          'Project Sanitize',
+          '/tmp/project-sanitize',
+          '{"provider":"codex","model":"gpt-5-codex"}',
+          '[]',
+          '2026-03-01T00:00:00.000Z',
+          '2026-03-01T00:00:01.000Z',
+          NULL
+        )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id,
+          project_id,
+          title,
+          model_selection_json,
+          runtime_mode,
+          interaction_mode,
+          branch,
+          worktree_path,
+          latest_turn_id,
+          created_at,
+          updated_at,
+          archived_at,
+          deleted_at
+        )
+        VALUES
+          (
+            'thread-ready',
+            'project-sanitize',
+            'Thread Ready',
+            '{"provider":"codex","model":"gpt-5-codex"}',
+            'approval-required',
+            'default',
+            NULL,
+            NULL,
+            NULL,
+            '2026-03-01T00:00:02.000Z',
+            '2026-03-01T00:00:03.000Z',
+            NULL,
+            NULL
+          ),
+          (
+            'thread-stopped',
+            'project-sanitize',
+            'Thread Stopped',
+            '{"provider":"codex","model":"gpt-5-codex"}',
+            'approval-required',
+            'default',
+            NULL,
+            NULL,
+            NULL,
+            '2026-03-01T00:00:04.000Z',
+            '2026-03-01T00:00:05.000Z',
+            NULL,
+            NULL
+          ),
+          (
+            'thread-interrupted',
+            'project-sanitize',
+            'Thread Interrupted',
+            '{"provider":"codex","model":"gpt-5-codex"}',
+            'approval-required',
+            'default',
+            NULL,
+            NULL,
+            NULL,
+            '2026-03-01T00:00:06.000Z',
+            '2026-03-01T00:00:07.000Z',
+            NULL,
+            NULL
+          ),
+          (
+            'thread-error',
+            'project-sanitize',
+            'Thread Error',
+            '{"provider":"codex","model":"gpt-5-codex"}',
+            'approval-required',
+            'default',
+            NULL,
+            NULL,
+            NULL,
+            '2026-03-01T00:00:08.000Z',
+            '2026-03-01T00:00:09.000Z',
+            NULL,
+            NULL
+          ),
+          (
+            'thread-running',
+            'project-sanitize',
+            'Thread Running',
+            '{"provider":"codex","model":"gpt-5-codex"}',
+            'approval-required',
+            'default',
+            NULL,
+            NULL,
+            NULL,
+            '2026-03-01T00:00:10.000Z',
+            '2026-03-01T00:00:11.000Z',
+            NULL,
+            NULL
+          )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_thread_sessions (
+          thread_id,
+          status,
+          provider_name,
+          runtime_mode,
+          active_turn_id,
+          last_error,
+          updated_at
+        )
+        VALUES
+          (
+            'thread-ready',
+            'ready',
+            'codex',
+            'approval-required',
+            'turn-zombie-ready',
+            NULL,
+            '2026-03-01T00:01:00.000Z'
+          ),
+          (
+            'thread-stopped',
+            'stopped',
+            'codex',
+            'approval-required',
+            'turn-zombie-stopped',
+            NULL,
+            '2026-03-01T00:01:01.000Z'
+          ),
+          (
+            'thread-interrupted',
+            'interrupted',
+            'codex',
+            'approval-required',
+            'turn-zombie-interrupted',
+            NULL,
+            '2026-03-01T00:01:02.000Z'
+          ),
+          (
+            'thread-error',
+            'error',
+            'codex',
+            'approval-required',
+            'turn-zombie-error',
+            'provider crashed',
+            '2026-03-01T00:01:03.000Z'
+          ),
+          (
+            'thread-running',
+            'running',
+            'codex',
+            'approval-required',
+            'turn-live',
+            NULL,
+            '2026-03-01T00:01:04.000Z'
+          )
+      `;
+
+      const snapshot = yield* snapshotQuery.getSnapshot();
+      const sessionByThreadId = new Map(
+        snapshot.threads.map((thread) => [thread.id, thread.session] as const),
+      );
+
+      assert.equal(sessionByThreadId.get(ThreadId.makeUnsafe("thread-ready"))?.activeTurnId, null);
+      assert.equal(
+        sessionByThreadId.get(ThreadId.makeUnsafe("thread-stopped"))?.activeTurnId,
+        null,
+      );
+      assert.equal(
+        sessionByThreadId.get(ThreadId.makeUnsafe("thread-interrupted"))?.activeTurnId,
+        null,
+      );
+      assert.equal(sessionByThreadId.get(ThreadId.makeUnsafe("thread-error"))?.activeTurnId, null);
+      assert.equal(
+        sessionByThreadId.get(ThreadId.makeUnsafe("thread-running"))?.activeTurnId,
+        asTurnId("turn-live"),
+      );
+    }),
+  );
+
   it.effect(
     "reads targeted project, thread, and count queries without hydrating the full snapshot",
     () =>

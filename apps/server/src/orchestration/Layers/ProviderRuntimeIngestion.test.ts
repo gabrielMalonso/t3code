@@ -353,6 +353,25 @@ describe("ProviderRuntimeIngestion", () => {
     expect(thread.session?.status).toBe("running");
     expect(thread.session?.lastError).toBeNull();
 
+    const seededTurnId = asTurnId("turn-zombie-session");
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.makeUnsafe("cmd-session-seed-zombie-turn"),
+        threadId: asThreadId("thread-1"),
+        session: {
+          threadId: asThreadId("thread-1"),
+          status: "running",
+          providerName: "codex",
+          runtimeMode: "approval-required",
+          activeTurnId: seededTurnId,
+          updatedAt: new Date().toISOString(),
+          lastError: null,
+        },
+        createdAt: new Date().toISOString(),
+      }),
+    );
+
     harness.emit({
       type: "session.state.changed",
       eventId: asEventId("evt-session-state-error"),
@@ -398,6 +417,27 @@ describe("ProviderRuntimeIngestion", () => {
 
     harness.emit({
       type: "session.state.changed",
+      eventId: asEventId("evt-session-state-interrupted"),
+      provider: "codex",
+      threadId: asThreadId("thread-1"),
+      createdAt: new Date().toISOString(),
+      payload: {
+        state: "interrupted",
+      },
+    });
+
+    thread = await waitForThread(
+      harness.engine,
+      (entry) =>
+        entry.session?.status === "interrupted" &&
+        entry.session?.activeTurnId === null &&
+        entry.session?.lastError === "provider crashed",
+    );
+    expect(thread.session?.status).toBe("interrupted");
+    expect(thread.session?.lastError).toBe("provider crashed");
+
+    harness.emit({
+      type: "session.state.changed",
       eventId: asEventId("evt-session-state-ready"),
       provider: "codex",
       threadId: asThreadId("thread-1"),
@@ -416,6 +456,89 @@ describe("ProviderRuntimeIngestion", () => {
     );
     expect(thread.session?.status).toBe("ready");
     expect(thread.session?.lastError).toBeNull();
+  });
+
+  it("clears active turn and buffered state when a turn is aborted", async () => {
+    const harness = await createHarness();
+    const now = new Date().toISOString();
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-turn-started-aborted"),
+      provider: "codex",
+      threadId: asThreadId("thread-1"),
+      createdAt: now,
+      turnId: asTurnId("turn-aborted"),
+      payload: {},
+    });
+
+    await waitForThread(
+      harness.engine,
+      (thread) =>
+        thread.session?.status === "running" && thread.session?.activeTurnId === "turn-aborted",
+    );
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-message-delta-aborted"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-aborted"),
+      itemId: asItemId("item-aborted"),
+      payload: {
+        streamKind: "assistant_text",
+        delta: "ghost text",
+      },
+    });
+    harness.emit({
+      type: "turn.proposed.delta",
+      eventId: asEventId("evt-plan-delta-aborted"),
+      provider: "codex",
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-aborted"),
+      payload: {
+        delta: "# Ghost plan",
+      },
+    });
+    harness.emit({
+      type: "turn.aborted",
+      eventId: asEventId("evt-turn-aborted"),
+      provider: "codex",
+      createdAt: new Date().toISOString(),
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-aborted"),
+      payload: {
+        reason: "User interrupted",
+      },
+    });
+
+    const thread = await waitForThread(
+      harness.engine,
+      (entry) =>
+        entry.session?.status === "interrupted" &&
+        entry.session?.activeTurnId === null &&
+        !entry.messages.some(
+          (message: ProviderRuntimeTestMessage) => message.id === "assistant:item-aborted",
+        ) &&
+        !entry.proposedPlans.some(
+          (plan: ProviderRuntimeTestProposedPlan) => plan.id === "plan:thread-1:turn:turn-aborted",
+        ),
+    );
+
+    expect(thread.session?.status).toBe("interrupted");
+    expect(thread.session?.activeTurnId).toBeNull();
+    expect(
+      thread.messages.some(
+        (message: ProviderRuntimeTestMessage) => message.id === "assistant:item-aborted",
+      ),
+    ).toBe(false);
+    expect(
+      thread.proposedPlans.some(
+        (plan: ProviderRuntimeTestProposedPlan) => plan.id === "plan:thread-1:turn:turn-aborted",
+      ),
+    ).toBe(false);
   });
 
   it("does not clear active turn when session/thread started arrives mid-turn", async () => {
