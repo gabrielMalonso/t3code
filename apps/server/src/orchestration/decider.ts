@@ -2,6 +2,7 @@ import type {
   OrchestrationCommand,
   OrchestrationEvent,
   OrchestrationReadModel,
+  ThreadLoop,
 } from "@t3tools/contracts";
 import { Effect } from "effect";
 
@@ -16,6 +17,36 @@ import {
 } from "./commandInvariants.ts";
 
 const nowIso = () => new Date().toISOString();
+const advanceLoopRunAt = (fromIso: string, intervalMinutes: number): string =>
+  new Date(Date.parse(fromIso) + intervalMinutes * 60_000).toISOString();
+
+function buildThreadLoopFromUpsert(input: {
+  readonly command: Extract<OrchestrationCommand, { type: "thread.loop.upsert" }>;
+  readonly existingLoop: ThreadLoop | null | undefined;
+}): ThreadLoop {
+  const { command, existingLoop } = input;
+  const intervalChanged =
+    existingLoop === null ||
+    existingLoop === undefined ||
+    existingLoop.intervalMinutes !== command.intervalMinutes;
+  const nextRunAt = command.enabled
+    ? intervalChanged || existingLoop?.nextRunAt === null || existingLoop?.nextRunAt === undefined
+      ? advanceLoopRunAt(command.createdAt, command.intervalMinutes)
+      : existingLoop.nextRunAt
+    : null;
+
+  return {
+    enabled: command.enabled,
+    prompt: command.prompt,
+    intervalMinutes: command.intervalMinutes,
+    nextRunAt,
+    lastRunAt: existingLoop?.lastRunAt ?? null,
+    lastError: existingLoop?.lastError ?? null,
+    createdAt: existingLoop?.createdAt ?? command.createdAt,
+    updatedAt: command.createdAt,
+  };
+}
+
 const defaultMetadata: Omit<OrchestrationEvent, "sequence" | "type" | "payload"> = {
   eventId: crypto.randomUUID() as OrchestrationEvent["eventId"],
   aggregateKind: "thread",
@@ -310,6 +341,51 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "thread.loop.upsert": {
+      const targetThread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      return {
+        ...withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        }),
+        type: "thread.loop-upserted",
+        payload: {
+          threadId: command.threadId,
+          loop: buildThreadLoopFromUpsert({
+            command,
+            existingLoop: targetThread.loop,
+          }),
+        },
+      };
+    }
+
+    case "thread.loop.delete": {
+      yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      return {
+        ...withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        }),
+        type: "thread.loop-deleted",
+        payload: {
+          threadId: command.threadId,
+          deletedAt: command.createdAt,
+        },
+      };
+    }
+
     case "thread.turn.start": {
       const targetThread = yield* requireThread({
         readModel,
@@ -520,6 +596,47 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           session: command.session,
+        },
+      };
+    }
+
+    case "thread.loop.sync": {
+      const targetThread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      const existingLoop = targetThread.loop;
+      if (existingLoop === null || existingLoop === undefined) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Thread '${command.threadId}' does not have a loop to sync.`,
+        });
+      }
+      return {
+        ...withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        }),
+        type: "thread.loop-upserted",
+        payload: {
+          threadId: command.threadId,
+          loop: {
+            ...existingLoop,
+            ...(command.patch.enabled !== undefined ? { enabled: command.patch.enabled } : {}),
+            ...(command.patch.nextRunAt !== undefined
+              ? { nextRunAt: command.patch.nextRunAt }
+              : {}),
+            ...(command.patch.lastRunAt !== undefined
+              ? { lastRunAt: command.patch.lastRunAt }
+              : {}),
+            ...(command.patch.lastError !== undefined
+              ? { lastError: command.patch.lastError }
+              : {}),
+            updatedAt: command.createdAt,
+          },
         },
       };
     }

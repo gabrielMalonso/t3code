@@ -159,6 +159,8 @@ import { AVAILABLE_PROVIDER_OPTIONS, ProviderModelPicker } from "./chat/Provider
 import { ComposerCommandItem, ComposerCommandMenu } from "./chat/ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./chat/ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./chat/CompactComposerControlsMenu";
+import ThreadLoopControl from "./chat/ThreadLoopControl";
+import { useThreadActions } from "../hooks/useThreadActions";
 import { ComposerPrimaryActions } from "./chat/ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./chat/ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./chat/ComposerPendingUserInputPanel";
@@ -575,6 +577,7 @@ function PersistentThreadTerminalDrawer({
 }
 
 export default function ChatView({ threadId }: ChatViewProps) {
+  const { deleteLoop, runLoopNow, upsertLoop } = useThreadActions();
   const serverThread = useThreadById(threadId);
   const setStoreThreadError = useStore((store) => store.setError);
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
@@ -4247,18 +4250,28 @@ export default function ChatView({ threadId }: ChatViewProps) {
                         />
 
                         {isComposerFooterCompact ? (
-                          <CompactComposerControlsMenu
-                            activePlan={Boolean(
-                              activePlan || sidebarProposedPlan || planSidebarOpen,
-                            )}
-                            interactionMode={interactionMode}
-                            planSidebarOpen={planSidebarOpen}
-                            runtimeMode={runtimeMode}
-                            traitsMenuContent={providerTraitsMenuContent}
-                            onToggleInteractionMode={toggleInteractionMode}
-                            onTogglePlanSidebar={togglePlanSidebar}
-                            onToggleRuntimeMode={toggleRuntimeMode}
-                          />
+                          <>
+                            <ThreadLoopControl
+                              compact={true}
+                              threadId={activeThread.id}
+                              loop={activeThread.loop}
+                              onUpsertLoop={upsertLoop}
+                              onDeleteLoop={deleteLoop}
+                              onRunNow={runLoopNow}
+                            />
+                            <CompactComposerControlsMenu
+                              activePlan={Boolean(
+                                activePlan || sidebarProposedPlan || planSidebarOpen,
+                              )}
+                              interactionMode={interactionMode}
+                              planSidebarOpen={planSidebarOpen}
+                              runtimeMode={runtimeMode}
+                              traitsMenuContent={providerTraitsMenuContent}
+                              onToggleInteractionMode={toggleInteractionMode}
+                              onTogglePlanSidebar={togglePlanSidebar}
+                              onToggleRuntimeMode={toggleRuntimeMode}
+                            />
+                          </>
                         ) : (
                           <>
                             {providerTraitsPicker ? (
@@ -4322,6 +4335,19 @@ export default function ChatView({ threadId }: ChatViewProps) {
                                 {runtimeMode === "full-access" ? "Full access" : "Supervised"}
                               </span>
                             </Button>
+
+                            <Separator
+                              orientation="vertical"
+                              className="mx-0.5 hidden h-4 sm:block"
+                            />
+
+                            <ThreadLoopControl
+                              threadId={activeThread.id}
+                              loop={activeThread.loop}
+                              onUpsertLoop={upsertLoop}
+                              onDeleteLoop={deleteLoop}
+                              onRunNow={runLoopNow}
+                            />
 
                             {activePlan || sidebarProposedPlan || planSidebarOpen ? (
                               <>

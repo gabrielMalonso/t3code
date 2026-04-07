@@ -94,6 +94,7 @@ describe("orchestration projector", () => {
         activities: [],
         checkpoints: [],
         session: null,
+        loop: null,
       },
     ]);
   });
@@ -202,6 +203,98 @@ describe("orchestration projector", () => {
       ),
     );
     expect(unarchived.threads[0]?.archivedAt).toBeNull();
+  });
+
+  it("applies thread.loop-upserted and thread.loop-deleted events", async () => {
+    const now = new Date().toISOString();
+    const loopAt = new Date(Date.parse(now) + 1_000).toISOString();
+    const deletedAt = new Date(Date.parse(now) + 2_000).toISOString();
+
+    const created = await Effect.runPromise(
+      projectEvent(
+        createEmptyReadModel(now),
+        makeEvent({
+          sequence: 1,
+          type: "thread.created",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: now,
+          commandId: "cmd-thread-create",
+          payload: {
+            threadId: "thread-1",
+            projectId: "project-1",
+            title: "demo",
+            modelSelection: {
+              provider: "codex",
+              model: "gpt-5-codex",
+            },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ),
+    );
+
+    const withLoop = await Effect.runPromise(
+      projectEvent(
+        created,
+        makeEvent({
+          sequence: 2,
+          type: "thread.loop-upserted",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: loopAt,
+          commandId: "cmd-thread-loop-upsert",
+          payload: {
+            threadId: "thread-1",
+            loop: {
+              enabled: true,
+              prompt: "check inbox",
+              intervalMinutes: 1,
+              nextRunAt: loopAt,
+              lastRunAt: null,
+              lastError: null,
+              createdAt: loopAt,
+              updatedAt: loopAt,
+            },
+          },
+        }),
+      ),
+    );
+
+    expect(withLoop.threads[0]?.loop).toEqual({
+      enabled: true,
+      prompt: "check inbox",
+      intervalMinutes: 1,
+      nextRunAt: loopAt,
+      lastRunAt: null,
+      lastError: null,
+      createdAt: loopAt,
+      updatedAt: loopAt,
+    });
+
+    const withoutLoop = await Effect.runPromise(
+      projectEvent(
+        withLoop,
+        makeEvent({
+          sequence: 3,
+          type: "thread.loop-deleted",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: deletedAt,
+          commandId: "cmd-thread-loop-delete",
+          payload: {
+            threadId: "thread-1",
+          },
+        }),
+      ),
+    );
+
+    expect(withoutLoop.threads[0]?.loop).toBeNull();
   });
 
   it("keeps projector forward-compatible for unhandled event types", async () => {
