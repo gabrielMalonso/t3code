@@ -4,6 +4,7 @@ import type {
   OrchestrationProposedPlanId,
   OrchestrationSessionStatus,
   OrchestrationThreadActivity,
+  ThreadLoop as ContractThreadLoop,
   ProjectScript as ContractProjectScript,
   ThreadId,
   ProjectId,
@@ -23,6 +24,7 @@ export const DEFAULT_THREAD_TERMINAL_HEIGHT = 280;
 export const DEFAULT_THREAD_TERMINAL_ID = "default";
 export const MAX_TERMINALS_PER_GROUP = 4;
 export type ProjectScript = ContractProjectScript;
+export type ThreadLoop = ContractThreadLoop;
 
 export interface ThreadTerminalGroup {
   id: string;
@@ -109,6 +111,7 @@ export interface Thread {
   worktreePath: string | null;
   turnDiffSummaries: TurnDiffSummary[];
   activities: OrchestrationThreadActivity[];
+  loop?: ThreadLoop | null;
 }
 
 export interface SidebarThreadSummary {

@@ -8,6 +8,7 @@ import {
   IsoDateTime,
   MessageId,
   NonNegativeInt,
+  PositiveInt,
   ProjectId,
   ProviderItemId,
   ThreadId,
@@ -266,6 +267,18 @@ export const OrchestrationLatestTurn = Schema.Struct({
 });
 export type OrchestrationLatestTurn = typeof OrchestrationLatestTurn.Type;
 
+export const ThreadLoop = Schema.Struct({
+  enabled: Schema.Boolean,
+  prompt: TrimmedNonEmptyString,
+  intervalMinutes: PositiveInt,
+  nextRunAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(() => null)),
+  lastRunAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(() => null)),
+  lastError: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefault(() => null)),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+export type ThreadLoop = typeof ThreadLoop.Type;
+
 export const OrchestrationThread = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
@@ -287,6 +300,7 @@ export const OrchestrationThread = Schema.Struct({
   activities: Schema.Array(OrchestrationThreadActivity),
   checkpoints: Schema.Array(OrchestrationCheckpointSummary),
   session: Schema.NullOr(OrchestrationSession),
+  loop: Schema.optional(Schema.NullOr(ThreadLoop).pipe(Schema.withDecodingDefault(() => null))),
 });
 export type OrchestrationThread = typeof OrchestrationThread.Type;
 
@@ -381,6 +395,23 @@ const ThreadInteractionModeSetCommand = Schema.Struct({
   commandId: CommandId,
   threadId: ThreadId,
   interactionMode: ProviderInteractionMode,
+  createdAt: IsoDateTime,
+});
+
+const ThreadLoopUpsertCommand = Schema.Struct({
+  type: Schema.Literal("thread.loop.upsert"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  enabled: Schema.Boolean,
+  prompt: TrimmedNonEmptyString,
+  intervalMinutes: PositiveInt,
+  createdAt: IsoDateTime,
+});
+
+const ThreadLoopDeleteCommand = Schema.Struct({
+  type: Schema.Literal("thread.loop.delete"),
+  commandId: CommandId,
+  threadId: ThreadId,
   createdAt: IsoDateTime,
 });
 
@@ -501,6 +532,8 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
+  ThreadLoopUpsertCommand,
+  ThreadLoopDeleteCommand,
   ThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
@@ -522,6 +555,8 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
+  ThreadLoopUpsertCommand,
+  ThreadLoopDeleteCommand,
   ClientThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
@@ -588,6 +623,21 @@ const ThreadActivityAppendCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadLoopSyncPatch = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean),
+  nextRunAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  lastRunAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  lastError: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+const ThreadLoopSyncCommand = Schema.Struct({
+  type: Schema.Literal("thread.loop.sync"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  patch: ThreadLoopSyncPatch,
+  createdAt: IsoDateTime,
+});
+
 const ThreadRevertCompleteCommand = Schema.Struct({
   type: Schema.Literal("thread.revert.complete"),
   commandId: CommandId,
@@ -603,6 +653,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadProposedPlanUpsertCommand,
   ThreadTurnDiffCompleteCommand,
   ThreadActivityAppendCommand,
+  ThreadLoopSyncCommand,
   ThreadRevertCompleteCommand,
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
@@ -624,6 +675,8 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.meta-updated",
   "thread.runtime-mode-set",
   "thread.interaction-mode-set",
+  "thread.loop-upserted",
+  "thread.loop-deleted",
   "thread.message-sent",
   "thread.turn-start-requested",
   "thread.turn-interrupt-requested",
@@ -719,6 +772,16 @@ export const ThreadInteractionModeSetPayload = Schema.Struct({
     Schema.withDecodingDefault(() => DEFAULT_PROVIDER_INTERACTION_MODE),
   ),
   updatedAt: IsoDateTime,
+});
+
+export const ThreadLoopUpsertedPayload = Schema.Struct({
+  threadId: ThreadId,
+  loop: ThreadLoop,
+});
+
+export const ThreadLoopDeletedPayload = Schema.Struct({
+  threadId: ThreadId,
+  deletedAt: IsoDateTime,
 });
 
 export const ThreadMessageSentPayload = Schema.Struct({
@@ -879,6 +942,16 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.interaction-mode-set"),
     payload: ThreadInteractionModeSetPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.loop-upserted"),
+    payload: ThreadLoopUpsertedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.loop-deleted"),
+    payload: ThreadLoopDeletedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

@@ -176,6 +176,7 @@ function mapThread(thread: OrchestrationThread): Thread {
     worktreePath: thread.worktreePath,
     turnDiffSummaries: thread.checkpoints.map(mapTurnDiffSummary),
     activities: thread.activities.map((activity) => ({ ...activity })),
+    loop: thread.loop ? { ...thread.loop } : null,
   };
 }
 
@@ -663,6 +664,7 @@ export function applyOrchestrationEvent(state: AppState, event: OrchestrationEve
         activities: [],
         checkpoints: [],
         session: null,
+        loop: null,
       });
       const threads = existing
         ? state.threads.map((thread) => (thread.id === nextThread.id ? nextThread : thread))
@@ -889,6 +891,20 @@ export function applyOrchestrationEvent(state: AppState, event: OrchestrationEve
           updatedAt: event.occurredAt,
         };
       });
+    }
+
+    case "thread.loop-upserted": {
+      return updateThreadState(state, event.payload.threadId, (thread) => ({
+        ...thread,
+        loop: { ...event.payload.loop },
+      }));
+    }
+
+    case "thread.loop-deleted": {
+      return updateThreadState(state, event.payload.threadId, (thread) => ({
+        ...thread,
+        loop: null,
+      }));
     }
 
     case "thread.session-set": {
