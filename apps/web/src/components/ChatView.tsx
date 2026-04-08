@@ -160,8 +160,6 @@ import { AVAILABLE_PROVIDER_OPTIONS, ProviderModelPicker } from "./chat/Provider
 import { ComposerCommandItem, ComposerCommandMenu } from "./chat/ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./chat/ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./chat/CompactComposerControlsMenu";
-import ThreadLoopControl from "./chat/ThreadLoopControl";
-import { useThreadActions } from "../hooks/useThreadActions";
 import { ComposerPrimaryActions } from "./chat/ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./chat/ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./chat/ComposerPendingUserInputPanel";
@@ -194,6 +192,7 @@ import {
   threadHasStarted,
   waitForStartedServerThread,
 } from "./ChatView.logic";
+import { ComposerCustomControlsSlot } from "../t3code-custom/chat";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import {
   useServerAvailableEditors,
@@ -578,7 +577,6 @@ function PersistentThreadTerminalDrawer({
 }
 
 export default function ChatView({ threadId }: ChatViewProps) {
-  const { deleteLoop, runLoopNow, upsertLoop } = useThreadActions();
   const serverThread = useThreadById(threadId);
   const setStoreThreadError = useStore((store) => store.setError);
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
@@ -4257,14 +4255,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
 
                         {isComposerFooterCompact ? (
                           <>
-                            <ThreadLoopControl
-                              compact={true}
-                              threadId={activeThread.id}
-                              loop={activeThread.loop}
-                              onUpsertLoop={upsertLoop}
-                              onDeleteLoop={deleteLoop}
-                              onRunNow={runLoopNow}
-                            />
+                            {/* t3code-custom slot: composer custom controls (compact) */}
+                            <ComposerCustomControlsSlot compact thread={activeThread} />
                             <CompactComposerControlsMenu
                               activePlan={Boolean(
                                 activePlan || sidebarProposedPlan || planSidebarOpen,
@@ -4347,13 +4339,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
                               className="mx-0.5 hidden h-4 sm:block"
                             />
 
-                            <ThreadLoopControl
-                              threadId={activeThread.id}
-                              loop={activeThread.loop}
-                              onUpsertLoop={upsertLoop}
-                              onDeleteLoop={deleteLoop}
-                              onRunNow={runLoopNow}
-                            />
+                            {/* t3code-custom slot: composer custom controls */}
+                            <ComposerCustomControlsSlot thread={activeThread} />
 
                             {activePlan || sidebarProposedPlan || planSidebarOpen ? (
                               <>
