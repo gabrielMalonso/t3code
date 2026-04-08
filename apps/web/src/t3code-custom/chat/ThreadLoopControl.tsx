@@ -11,10 +11,10 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { Badge } from "../ui/badge";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { Label } from "../ui/label";
+import { Badge } from "../../components/ui/badge";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
 import {
   Sheet,
   SheetContent,
@@ -24,10 +24,10 @@ import {
   SheetPanel,
   SheetTitle,
   SheetTrigger,
-} from "../ui/sheet";
-import { Switch } from "../ui/switch";
-import { Textarea } from "../ui/textarea";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+} from "../../components/ui/sheet";
+import { Switch } from "../../components/ui/switch";
+import { Textarea } from "../../components/ui/textarea";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../../components/ui/tooltip";
 import type { ThreadLoop } from "~/types";
 
 const THREAD_LOOP_INTERVAL_PRESETS = [1, 5, 15, 30, 60, 240] as const;
@@ -70,10 +70,6 @@ function deriveStatus(loop: ThreadLoop | null | undefined): LoopStatus {
   if (!loop.enabled) return "paused";
   return "active";
 }
-
-// ---------------------------------------------------------------------------
-// Trigger chip
-// ---------------------------------------------------------------------------
 
 const statusChipClasses: Record<LoopStatus, string> = {
   unconfigured:
@@ -133,10 +129,6 @@ function LoopChipLabel({
     </>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
 
 export default function ThreadLoopControl(props: {
   threadId: ThreadId;
@@ -260,9 +252,7 @@ export default function ThreadLoopControl(props: {
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      {/* ---- Trigger area ---- */}
       {status === "unconfigured" ? (
-        /* Idle: matches the other ghost buttons in the composer bar */
         <SheetTrigger
           render={
             <Button
@@ -278,7 +268,6 @@ export default function ThreadLoopControl(props: {
           <span className={props.compact ? "sr-only" : "sr-only sm:not-sr-only"}>Loop</span>
         </SheetTrigger>
       ) : (
-        /* Active/paused/error: chip style with quick pause/resume */
         <div className="flex items-center gap-0.5">
           <Tooltip>
             <TooltipTrigger
@@ -332,7 +321,6 @@ export default function ThreadLoopControl(props: {
         </div>
       )}
 
-      {/* ---- Sheet panel ---- */}
       <SheetContent side="right">
         <SheetHeader>
           <SheetTitle>Thread loop</SheetTitle>
@@ -342,7 +330,6 @@ export default function ThreadLoopControl(props: {
           </SheetDescription>
         </SheetHeader>
         <SheetPanel className="space-y-5">
-          {/* Status banner when loop exists */}
           {props.loop ? (
             <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
               <div className="flex items-center gap-2.5">
@@ -378,13 +365,10 @@ export default function ThreadLoopControl(props: {
             </div>
           )}
 
-          {/* Interval */}
           <div className="space-y-2.5">
             <Label htmlFor="thread-loop-interval" className="text-sm">
               Interval
             </Label>
-
-            {/* [-] input [+] stepper row */}
             <div className="flex items-center gap-2">
               <Button
                 type="button"
@@ -427,7 +411,6 @@ export default function ThreadLoopControl(props: {
               <span className="text-muted-foreground text-xs">(min)</span>
             </div>
 
-            {/* Preset chips row */}
             <div className="flex flex-wrap gap-1.5">
               {THREAD_LOOP_INTERVAL_PRESETS.map((presetMinutes) => {
                 const selected = intervalMinutes === String(presetMinutes);
@@ -451,7 +434,6 @@ export default function ThreadLoopControl(props: {
             </div>
           </div>
 
-          {/* Prompt */}
           <div className="space-y-2">
             <Label htmlFor="thread-loop-prompt" className="text-sm">
               Prompt
@@ -466,13 +448,12 @@ export default function ThreadLoopControl(props: {
             />
           </div>
 
-          {/* Run history */}
           {props.loop ? (
             <div className="space-y-2">
               <span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
                 History
               </span>
-              <div className="rounded-lg border border-border/60 bg-muted/10 text-sm divide-y divide-border/40">
+              <div className="divide-y divide-border/40 rounded-lg border border-border/60 bg-muted/10 text-sm">
                 <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
                   <span className="text-muted-foreground text-xs">Next run</span>
                   <span className="text-xs tabular-nums">
@@ -492,7 +473,7 @@ export default function ThreadLoopControl(props: {
                     <AlertCircleIcon className="size-3.5 shrink-0" />
                     Last run error
                   </div>
-                  <p className="mt-1 text-xs text-warning-foreground/80 leading-relaxed">
+                  <p className="mt-1 text-xs leading-relaxed text-warning-foreground/80">
                     {props.loop.lastError}
                   </p>
                 </div>
