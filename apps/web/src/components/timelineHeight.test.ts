@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { appendTerminalContextsToPrompt } from "../lib/terminalContext";
+import { appendFileReferencesToPrompt } from "../t3code-custom/file-references";
 import { buildInlineTerminalContextText } from "./chat/userMessageTerminalContexts";
 import { estimateTimelineMessageHeight } from "./timelineHeight";
 
@@ -57,6 +58,24 @@ describe("estimateTimelineMessageHeight", () => {
         attachments: [{ id: "1" }, { id: "2" }, { id: "3" }, { id: "4" }],
       }),
     ).toBe(350);
+  });
+
+  it("adds attachment chrome for file references embedded in the prompt text", () => {
+    const text = appendFileReferencesToPrompt("hello", [
+      {
+        path: "docs/plan.md",
+        scope: "workspace",
+        label: "plan.md",
+        kind: "text",
+      },
+    ]);
+
+    expect(
+      estimateTimelineMessageHeight({
+        role: "user",
+        text,
+      }),
+    ).toBe(234);
   });
 
   it("does not cap long user message estimates", () => {

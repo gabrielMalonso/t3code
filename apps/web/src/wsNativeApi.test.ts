@@ -122,6 +122,7 @@ function makeDesktopBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridg
   return {
     getWsUrl: () => null,
     pickFolder: async () => null,
+    getPathForFile: async () => null,
     confirm: async () => true,
     setTheme: async () => undefined,
     showContextMenu: async () => null,
@@ -413,5 +414,25 @@ describe("wsNativeApi", () => {
 
     await expect(api.contextMenu.show(items, { x: 4, y: 5 })).resolves.toBe("rename");
     expect(showContextMenuFallbackMock).toHaveBeenCalledWith(items, { x: 4, y: 5 });
+  });
+
+  it("forwards file path resolution to the desktop bridge", async () => {
+    const getPathForFile = vi.fn(async () => "/Users/demo/file.pdf");
+    getWindowForTest().desktopBridge = makeDesktopBridge({ getPathForFile });
+
+    const { createWsNativeApi } = await import("./wsNativeApi");
+    const api = createWsNativeApi();
+
+    await expect(api.dialogs.getPathForFile(new File(["pdf"], "file.pdf"))).resolves.toBe(
+      "/Users/demo/file.pdf",
+    );
+    expect(getPathForFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns null for file path resolution without a desktop bridge", async () => {
+    const { createWsNativeApi } = await import("./wsNativeApi");
+    const api = createWsNativeApi();
+
+    await expect(api.dialogs.getPathForFile(new File(["pdf"], "file.pdf"))).resolves.toBeNull();
   });
 });
