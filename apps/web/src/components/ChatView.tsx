@@ -176,6 +176,7 @@ import {
   buildExpiredTerminalContextToastCopy,
   buildLocalDraftThread,
   buildTemporaryWorktreeBranchName,
+  canRestoreComposerDraftAfterSendFailure,
   cloneComposerImageForRetry,
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
@@ -184,6 +185,7 @@ import {
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
   type LocalDispatchSnapshot,
+  partitionComposerFilesForDraft,
   PullRequestDialogState,
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
@@ -665,7 +667,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
   const optimisticUserMessagesRef = useRef(optimisticUserMessages);
   optimisticUserMessagesRef.current = optimisticUserMessages;
+  const composerFileReferencesRef = useRef<ComposerFileReference[]>(composerFileReferences);
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>(composerTerminalContexts);
+  const [pendingComposerFileResolutionCount, setPendingComposerFileResolutionCount] = useState(0);
+  const pendingComposerFileResolutionCountRef = useRef(0);
   const [localDraftErrorsByThreadId, setLocalDraftErrorsByThreadId] = useState<
     Record<ThreadId, string | null>
   >({});
@@ -743,6 +748,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const setMessagesScrollContainerRef = useCallback((element: HTMLDivElement | null) => {
     messagesScrollRef.current = element;
     setMessagesScrollElement(element);
+  }, []);
+  const isResolvingComposerFileReferences = pendingComposerFileResolutionCount > 0;
+  const updatePendingComposerFileResolutionCount = useCallback((delta: number) => {
+    setPendingComposerFileResolutionCount((current) => {
+      const next = Math.max(0, current + delta);
+      pendingComposerFileResolutionCountRef.current = next;
+      return next;
+    });
   }, []);
 
   const terminalStateByThreadId = useTerminalStateStore((state) => state.terminalStateByThreadId);
@@ -1171,13 +1184,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
     if (showPlanFollowUpPrompt) {
       return prompt.trim().length > 0 ? "plan:refine" : "plan:implement";
     }
-    return `idle:${composerSendState.hasSendableContent}:${isSendBusy}:${isConnecting}:${isPreparingWorktree}`;
+    return `idle:${composerSendState.hasSendableContent}:${isSendBusy}:${isResolvingComposerFileReferences}:${isConnecting}:${isPreparingWorktree}`;
   }, [
     activePendingIsResponding,
     activePendingProgress,
     composerSendState.hasSendableContent,
     isConnecting,
     isPreparingWorktree,
+    isResolvingComposerFileReferences,
     isSendBusy,
     phase,
     prompt,
@@ -2365,6 +2379,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
   }, [composerImages]);
 
   useEffect(() => {
+    composerFileReferencesRef.current = composerFileReferences;
+  }, [composerFileReferences]);
+
+  useEffect(() => {
     composerTerminalContextsRef.current = composerTerminalContexts;
   }, [composerTerminalContexts]);
 
@@ -2729,26 +2747,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
       return;
     }
 
+    const { errors, imageFiles, nonImageFiles } = partitionComposerFilesForDraft({
+      files,
+      existingImageCount: composerImagesRef.current.length,
+      maxImages: PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+      maxImageBytes: PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+      imageSizeLimitLabel: IMAGE_SIZE_LIMIT_LABEL,
+    });
     const nextImages: ComposerImageAttachment[] = [];
-    const nonImageFiles: File[] = [];
-    let nextImageCount = composerImagesRef.current.length;
-    const errors: string[] = [];
-    for (const file of files) {
-      if (!file.type.startsWith("image/")) {
-        nonImageFiles.push(file);
-        continue;
-      }
-      if (file.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
-        errors.push(`'${file.name}' exceeds the ${IMAGE_SIZE_LIMIT_LABEL} attachment limit.`);
-        continue;
-      }
-      if (nextImageCount >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
-        errors.push(
-          `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images per message.`,
-        );
-        break;
-      }
-
+    for (const file of imageFiles) {
       const previewUrl = URL.createObjectURL(file);
       nextImages.push({
         type: "image",
@@ -2759,7 +2766,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
         previewUrl,
         file,
       });
-      nextImageCount += 1;
     }
 
     if (nextImages.length === 1 && nextImages[0]) {
@@ -2769,12 +2775,17 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }
 
     if (nonImageFiles.length > 0) {
-      const { errors: referenceErrors, references } =
-        await resolveComposerFileReferencesFromFiles(nonImageFiles);
-      if (references.length > 0) {
-        addComposerFileReferencesToDraft(references);
+      updatePendingComposerFileResolutionCount(1);
+      try {
+        const { errors: referenceErrors, references } =
+          await resolveComposerFileReferencesFromFiles(nonImageFiles);
+        if (references.length > 0) {
+          addComposerFileReferencesToDraft(references);
+        }
+        errors.push(...referenceErrors);
+      } finally {
+        updatePendingComposerFileResolutionCount(-1);
       }
-      errors.push(...referenceErrors);
     }
 
     setThreadError(activeThreadId, errors.at(-1) ?? null);
@@ -2887,6 +2898,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
     e?.preventDefault();
     const api = readNativeApi();
     if (!api || !activeThread || isSendBusy || isConnecting || sendInFlightRef.current) return;
+    if (pendingComposerFileResolutionCountRef.current > 0) {
+      setThreadError(
+        activeThread.id,
+        "Wait for file references to finish resolving before sending.",
+      );
+      return;
+    }
     if (activePendingProgress) {
       onAdvanceActivePendingUserInput();
       return;
@@ -3157,9 +3175,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
     })().catch(async (err: unknown) => {
       if (
         !turnStartSucceeded &&
-        promptRef.current.length === 0 &&
-        composerImagesRef.current.length === 0 &&
-        composerTerminalContextsRef.current.length === 0
+        canRestoreComposerDraftAfterSendFailure({
+          prompt: promptRef.current,
+          imageCount: composerImagesRef.current.length,
+          fileReferenceCount: composerFileReferencesRef.current.length,
+          terminalContexts: composerTerminalContextsRef.current,
+        })
       ) {
         setOptimisticUserMessages((existing) => {
           const removed = existing.filter((message) => message.id === messageIdForSend);
@@ -4473,6 +4494,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                           }
                           promptHasText={prompt.trim().length > 0}
                           isSendBusy={isSendBusy}
+                          isResolvingFileReferences={isResolvingComposerFileReferences}
                           isConnecting={isConnecting}
                           isPreparingWorktree={isPreparingWorktree}
                           hasSendableContent={composerSendState.hasSendableContent}
