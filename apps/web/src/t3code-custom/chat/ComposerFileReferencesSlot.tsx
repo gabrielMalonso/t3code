@@ -1,9 +1,11 @@
 import type { ThreadId } from "@t3tools/contracts";
-import { FileCode2Icon, FileTextIcon, XIcon } from "lucide-react";
+import { XIcon } from "lucide-react";
 
 import { Button } from "../../components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../../components/ui/tooltip";
+import { VscodeEntryIcon } from "../../components/chat/VscodeEntryIcon";
 import { useComposerDraftStore } from "~/composerDraftStore";
+import { useTheme } from "~/hooks/useTheme";
 import {
   type ComposerFileReference,
   fileReferenceCopy,
@@ -44,6 +46,7 @@ export function ComposerFileReferencesSlot({
   workspaceRoot,
   visible,
 }: ComposerFileReferencesSlotProps) {
+  const { resolvedTheme } = useTheme();
   const fileReferences = useComposerDraftStore(
     (store) => store.draftsByThreadId[threadId]?.fileReferences ?? EMPTY_FILE_REFERENCES,
   );
@@ -57,7 +60,6 @@ export function ComposerFileReferencesSlot({
     <div className="mb-3 flex flex-wrap gap-2">
       {fileReferences.map((reference) => {
         const displayedReference = toDisplayedFileReference(reference, workspaceRoot);
-        const Icon = displayedReference.kind === "code" ? FileCode2Icon : FileTextIcon;
         const scopeBadge =
           displayedReference.scope === "workspace"
             ? fileReferenceCopy.chip.workspaceBadge
@@ -73,7 +75,12 @@ export function ComposerFileReferencesSlot({
             className="group flex min-h-16 min-w-0 max-w-64 items-start gap-2 rounded-lg border border-border/80 bg-background px-3 py-2"
           >
             <span className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/50 text-muted-foreground">
-              <Icon className="size-4" />
+              <VscodeEntryIcon
+                pathValue={displayedReference.path}
+                kind="file"
+                theme={resolvedTheme}
+                className="size-4"
+              />
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
