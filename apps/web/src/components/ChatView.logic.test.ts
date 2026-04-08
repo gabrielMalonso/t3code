@@ -5,9 +5,11 @@ import { useStore } from "../store";
 import {
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
   buildExpiredTerminalContextToastCopy,
+  canRestoreComposerDraftAfterSendFailure,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
   hasServerAcknowledgedLocalDispatch,
+  partitionComposerFilesForDraft,
   reconcileMountedTerminalThreadIds,
   waitForStartedServerThread,
 } from "./ChatView.logic";
@@ -88,6 +90,41 @@ describe("buildExpiredTerminalContextToastCopy", () => {
       title: "Expired terminal contexts omitted from message",
       description: "Re-add it if you want that terminal output included.",
     });
+  });
+});
+
+describe("partitionComposerFilesForDraft", () => {
+  it("keeps scanning non-image files after the image cap is reached", () => {
+    const files = [
+      new File(["1"], "one.png", { type: "image/png" }),
+      new File(["2"], "two.png", { type: "image/png" }),
+      new File(["pdf"], "report.pdf", { type: "application/pdf" }),
+    ];
+
+    const result = partitionComposerFilesForDraft({
+      files,
+      existingImageCount: 1,
+      maxImages: 2,
+      maxImageBytes: 10_000,
+      imageSizeLimitLabel: "5 MB",
+    });
+
+    expect(result.imageFiles.map((file) => file.name)).toEqual(["one.png"]);
+    expect(result.nonImageFiles.map((file) => file.name)).toEqual(["report.pdf"]);
+    expect(result.errors).toEqual(["You can attach up to 2 images per message."]);
+  });
+});
+
+describe("canRestoreComposerDraftAfterSendFailure", () => {
+  it("blocks rollback when file references were added after send started", () => {
+    expect(
+      canRestoreComposerDraftAfterSendFailure({
+        prompt: "",
+        imageCount: 0,
+        fileReferenceCount: 1,
+        terminalContexts: [],
+      }),
+    ).toBe(false);
   });
 });
 

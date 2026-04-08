@@ -34,10 +34,12 @@ function attachmentSummary(message: ChatMessage): string | null {
 }
 
 function buildMessageBlock(message: ChatMessage): string {
-  // t3code-custom parser boundary: bootstrap text should include readable referenced-file
-  // summaries while stripping the hidden transport sentinels from stored message text.
-  const displayedMessage = deriveDisplayedUserMessageStateWithCustomContent(message.text);
-  const text = displayedMessage.copyText;
+  const text =
+    message.role === "user"
+      ? // t3code-custom parser boundary: bootstrap text should only normalize hidden
+        // transport sentinels for user-authored payloads, not assistant prose.
+        deriveDisplayedUserMessageStateWithCustomContent(message.text).copyText
+      : message.text;
   const attachments = attachmentSummary(message);
   if (text && attachments) {
     return `${messageRoleLabel(message)}:\n${text}\n${attachments}`;

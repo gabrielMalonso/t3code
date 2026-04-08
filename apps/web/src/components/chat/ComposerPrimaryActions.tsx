@@ -19,6 +19,7 @@ interface ComposerPrimaryActionsProps {
   showPlanFollowUpPrompt: boolean;
   promptHasText: boolean;
   isSendBusy: boolean;
+  isResolvingFileReferences: boolean;
   isConnecting: boolean;
   isPreparingWorktree: boolean;
   hasSendableContent: boolean;
@@ -48,6 +49,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   showPlanFollowUpPrompt,
   promptHasText,
   isSendBusy,
+  isResolvingFileReferences,
   isConnecting,
   isPreparingWorktree,
   hasSendableContent,
@@ -123,9 +125,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           type="submit"
           size="sm"
           className={cn("rounded-full", compact ? "h-9 px-3 sm:h-8" : "h-9 px-4 sm:h-8")}
-          disabled={isSendBusy || isConnecting}
+          disabled={isSendBusy || isResolvingFileReferences || isConnecting}
         >
-          {isConnecting || isSendBusy ? "Sending..." : "Refine"}
+          {isConnecting || isSendBusy
+            ? "Sending..."
+            : isResolvingFileReferences
+              ? "Resolving..."
+              : "Refine"}
         </Button>
       );
     }
@@ -136,9 +142,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           type="submit"
           size="sm"
           className={cn("h-9 rounded-l-full rounded-r-none sm:h-8", compact ? "px-3" : "px-4")}
-          disabled={isSendBusy || isConnecting}
+          disabled={isSendBusy || isResolvingFileReferences || isConnecting}
         >
-          {isConnecting || isSendBusy ? "Sending..." : "Implement"}
+          {isConnecting || isSendBusy
+            ? "Sending..."
+            : isResolvingFileReferences
+              ? "Resolving..."
+              : "Implement"}
         </Button>
         <Menu>
           <MenuTrigger
@@ -148,7 +158,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
                 variant="default"
                 className="h-9 rounded-l-none rounded-r-full border-l-white/12 px-2 sm:h-8"
                 aria-label="Implementation actions"
-                disabled={isSendBusy || isConnecting}
+                disabled={isSendBusy || isResolvingFileReferences || isConnecting}
               />
             }
           >
@@ -156,7 +166,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           </MenuTrigger>
           <MenuPopup align="end" side="top">
             <MenuItem
-              disabled={isSendBusy || isConnecting}
+              disabled={isSendBusy || isResolvingFileReferences || isConnecting}
               onClick={() => void onImplementPlanInNewThread()}
             >
               Implement in a new thread
@@ -171,18 +181,20 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     <button
       type="submit"
       className="flex h-9 w-9 enabled:cursor-pointer items-center justify-center rounded-full bg-primary/90 text-primary-foreground transition-all duration-150 hover:bg-primary hover:scale-105 disabled:pointer-events-none disabled:opacity-30 disabled:hover:scale-100 sm:h-8 sm:w-8"
-      disabled={isSendBusy || isConnecting || !hasSendableContent}
+      disabled={isSendBusy || isResolvingFileReferences || isConnecting || !hasSendableContent}
       aria-label={
         isConnecting
           ? "Connecting"
-          : isPreparingWorktree
-            ? "Preparing worktree"
-            : isSendBusy
-              ? "Sending"
-              : "Send message"
+          : isResolvingFileReferences
+            ? "Resolving file references"
+            : isPreparingWorktree
+              ? "Preparing worktree"
+              : isSendBusy
+                ? "Sending"
+                : "Send message"
       }
     >
-      {isConnecting || isSendBusy ? (
+      {isConnecting || isSendBusy || isResolvingFileReferences ? (
         <svg
           width="14"
           height="14"
