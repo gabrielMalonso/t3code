@@ -2903,6 +2903,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
       fileReferenceCount: composerFileReferences.length,
       terminalContexts: composerTerminalContexts,
     });
+    // t3code-custom: file references stay out of the attachment protocol in v1.
+    // We enrich the prompt text instead so upstream attachment/provider flows remain image-only.
     const displayedFileReferences = composerFileReferences.map((reference) =>
       toDisplayedFileReference(reference, activeWorkspaceRoot),
     );
@@ -2979,6 +2981,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
     beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
 
     const composerImagesSnapshot = [...composerImages];
+    // t3code-custom: capture file references with the same optimistic/send rollback
+    // semantics as images and terminal contexts.
     const composerFileReferencesSnapshot = [...composerFileReferences];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
     const promptWithFileReferences = appendFileReferencesToPrompt(

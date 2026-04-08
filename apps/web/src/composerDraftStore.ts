@@ -170,6 +170,8 @@ const PersistedComposerDraftStoreStorage = Schema.Struct({
 export interface ComposerThreadDraftState {
   prompt: string;
   images: ComposerImageAttachment[];
+  // t3code-custom: keep file references in the shared draft store so send/restore/cleanup
+  // flows stay aligned with the core composer lifecycle instead of drifting in a fork-only store.
   fileReferences: ComposerFileReference[];
   nonPersistedImageIds: string[];
   persistedAttachments: PersistedComposerImageAttachment[];
@@ -368,6 +370,8 @@ function terminalContextDedupKey(context: TerminalContextDraft): string {
 }
 
 function composerFileReferenceDedupKey(reference: ComposerFileReference): string {
+  // t3code-custom: normalize separators so the same file does not duplicate between
+  // native drag-and-drop events and future desktop bridge/file picker paths.
   return reference.path.trim().replaceAll("\\", "/");
 }
 
