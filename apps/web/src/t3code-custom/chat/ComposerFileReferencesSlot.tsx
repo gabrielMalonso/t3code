@@ -4,7 +4,13 @@ import { FileCode2Icon, FileTextIcon, XIcon } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../../components/ui/tooltip";
 import { useComposerDraftStore } from "~/composerDraftStore";
-import { fileReferenceCopy, toDisplayedFileReference } from "../file-references";
+import {
+  type ComposerFileReference,
+  fileReferenceCopy,
+  toDisplayedFileReference,
+} from "../file-references";
+
+const EMPTY_FILE_REFERENCES: ReadonlyArray<ComposerFileReference> = Object.freeze([]);
 
 interface ComposerFileReferencesSlotProps {
   threadId: ThreadId;
@@ -39,7 +45,7 @@ export function ComposerFileReferencesSlot({
   visible,
 }: ComposerFileReferencesSlotProps) {
   const fileReferences = useComposerDraftStore(
-    (store) => store.draftsByThreadId[threadId]?.fileReferences ?? [],
+    (store) => store.draftsByThreadId[threadId]?.fileReferences ?? EMPTY_FILE_REFERENCES,
   );
   const removeFileReference = useComposerDraftStore((store) => store.removeFileReference);
 
