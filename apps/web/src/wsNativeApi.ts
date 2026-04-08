@@ -33,6 +33,10 @@ export function createWsNativeApi(): NativeApi {
         if (!window.desktopBridge) return null;
         return window.desktopBridge.pickFolder();
       },
+      getPathForFile: async (file) => {
+        if (!window.desktopBridge) return null;
+        return window.desktopBridge.getPathForFile(file);
+      },
       confirm: async (message) => {
         if (window.desktopBridge) {
           return window.desktopBridge.confirm(message);

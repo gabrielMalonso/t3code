@@ -1,4 +1,5 @@
 import type { ChatMessage } from "./types";
+import { deriveDisplayedUserMessageStateWithCustomContent } from "./t3code-custom/file-references";
 
 export interface BootstrapInputResult {
   text: string;
@@ -33,9 +34,9 @@ function attachmentSummary(message: ChatMessage): string | null {
 }
 
 function buildMessageBlock(message: ChatMessage): string {
-  const text = message.text;
+  const displayedMessage = deriveDisplayedUserMessageStateWithCustomContent(message.text);
+  const text = displayedMessage.copyText;
   const attachments = attachmentSummary(message);
-
   if (text && attachments) {
     return `${messageRoleLabel(message)}:\n${text}\n${attachments}`;
   }

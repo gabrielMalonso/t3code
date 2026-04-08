@@ -108,6 +108,7 @@ export interface DesktopUpdateCheckResult {
 export interface DesktopBridge {
   getWsUrl: () => string | null;
   pickFolder: () => Promise<string | null>;
+  getPathForFile: (file: File) => Promise<string | null>;
   confirm: (message: string) => Promise<boolean>;
   setTheme: (theme: DesktopTheme) => Promise<void>;
   showContextMenu: <T extends string>(
@@ -126,6 +127,7 @@ export interface DesktopBridge {
 export interface NativeApi {
   dialogs: {
     pickFolder: () => Promise<string | null>;
+    getPathForFile: (file: File) => Promise<string | null>;
     confirm: (message: string) => Promise<boolean>;
   };
   terminal: {

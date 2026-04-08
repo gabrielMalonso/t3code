@@ -1,5 +1,5 @@
-import { deriveDisplayedUserMessageState } from "../lib/terminalContext";
 import { buildInlineTerminalContextText } from "./chat/userMessageTerminalContexts";
+import { deriveDisplayedUserMessageStateWithCustomContent } from "../t3code-custom/file-references";
 
 const ASSISTANT_CHARS_PER_LINE_FALLBACK = 72;
 const USER_CHARS_PER_LINE_FALLBACK = 56;
@@ -83,7 +83,7 @@ export function estimateTimelineMessageHeight(
 
   if (message.role === "user") {
     const charsPerLine = estimateCharsPerLineForUser(layout.timelineWidthPx);
-    const displayedUserMessage = deriveDisplayedUserMessageState(message.text);
+    const displayedUserMessage = deriveDisplayedUserMessageStateWithCustomContent(message.text);
     const renderedText =
       displayedUserMessage.contexts.length > 0
         ? [
@@ -94,7 +94,8 @@ export function estimateTimelineMessageHeight(
             .join(" ")
         : displayedUserMessage.visibleText;
     const estimatedLines = estimateWrappedLineCount(renderedText, charsPerLine);
-    const attachmentCount = message.attachments?.length ?? 0;
+    const attachmentCount =
+      (message.attachments?.length ?? 0) + displayedUserMessage.fileReferences.length;
     const attachmentRows = Math.ceil(attachmentCount / ATTACHMENTS_PER_ROW);
     const attachmentHeight = attachmentRows * USER_ATTACHMENT_ROW_HEIGHT_PX;
     return USER_BASE_HEIGHT_PX + estimatedLines * USER_LINE_HEIGHT_PX + attachmentHeight;

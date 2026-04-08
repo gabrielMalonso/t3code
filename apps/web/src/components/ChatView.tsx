@@ -192,7 +192,13 @@ import {
   threadHasStarted,
   waitForStartedServerThread,
 } from "./ChatView.logic";
-import { ComposerCustomControlsSlot } from "../t3code-custom/chat";
+import { ComposerCustomBodySlot, ComposerCustomControlsSlot } from "../t3code-custom/chat";
+import {
+  appendFileReferencesToPrompt,
+  resolveComposerFileReferencesFromFiles,
+  toDisplayedFileReference,
+  type ComposerFileReference,
+} from "../t3code-custom/file-references";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import {
   useServerAvailableEditors,
@@ -597,15 +603,17 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const composerDraft = useComposerThreadDraft(threadId);
   const prompt = composerDraft.prompt;
   const composerImages = composerDraft.images;
+  const composerFileReferences = composerDraft.fileReferences;
   const composerTerminalContexts = composerDraft.terminalContexts;
   const composerSendState = useMemo(
     () =>
       deriveComposerSendState({
         prompt,
         imageCount: composerImages.length,
+        fileReferenceCount: composerFileReferences.length,
         terminalContexts: composerTerminalContexts,
       }),
-    [composerImages.length, composerTerminalContexts, prompt],
+    [composerFileReferences.length, composerImages.length, composerTerminalContexts, prompt],
   );
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
@@ -617,6 +625,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const addComposerDraftImage = useComposerDraftStore((store) => store.addImage);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
   const removeComposerDraftImage = useComposerDraftStore((store) => store.removeImage);
+  const addComposerDraftFileReferences = useComposerDraftStore((store) => store.addFileReferences);
+  const setComposerDraftFileReferences = useComposerDraftStore((store) => store.setFileReferences);
   const insertComposerDraftTerminalContext = useComposerDraftStore(
     (store) => store.insertTerminalContext,
   );
@@ -790,6 +800,18 @@ export default function ChatView({ threadId }: ChatViewProps) {
       addComposerDraftTerminalContexts(threadId, contexts);
     },
     [addComposerDraftTerminalContexts, threadId],
+  );
+  const addComposerFileReferencesToDraft = useCallback(
+    (references: ComposerFileReference[]) => {
+      addComposerDraftFileReferences(threadId, references);
+    },
+    [addComposerDraftFileReferences, threadId],
+  );
+  const setComposerFileReferencesInDraft = useCallback(
+    (references: ComposerFileReference[]) => {
+      setComposerDraftFileReferences(threadId, references);
+    },
+    [setComposerDraftFileReferences, threadId],
   );
   const removeComposerImageFromDraft = useCallback(
     (imageId: string) => {
@@ -2696,7 +2718,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     toggleTerminalVisibility,
   ]);
 
-  const addComposerImages = (files: File[]) => {
+  const addComposerImages = async (files: File[]) => {
     if (!activeThreadId || files.length === 0) return;
 
     if (pendingUserInputs.length > 0) {
@@ -2708,19 +2730,22 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }
 
     const nextImages: ComposerImageAttachment[] = [];
+    const nonImageFiles: File[] = [];
     let nextImageCount = composerImagesRef.current.length;
-    let error: string | null = null;
+    const errors: string[] = [];
     for (const file of files) {
       if (!file.type.startsWith("image/")) {
-        error = `Unsupported file type for '${file.name}'. Please attach image files only.`;
+        nonImageFiles.push(file);
         continue;
       }
       if (file.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
-        error = `'${file.name}' exceeds the ${IMAGE_SIZE_LIMIT_LABEL} attachment limit.`;
+        errors.push(`'${file.name}' exceeds the ${IMAGE_SIZE_LIMIT_LABEL} attachment limit.`);
         continue;
       }
       if (nextImageCount >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
-        error = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images per message.`;
+        errors.push(
+          `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images per message.`,
+        );
         break;
       }
 
@@ -2742,7 +2767,17 @@ export default function ChatView({ threadId }: ChatViewProps) {
     } else if (nextImages.length > 1) {
       addComposerImagesToDraft(nextImages);
     }
-    setThreadError(activeThreadId, error);
+
+    if (nonImageFiles.length > 0) {
+      const { errors: referenceErrors, references } =
+        await resolveComposerFileReferencesFromFiles(nonImageFiles);
+      if (references.length > 0) {
+        addComposerFileReferencesToDraft(references);
+      }
+      errors.push(...referenceErrors);
+    }
+
+    setThreadError(activeThreadId, errors.at(-1) ?? null);
   };
 
   const removeComposerImage = (imageId: string) => {
@@ -2759,7 +2794,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       return;
     }
     event.preventDefault();
-    addComposerImages(imageFiles);
+    void addComposerImages(imageFiles);
   };
 
   const onComposerDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
@@ -2803,7 +2838,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     dragDepthRef.current = 0;
     setIsDragOverComposer(false);
     const files = Array.from(event.dataTransfer.files);
-    addComposerImages(files);
+    void addComposerImages(files);
     focusComposer();
   };
 
@@ -2865,11 +2900,19 @@ export default function ChatView({ threadId }: ChatViewProps) {
     } = deriveComposerSendState({
       prompt: promptForSend,
       imageCount: composerImages.length,
+      fileReferenceCount: composerFileReferences.length,
       terminalContexts: composerTerminalContexts,
     });
+    const displayedFileReferences = composerFileReferences.map((reference) =>
+      toDisplayedFileReference(reference, activeWorkspaceRoot),
+    );
+    const trimmedWithFileReferences = appendFileReferencesToPrompt(
+      trimmed,
+      displayedFileReferences,
+    );
     if (showPlanFollowUpPrompt && activeProposedPlan) {
       const followUp = resolvePlanFollowUpSubmission({
-        draftText: trimmed,
+        draftText: trimmedWithFileReferences,
         planMarkdown: activeProposedPlan.planMarkdown,
       });
       promptRef.current = "";
@@ -2884,7 +2927,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
       return;
     }
     const standaloneSlashCommand =
-      composerImages.length === 0 && sendableComposerTerminalContexts.length === 0
+      composerImages.length === 0 &&
+      composerFileReferences.length === 0 &&
+      sendableComposerTerminalContexts.length === 0
         ? parseStandaloneComposerSlashCommand(trimmed)
         : null;
     if (standaloneSlashCommand) {
@@ -2934,9 +2979,16 @@ export default function ChatView({ threadId }: ChatViewProps) {
     beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
 
     const composerImagesSnapshot = [...composerImages];
+    const composerFileReferencesSnapshot = [...composerFileReferences];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
-    const messageTextForSend = appendTerminalContextsToPrompt(
+    const promptWithFileReferences = appendFileReferencesToPrompt(
       promptForSend,
+      composerFileReferencesSnapshot.map((reference) =>
+        toDisplayedFileReference(reference, activeWorkspaceRoot),
+      ),
+    );
+    const messageTextForSend = appendTerminalContextsToPrompt(
+      promptWithFileReferences,
       composerTerminalContextsSnapshot,
     );
     const messageIdForSend = newMessageId();
@@ -3011,6 +3063,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
       if (!titleSeed) {
         if (firstComposerImageName) {
           titleSeed = `Image: ${firstComposerImageName}`;
+        } else if (composerFileReferencesSnapshot.length > 0) {
+          titleSeed = composerFileReferencesSnapshot[0]?.name ?? "Referenced file";
         } else if (composerTerminalContextsSnapshot.length > 0) {
           titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
         } else {
@@ -3115,6 +3169,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         setPrompt(promptForSend);
         setComposerCursor(collapseExpandedComposerCursor(promptForSend, promptForSend.length));
         addComposerImagesToDraft(composerImagesSnapshot.map(cloneComposerImageForRetry));
+        setComposerFileReferencesInDraft(composerFileReferencesSnapshot);
         addComposerTerminalContextsToDraft(composerTerminalContextsSnapshot);
         setComposerTrigger(detectComposerTrigger(promptForSend, promptForSend.length));
       }
@@ -4171,6 +4226,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
                           ))}
                         </div>
                       )}
+                    {/* t3code-custom slot: composer custom body content */}
+                    <ComposerCustomBodySlot
+                      threadId={threadId}
+                      workspaceRoot={activeWorkspaceRoot}
+                      visible={!isComposerApprovalState && pendingUserInputs.length === 0}
+                    />
                     <ComposerPromptEditor
                       ref={composerEditorRef}
                       value={
