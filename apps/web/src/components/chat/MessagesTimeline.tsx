@@ -360,6 +360,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         row.message.role === "user" &&
         (() => {
           const userImages = row.message.attachments ?? [];
+          // t3code-custom parser boundary: user messages may carry hidden custom sentinels
+          // (for example file references). Always parse them here instead of rendering raw text.
           const displayedUserMessage = deriveDisplayedUserMessageStateWithCustomContent(
             row.message.text,
           );

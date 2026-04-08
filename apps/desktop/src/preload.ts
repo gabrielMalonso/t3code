@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     return typeof result === "string" ? result : null;
   },
   pickFolder: () => ipcRenderer.invoke(PICK_FOLDER_CHANNEL),
+  // t3code-custom bridge: Electron's renderer cannot be trusted to expose a stable file path
+  // on dropped File objects, so resolve it explicitly through the official desktop API surface.
   getPathForFile: async (file) => {
     try {
       const filePath = webUtils.getPathForFile(file);

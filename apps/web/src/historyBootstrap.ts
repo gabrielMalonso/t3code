@@ -34,6 +34,8 @@ function attachmentSummary(message: ChatMessage): string | null {
 }
 
 function buildMessageBlock(message: ChatMessage): string {
+  // t3code-custom parser boundary: bootstrap text should include readable referenced-file
+  // summaries while stripping the hidden transport sentinels from stored message text.
   const displayedMessage = deriveDisplayedUserMessageStateWithCustomContent(message.text);
   const text = displayedMessage.copyText;
   const attachments = attachmentSummary(message);

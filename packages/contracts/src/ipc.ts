@@ -108,6 +108,8 @@ export interface DesktopUpdateCheckResult {
 export interface DesktopBridge {
   getWsUrl: () => string | null;
   pickFolder: () => Promise<string | null>;
+  // t3code-custom bridge: desktop-only helper for resolving the real filesystem path
+  // behind dropped/selected File objects so the web layer can send path references instead of uploads.
   getPathForFile: (file: File) => Promise<string | null>;
   confirm: (message: string) => Promise<boolean>;
   setTheme: (theme: DesktopTheme) => Promise<void>;
@@ -127,6 +129,7 @@ export interface DesktopBridge {
 export interface NativeApi {
   dialogs: {
     pickFolder: () => Promise<string | null>;
+    // t3code-custom bridge mirror for the renderer-side path reference workflow.
     getPathForFile: (file: File) => Promise<string | null>;
     confirm: (message: string) => Promise<boolean>;
   };

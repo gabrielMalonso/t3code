@@ -83,6 +83,8 @@ export function estimateTimelineMessageHeight(
 
   if (message.role === "user") {
     const charsPerLine = estimateCharsPerLineForUser(layout.timelineWidthPx);
+    // t3code-custom parser boundary: virtualization must estimate heights from the same
+    // derived surface used by the timeline, or hidden sentinels skew row measurements.
     const displayedUserMessage = deriveDisplayedUserMessageStateWithCustomContent(message.text);
     const renderedText =
       displayedUserMessage.contexts.length > 0
