@@ -12,6 +12,7 @@ Regras:
 Estrutura:
 
 - `chat/`: slots e componentes visuais de customização do chat.
+- `file-references/`: parser, serialização, copy e regras da feature de referência por path.
 - `hooks/`: hooks específicos do fork.
 
 Convenções:
@@ -19,3 +20,4 @@ Convenções:
 - O core deve importar slots genéricos, não features específicas.
 - Features específicas ficam atrás desses slots.
 - Se surgir uma nova customização no composer, ela entra no slot do composer em vez de abrir novo diff espalhado no `ChatView`.
+- Se uma feature precisar guardar estado de composer, prefira estender o `composerDraftStore` existente em vez de criar um store órfão.

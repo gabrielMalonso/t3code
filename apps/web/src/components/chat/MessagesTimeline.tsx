@@ -24,6 +24,7 @@ import {
   CheckIcon,
   CircleAlertIcon,
   EyeIcon,
+  FileTextIcon,
   GlobeIcon,
   HammerIcon,
   type LucideIcon,
@@ -49,10 +50,7 @@ import {
 } from "./MessagesTimeline.logic";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import {
-  deriveDisplayedUserMessageState,
-  type ParsedTerminalContextEntry,
-} from "~/lib/terminalContext";
+import { type ParsedTerminalContextEntry } from "~/lib/terminalContext";
 import { cn } from "~/lib/utils";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { formatTimestamp } from "../../timestampFormat";
@@ -61,6 +59,10 @@ import {
   formatInlineTerminalContextLabel,
   textContainsInlineTerminalContextLabels,
 } from "./userMessageTerminalContexts";
+import {
+  deriveDisplayedUserMessageStateWithCustomContent,
+  fileReferenceCopy,
+} from "../../t3code-custom/file-references";
 
 const ALWAYS_UNVIRTUALIZED_TAIL_ROWS = 8;
 
@@ -358,8 +360,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         row.message.role === "user" &&
         (() => {
           const userImages = row.message.attachments ?? [];
-          const displayedUserMessage = deriveDisplayedUserMessageState(row.message.text);
+          const displayedUserMessage = deriveDisplayedUserMessageStateWithCustomContent(
+            row.message.text,
+          );
           const terminalContexts = displayedUserMessage.contexts;
+          const fileReferences = displayedUserMessage.fileReferences;
           const canRevertAgentWork = revertTurnCountByUserMessageId.has(row.message.id);
           return (
             <div className="flex justify-end">
@@ -399,6 +404,33 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                         </div>
                       ),
                     )}
+                  </div>
+                )}
+                {fileReferences.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    {fileReferences.map((reference) => (
+                      <div
+                        key={`${reference.scope}:${reference.path}`}
+                        className="flex max-w-[420px] min-w-0 items-center gap-2 rounded-lg border border-border/80 bg-background/70 px-2.5 py-2"
+                      >
+                        <FileTextIcon className="size-4 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate text-xs font-medium text-foreground">
+                              {reference.label}
+                            </span>
+                            <span className="rounded bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              {reference.scope === "workspace"
+                                ? fileReferenceCopy.chip.workspaceBadge
+                                : fileReferenceCopy.chip.externalBadge}
+                            </span>
+                          </div>
+                          <p className="truncate text-[11px] text-muted-foreground/80">
+                            {reference.path}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
                 {(displayedUserMessage.visibleText.trim().length > 0 ||

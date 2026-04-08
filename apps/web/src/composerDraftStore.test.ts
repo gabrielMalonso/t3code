@@ -209,6 +209,20 @@ describe("composerDraftStore clearComposerContent", () => {
     expect(draft).toBeUndefined();
     expect(revokeSpy).not.toHaveBeenCalledWith("blob:optimistic");
   });
+
+  it("clears file references when clearing composer content", () => {
+    useComposerDraftStore.getState().addFileReference(threadId, {
+      id: "file-ref-1",
+      name: "plan.md",
+      path: "/tmp/project/plan.md",
+      mimeType: "text/markdown",
+      sizeBytes: 12,
+    });
+
+    useComposerDraftStore.getState().clearComposerContent(threadId);
+
+    expect(useComposerDraftStore.getState().draftsByThreadId[threadId]).toBeUndefined();
+  });
 });
 
 describe("composerDraftStore syncPersistedAttachments", () => {
@@ -442,6 +456,77 @@ describe("composerDraftStore terminal contexts", () => {
     expect(mergedState.draftsByThreadId[threadId]).toBeUndefined();
     expect(mergedState.draftThreadsByThreadId).toEqual({});
     expect(mergedState.projectDraftThreadIdByProjectId).toEqual({});
+  });
+});
+
+describe("composerDraftStore file references", () => {
+  const threadId = ThreadId.makeUnsafe("thread-file-refs");
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  it("deduplicates file references by normalized path", () => {
+    useComposerDraftStore.getState().addFileReferences(threadId, [
+      {
+        id: "ref-1",
+        name: "plan.md",
+        path: "/tmp/project/docs/plan.md",
+        mimeType: "text/markdown",
+        sizeBytes: 10,
+      },
+      {
+        id: "ref-2",
+        name: "plan.md",
+        path: "\\tmp\\project\\docs\\plan.md",
+        mimeType: "text/markdown",
+        sizeBytes: 10,
+      },
+    ]);
+
+    expect(useComposerDraftStore.getState().draftsByThreadId[threadId]?.fileReferences).toEqual([
+      {
+        id: "ref-1",
+        name: "plan.md",
+        path: "/tmp/project/docs/plan.md",
+        mimeType: "text/markdown",
+        sizeBytes: 10,
+      },
+    ]);
+  });
+
+  it("persists and hydrates file references", () => {
+    useComposerDraftStore.getState().addFileReference(threadId, {
+      id: "ref-1",
+      name: "report.pdf",
+      path: "/tmp/project/report.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 32,
+    });
+
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        partialize: (state: ReturnType<typeof useComposerDraftStore.getState>) => unknown;
+        merge: (
+          persistedState: unknown,
+          currentState: ReturnType<typeof useComposerDraftStore.getState>,
+        ) => ReturnType<typeof useComposerDraftStore.getState>;
+      };
+    };
+    const persistedState = persistApi.getOptions().partialize(useComposerDraftStore.getState());
+    const mergedState = persistApi
+      .getOptions()
+      .merge(persistedState, useComposerDraftStore.getInitialState());
+
+    expect(mergedState.draftsByThreadId[threadId]?.fileReferences).toEqual([
+      {
+        id: "ref-1",
+        name: "report.pdf",
+        path: "/tmp/project/report.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 32,
+      },
+    ]);
   });
 });
 

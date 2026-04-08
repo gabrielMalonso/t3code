@@ -140,4 +140,60 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Context compacted");
     expect(markup).toContain("Work log");
   });
+
+  it("renders referenced file chips without leaking raw sentinels", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        hasMessages
+        isWorking={false}
+        activeTurnInProgress={false}
+        activeTurnStartedAt={null}
+        scrollContainer={null}
+        timelineEntries={[
+          {
+            id: "entry-file-ref",
+            kind: "message",
+            createdAt: "2026-04-08T18:00:00.000Z",
+            message: {
+              id: MessageId.makeUnsafe("message-file-ref"),
+              role: "user",
+              text: [
+                "Leia esses arquivos",
+                "",
+                "<t3code-file-references>",
+                "Referenced files:",
+                "- workspace: docs/plan.md",
+                "- external: /Users/demo/Desktop/report.pdf",
+                "</t3code-file-references>",
+              ].join("\n"),
+              createdAt: "2026-04-08T18:00:00.000Z",
+              streaming: false,
+            },
+          },
+        ]}
+        completionDividerBeforeEntryId={null}
+        completionSummary={null}
+        turnDiffSummaryByAssistantMessageId={new Map()}
+        nowIso="2026-04-08T18:00:05.000Z"
+        expandedWorkGroups={{}}
+        onToggleWorkGroup={() => {}}
+        onOpenTurnDiff={() => {}}
+        revertTurnCountByUserMessageId={new Map()}
+        onRevertUserMessage={() => {}}
+        isRevertingCheckpoint={false}
+        onImageExpand={() => {}}
+        markdownCwd={undefined}
+        resolvedTheme="light"
+        timestampFormat="locale"
+        workspaceRoot="/tmp/project"
+      />,
+    );
+
+    expect(markup).toContain("plan.md");
+    expect(markup).toContain("report.pdf");
+    expect(markup).toContain("Workspace");
+    expect(markup).toContain("Externo");
+    expect(markup).not.toContain("&lt;t3code-file-references&gt;");
+  });
 });
