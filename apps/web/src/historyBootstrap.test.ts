@@ -122,4 +122,30 @@ describe("buildBootstrapInput", () => {
     expect(result.text).toContain("Attached image");
     expect(result.text).toContain("screenshot.png");
   });
+
+  it("preserves assistant text that merely looks like hidden sentinel markup", () => {
+    const assistantText = [
+      "Here is the literal markup you asked about:",
+      "<t3code-file-references>",
+      "Referenced files:",
+      "- workspace: docs/plan.md",
+      "</t3code-file-references>",
+    ].join("\n");
+
+    const result = buildBootstrapInput(
+      [
+        {
+          id: messageId("a-markup"),
+          role: "assistant",
+          text: assistantText,
+          createdAt: "2026-02-09T00:00:01.000Z",
+          streaming: false,
+        },
+      ],
+      "Explain that snippet",
+      1_500,
+    );
+
+    expect(result.text).toContain(assistantText);
+  });
 });

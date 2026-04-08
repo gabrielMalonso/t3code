@@ -176,6 +176,7 @@ import {
   buildExpiredTerminalContextToastCopy,
   buildLocalDraftThread,
   buildTemporaryWorktreeBranchName,
+  canRestoreComposerDraftAfterSendFailure,
   cloneComposerImageForRetry,
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
@@ -184,6 +185,7 @@ import {
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
   type LocalDispatchSnapshot,
+  partitionComposerFilesForDraft,
   PullRequestDialogState,
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
@@ -192,7 +194,13 @@ import {
   threadHasStarted,
   waitForStartedServerThread,
 } from "./ChatView.logic";
-import { ComposerCustomControlsSlot } from "../t3code-custom/chat";
+import { ComposerCustomBodySlot, ComposerCustomControlsSlot } from "../t3code-custom/chat";
+import {
+  appendFileReferencesToPrompt,
+  resolveComposerFileReferencesFromFiles,
+  toDisplayedFileReference,
+  type ComposerFileReference,
+} from "../t3code-custom/file-references";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import {
   useServerAvailableEditors,
@@ -597,15 +605,17 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const composerDraft = useComposerThreadDraft(threadId);
   const prompt = composerDraft.prompt;
   const composerImages = composerDraft.images;
+  const composerFileReferences = composerDraft.fileReferences;
   const composerTerminalContexts = composerDraft.terminalContexts;
   const composerSendState = useMemo(
     () =>
       deriveComposerSendState({
         prompt,
         imageCount: composerImages.length,
+        fileReferenceCount: composerFileReferences.length,
         terminalContexts: composerTerminalContexts,
       }),
-    [composerImages.length, composerTerminalContexts, prompt],
+    [composerFileReferences.length, composerImages.length, composerTerminalContexts, prompt],
   );
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
@@ -617,6 +627,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const addComposerDraftImage = useComposerDraftStore((store) => store.addImage);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
   const removeComposerDraftImage = useComposerDraftStore((store) => store.removeImage);
+  const addComposerDraftFileReferences = useComposerDraftStore((store) => store.addFileReferences);
+  const setComposerDraftFileReferences = useComposerDraftStore((store) => store.setFileReferences);
   const insertComposerDraftTerminalContext = useComposerDraftStore(
     (store) => store.insertTerminalContext,
   );
@@ -655,7 +667,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
   const optimisticUserMessagesRef = useRef(optimisticUserMessages);
   optimisticUserMessagesRef.current = optimisticUserMessages;
+  const composerFileReferencesRef = useRef<ComposerFileReference[]>(composerFileReferences);
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>(composerTerminalContexts);
+  const [pendingComposerFileResolutionCount, setPendingComposerFileResolutionCount] = useState(0);
+  const pendingComposerFileResolutionCountRef = useRef(0);
   const [localDraftErrorsByThreadId, setLocalDraftErrorsByThreadId] = useState<
     Record<ThreadId, string | null>
   >({});
@@ -734,6 +749,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
     messagesScrollRef.current = element;
     setMessagesScrollElement(element);
   }, []);
+  const isResolvingComposerFileReferences = pendingComposerFileResolutionCount > 0;
+  const updatePendingComposerFileResolutionCount = useCallback((delta: number) => {
+    setPendingComposerFileResolutionCount((current) => {
+      const next = Math.max(0, current + delta);
+      pendingComposerFileResolutionCountRef.current = next;
+      return next;
+    });
+  }, []);
 
   const terminalStateByThreadId = useTerminalStateStore((state) => state.terminalStateByThreadId);
   const terminalState = useMemo(
@@ -790,6 +813,18 @@ export default function ChatView({ threadId }: ChatViewProps) {
       addComposerDraftTerminalContexts(threadId, contexts);
     },
     [addComposerDraftTerminalContexts, threadId],
+  );
+  const addComposerFileReferencesToDraft = useCallback(
+    (references: ComposerFileReference[]) => {
+      addComposerDraftFileReferences(threadId, references);
+    },
+    [addComposerDraftFileReferences, threadId],
+  );
+  const setComposerFileReferencesInDraft = useCallback(
+    (references: ComposerFileReference[]) => {
+      setComposerDraftFileReferences(threadId, references);
+    },
+    [setComposerDraftFileReferences, threadId],
   );
   const removeComposerImageFromDraft = useCallback(
     (imageId: string) => {
@@ -1149,13 +1184,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
     if (showPlanFollowUpPrompt) {
       return prompt.trim().length > 0 ? "plan:refine" : "plan:implement";
     }
-    return `idle:${composerSendState.hasSendableContent}:${isSendBusy}:${isConnecting}:${isPreparingWorktree}`;
+    return `idle:${composerSendState.hasSendableContent}:${isSendBusy}:${isResolvingComposerFileReferences}:${isConnecting}:${isPreparingWorktree}`;
   }, [
     activePendingIsResponding,
     activePendingProgress,
     composerSendState.hasSendableContent,
     isConnecting,
     isPreparingWorktree,
+    isResolvingComposerFileReferences,
     isSendBusy,
     phase,
     prompt,
@@ -2343,6 +2379,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
   }, [composerImages]);
 
   useEffect(() => {
+    composerFileReferencesRef.current = composerFileReferences;
+  }, [composerFileReferences]);
+
+  useEffect(() => {
     composerTerminalContextsRef.current = composerTerminalContexts;
   }, [composerTerminalContexts]);
 
@@ -2696,7 +2736,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     toggleTerminalVisibility,
   ]);
 
-  const addComposerImages = (files: File[]) => {
+  const addComposerImages = async (files: File[]) => {
     if (!activeThreadId || files.length === 0) return;
 
     if (pendingUserInputs.length > 0) {
@@ -2707,23 +2747,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
       return;
     }
 
+    const { errors, imageFiles, nonImageFiles } = partitionComposerFilesForDraft({
+      files,
+      existingImageCount: composerImagesRef.current.length,
+      maxImages: PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+      maxImageBytes: PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+      imageSizeLimitLabel: IMAGE_SIZE_LIMIT_LABEL,
+    });
     const nextImages: ComposerImageAttachment[] = [];
-    let nextImageCount = composerImagesRef.current.length;
-    let error: string | null = null;
-    for (const file of files) {
-      if (!file.type.startsWith("image/")) {
-        error = `Unsupported file type for '${file.name}'. Please attach image files only.`;
-        continue;
-      }
-      if (file.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
-        error = `'${file.name}' exceeds the ${IMAGE_SIZE_LIMIT_LABEL} attachment limit.`;
-        continue;
-      }
-      if (nextImageCount >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
-        error = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images per message.`;
-        break;
-      }
-
+    for (const file of imageFiles) {
       const previewUrl = URL.createObjectURL(file);
       nextImages.push({
         type: "image",
@@ -2734,7 +2766,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
         previewUrl,
         file,
       });
-      nextImageCount += 1;
     }
 
     if (nextImages.length === 1 && nextImages[0]) {
@@ -2742,7 +2773,22 @@ export default function ChatView({ threadId }: ChatViewProps) {
     } else if (nextImages.length > 1) {
       addComposerImagesToDraft(nextImages);
     }
-    setThreadError(activeThreadId, error);
+
+    if (nonImageFiles.length > 0) {
+      updatePendingComposerFileResolutionCount(1);
+      try {
+        const { errors: referenceErrors, references } =
+          await resolveComposerFileReferencesFromFiles(nonImageFiles);
+        if (references.length > 0) {
+          addComposerFileReferencesToDraft(references);
+        }
+        errors.push(...referenceErrors);
+      } finally {
+        updatePendingComposerFileResolutionCount(-1);
+      }
+    }
+
+    setThreadError(activeThreadId, errors.at(-1) ?? null);
   };
 
   const removeComposerImage = (imageId: string) => {
@@ -2759,7 +2805,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       return;
     }
     event.preventDefault();
-    addComposerImages(imageFiles);
+    void addComposerImages(imageFiles);
   };
 
   const onComposerDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
@@ -2803,7 +2849,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     dragDepthRef.current = 0;
     setIsDragOverComposer(false);
     const files = Array.from(event.dataTransfer.files);
-    addComposerImages(files);
+    void addComposerImages(files);
     focusComposer();
   };
 
@@ -2852,6 +2898,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
     e?.preventDefault();
     const api = readNativeApi();
     if (!api || !activeThread || isSendBusy || isConnecting || sendInFlightRef.current) return;
+    if (pendingComposerFileResolutionCountRef.current > 0) {
+      setThreadError(
+        activeThread.id,
+        "Wait for file references to finish resolving before sending.",
+      );
+      return;
+    }
     if (activePendingProgress) {
       onAdvanceActivePendingUserInput();
       return;
@@ -2865,11 +2918,21 @@ export default function ChatView({ threadId }: ChatViewProps) {
     } = deriveComposerSendState({
       prompt: promptForSend,
       imageCount: composerImages.length,
+      fileReferenceCount: composerFileReferences.length,
       terminalContexts: composerTerminalContexts,
     });
+    // t3code-custom: file references stay out of the attachment protocol in v1.
+    // We enrich the prompt text instead so upstream attachment/provider flows remain image-only.
+    const displayedFileReferences = composerFileReferences.map((reference) =>
+      toDisplayedFileReference(reference, activeWorkspaceRoot),
+    );
+    const trimmedWithFileReferences = appendFileReferencesToPrompt(
+      trimmed,
+      displayedFileReferences,
+    );
     if (showPlanFollowUpPrompt && activeProposedPlan) {
       const followUp = resolvePlanFollowUpSubmission({
-        draftText: trimmed,
+        draftText: trimmedWithFileReferences,
         planMarkdown: activeProposedPlan.planMarkdown,
       });
       promptRef.current = "";
@@ -2884,7 +2947,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
       return;
     }
     const standaloneSlashCommand =
-      composerImages.length === 0 && sendableComposerTerminalContexts.length === 0
+      composerImages.length === 0 &&
+      composerFileReferences.length === 0 &&
+      sendableComposerTerminalContexts.length === 0
         ? parseStandaloneComposerSlashCommand(trimmed)
         : null;
     if (standaloneSlashCommand) {
@@ -2934,9 +2999,18 @@ export default function ChatView({ threadId }: ChatViewProps) {
     beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
 
     const composerImagesSnapshot = [...composerImages];
+    // t3code-custom: capture file references with the same optimistic/send rollback
+    // semantics as images and terminal contexts.
+    const composerFileReferencesSnapshot = [...composerFileReferences];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
-    const messageTextForSend = appendTerminalContextsToPrompt(
+    const promptWithFileReferences = appendFileReferencesToPrompt(
       promptForSend,
+      composerFileReferencesSnapshot.map((reference) =>
+        toDisplayedFileReference(reference, activeWorkspaceRoot),
+      ),
+    );
+    const messageTextForSend = appendTerminalContextsToPrompt(
+      promptWithFileReferences,
       composerTerminalContextsSnapshot,
     );
     const messageIdForSend = newMessageId();
@@ -3011,6 +3085,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
       if (!titleSeed) {
         if (firstComposerImageName) {
           titleSeed = `Image: ${firstComposerImageName}`;
+        } else if (composerFileReferencesSnapshot.length > 0) {
+          titleSeed = composerFileReferencesSnapshot[0]?.name ?? "Referenced file";
         } else if (composerTerminalContextsSnapshot.length > 0) {
           titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
         } else {
@@ -3099,9 +3175,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
     })().catch(async (err: unknown) => {
       if (
         !turnStartSucceeded &&
-        promptRef.current.length === 0 &&
-        composerImagesRef.current.length === 0 &&
-        composerTerminalContextsRef.current.length === 0
+        canRestoreComposerDraftAfterSendFailure({
+          prompt: promptRef.current,
+          imageCount: composerImagesRef.current.length,
+          fileReferenceCount: composerFileReferencesRef.current.length,
+          terminalContexts: composerTerminalContextsRef.current,
+        })
       ) {
         setOptimisticUserMessages((existing) => {
           const removed = existing.filter((message) => message.id === messageIdForSend);
@@ -3115,6 +3194,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         setPrompt(promptForSend);
         setComposerCursor(collapseExpandedComposerCursor(promptForSend, promptForSend.length));
         addComposerImagesToDraft(composerImagesSnapshot.map(cloneComposerImageForRetry));
+        setComposerFileReferencesInDraft(composerFileReferencesSnapshot);
         addComposerTerminalContextsToDraft(composerTerminalContextsSnapshot);
         setComposerTrigger(detectComposerTrigger(promptForSend, promptForSend.length));
       }
@@ -4171,6 +4251,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
                           ))}
                         </div>
                       )}
+                    {/* t3code-custom slot: composer custom body content */}
+                    <ComposerCustomBodySlot
+                      threadId={threadId}
+                      workspaceRoot={activeWorkspaceRoot}
+                      visible={!isComposerApprovalState && pendingUserInputs.length === 0}
+                    />
                     <ComposerPromptEditor
                       ref={composerEditorRef}
                       value={
@@ -4408,6 +4494,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                           }
                           promptHasText={prompt.trim().length > 0}
                           isSendBusy={isSendBusy}
+                          isResolvingFileReferences={isResolvingComposerFileReferences}
                           isConnecting={isConnecting}
                           isPreparingWorktree={isPreparingWorktree}
                           hasSendableContent={composerSendState.hasSendableContent}

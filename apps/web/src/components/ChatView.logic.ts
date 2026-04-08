@@ -154,6 +154,7 @@ export function cloneComposerImageForRetry(
 export function deriveComposerSendState(options: {
   prompt: string;
   imageCount: number;
+  fileReferenceCount: number;
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
 }): {
   trimmedPrompt: string;
@@ -170,8 +171,69 @@ export function deriveComposerSendState(options: {
     sendableTerminalContexts,
     expiredTerminalContextCount,
     hasSendableContent:
-      trimmedPrompt.length > 0 || options.imageCount > 0 || sendableTerminalContexts.length > 0,
+      trimmedPrompt.length > 0 ||
+      options.imageCount > 0 ||
+      options.fileReferenceCount > 0 ||
+      sendableTerminalContexts.length > 0,
   };
+}
+
+export function partitionComposerFilesForDraft(options: {
+  files: ReadonlyArray<File>;
+  existingImageCount: number;
+  maxImages: number;
+  maxImageBytes: number;
+  imageSizeLimitLabel: string;
+}): {
+  imageFiles: File[];
+  nonImageFiles: File[];
+  errors: string[];
+} {
+  const imageFiles: File[] = [];
+  const nonImageFiles: File[] = [];
+  const errors: string[] = [];
+  let nextImageCount = options.existingImageCount;
+  let hitImageLimit = false;
+
+  for (const file of options.files) {
+    if (!file.type.startsWith("image/")) {
+      nonImageFiles.push(file);
+      continue;
+    }
+    if (file.size > options.maxImageBytes) {
+      errors.push(`'${file.name}' exceeds the ${options.imageSizeLimitLabel} attachment limit.`);
+      continue;
+    }
+    if (nextImageCount >= options.maxImages) {
+      if (!hitImageLimit) {
+        errors.push(`You can attach up to ${options.maxImages} images per message.`);
+        hitImageLimit = true;
+      }
+      continue;
+    }
+    imageFiles.push(file);
+    nextImageCount += 1;
+  }
+
+  return {
+    imageFiles,
+    nonImageFiles,
+    errors,
+  };
+}
+
+export function canRestoreComposerDraftAfterSendFailure(options: {
+  prompt: string;
+  imageCount: number;
+  fileReferenceCount: number;
+  terminalContexts: ReadonlyArray<TerminalContextDraft>;
+}): boolean {
+  return (
+    options.prompt.length === 0 &&
+    options.imageCount === 0 &&
+    options.fileReferenceCount === 0 &&
+    options.terminalContexts.length === 0
+  );
 }
 
 export function buildExpiredTerminalContextToastCopy(

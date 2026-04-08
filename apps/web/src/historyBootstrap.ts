@@ -1,4 +1,5 @@
 import type { ChatMessage } from "./types";
+import { deriveDisplayedUserMessageStateWithCustomContent } from "./t3code-custom/file-references";
 
 export interface BootstrapInputResult {
   text: string;
@@ -33,9 +34,13 @@ function attachmentSummary(message: ChatMessage): string | null {
 }
 
 function buildMessageBlock(message: ChatMessage): string {
-  const text = message.text;
+  const text =
+    message.role === "user"
+      ? // t3code-custom parser boundary: bootstrap text should only normalize hidden
+        // transport sentinels for user-authored payloads, not assistant prose.
+        deriveDisplayedUserMessageStateWithCustomContent(message.text).copyText
+      : message.text;
   const attachments = attachmentSummary(message);
-
   if (text && attachments) {
     return `${messageRoleLabel(message)}:\n${text}\n${attachments}`;
   }

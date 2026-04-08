@@ -33,6 +33,12 @@ export function createWsNativeApi(): NativeApi {
         if (!window.desktopBridge) return null;
         return window.desktopBridge.pickFolder();
       },
+      // t3code-custom bridge: browser fallback is null by design; path-based file references
+      // are a desktop capability, not a generic web File API feature.
+      getPathForFile: async (file) => {
+        if (!window.desktopBridge) return null;
+        return window.desktopBridge.getPathForFile(file);
+      },
       confirm: async (message) => {
         if (window.desktopBridge) {
           return window.desktopBridge.confirm(message);
