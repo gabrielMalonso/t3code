@@ -14,6 +14,7 @@ import {
   hasServerAcknowledgedLocalDispatch,
   partitionComposerFilesForDraft,
   reconcileMountedTerminalThreadIds,
+  removePastedTextFromComposer,
   restorePastedTextIntoComposer,
   saveComposerPastedTextAsFileReference,
   shouldAutoRestoreComposerPasteSnapshot,
@@ -126,7 +127,7 @@ describe("composer pasted text file references", () => {
   it("converts only large text pastes when the workspace is ready", () => {
     expect(
       shouldConvertComposerPastedTextToFileReference({
-        text: "x".repeat(4_001),
+        text: "x".repeat(2_001),
         fileCount: 0,
         workspaceRoot: "/repo/project",
         pendingUserInputCount: 0,
@@ -146,7 +147,7 @@ describe("composer pasted text file references", () => {
     ).toBe(true);
     expect(
       shouldConvertComposerPastedTextToFileReference({
-        text: "x".repeat(4_000),
+        text: "x".repeat(2_000),
         fileCount: 0,
         workspaceRoot: "/repo/project",
         pendingUserInputCount: 0,
@@ -289,6 +290,32 @@ describe("composer pasted text file references", () => {
       collapsedCursor: 12,
       expandedCursor: 12,
     });
+  });
+
+  it("removes pasted text from the composer while preserving later typing", () => {
+    expect(
+      removePastedTextFromComposer({
+        prompt: "prefix HELLO world",
+        pastedText: "HELLO",
+        expandedCursor: 7,
+        currentExpandedCursor: 17,
+      }),
+    ).toEqual({
+      text: "prefix  world",
+      collapsedCursor: 12,
+      expandedCursor: 12,
+    });
+  });
+
+  it("does not remove text when the pasted segment is no longer at the captured cursor", () => {
+    expect(
+      removePastedTextFromComposer({
+        prompt: "prefix world",
+        pastedText: "HELLO",
+        expandedCursor: 7,
+        currentExpandedCursor: 12,
+      }),
+    ).toBeNull();
   });
 });
 

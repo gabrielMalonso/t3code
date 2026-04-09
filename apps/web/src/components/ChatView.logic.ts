@@ -24,7 +24,7 @@ import { replaceTextRange } from "../composer-logic";
 
 export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by-project";
 export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 10;
-export const COMPOSER_PASTE_FILE_REFERENCE_CHAR_THRESHOLD = 4_000;
+export const COMPOSER_PASTE_FILE_REFERENCE_CHAR_THRESHOLD = 2_000;
 export const COMPOSER_PASTE_FILE_REFERENCE_LINE_THRESHOLD = 80;
 export const COMPOSER_PASTE_FILE_REFERENCE_DIRECTORY = ".t3code/pastes";
 const WORKTREE_BRANCH_PREFIX = "t3code";
@@ -244,6 +244,10 @@ function countTextLines(text: string): number {
   return text.split(/\r\n?|\n/).length;
 }
 
+function normalizeComposerPastedText(text: string): string {
+  return text.replace(/\r\n?/g, "\n");
+}
+
 function basenameOfRelativePath(pathValue: string): string {
   const normalized = pathValue.replaceAll("\\", "/");
   const slashIndex = normalized.lastIndexOf("/");
@@ -386,6 +390,32 @@ export function restorePastedTextIntoComposer(input: {
     text: restored.text,
     collapsedCursor: restored.cursor,
     expandedCursor: restored.cursor,
+  };
+}
+
+export function removePastedTextFromComposer(input: {
+  prompt: string;
+  pastedText: string;
+  expandedCursor: number;
+  currentExpandedCursor: number;
+}): { text: string; collapsedCursor: number; expandedCursor: number } | null {
+  const normalizedPastedText = normalizeComposerPastedText(input.pastedText);
+  const pasteStart = Math.max(0, Math.min(input.prompt.length, input.expandedCursor));
+  const pasteEnd = pasteStart + normalizedPastedText.length;
+  if (input.prompt.slice(pasteStart, pasteEnd) !== normalizedPastedText) {
+    return null;
+  }
+  const next = replaceTextRange(input.prompt, pasteStart, pasteEnd, "");
+  const nextExpandedCursor =
+    input.currentExpandedCursor <= pasteStart
+      ? input.currentExpandedCursor
+      : input.currentExpandedCursor <= pasteEnd
+        ? pasteStart
+        : input.currentExpandedCursor - normalizedPastedText.length;
+  return {
+    text: next.text,
+    collapsedCursor: nextExpandedCursor,
+    expandedCursor: nextExpandedCursor,
   };
 }
 

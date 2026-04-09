@@ -82,6 +82,10 @@ const AUTO_UPDATE_STARTUP_DELAY_MS = 15_000;
 const AUTO_UPDATE_POLL_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const DESKTOP_UPDATE_CHANNEL = "latest";
 const DESKTOP_UPDATE_ALLOW_PRERELEASE = false;
+const RENDERER_CONSOLE_FORWARD_PREFIXES = [
+  "[t3code composer-paste]",
+  "[t3code composer-paste-root]",
+];
 
 type DesktopUpdateErrorContext = DesktopUpdateState["errorContext"];
 type LinuxDesktopNamedApp = Electron.App & {
@@ -1400,6 +1404,17 @@ function createWindow(): BrowserWindow {
   window.webContents.on("did-finish-load", () => {
     window.setTitle(APP_DISPLAY_NAME);
     emitUpdateState();
+  });
+  window.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+    if (!RENDERER_CONSOLE_FORWARD_PREFIXES.some((prefix) => message.includes(prefix))) {
+      return;
+    }
+    console.info("[desktop-renderer-console]", {
+      level,
+      line,
+      sourceId,
+      message,
+    });
   });
   window.once("ready-to-show", () => {
     window.show();

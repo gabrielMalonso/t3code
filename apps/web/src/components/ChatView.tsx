@@ -193,6 +193,7 @@ import {
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
   saveComposerPastedTextAsFileReference,
+  removePastedTextFromComposer,
   shouldAutoRestoreComposerPasteSnapshot,
   shouldConvertComposerPastedTextToFileReference,
   threadHasStarted,
@@ -222,6 +223,7 @@ const EMPTY_ACTIVITIES: OrchestrationThreadActivity[] = [];
 const EMPTY_PROJECT_ENTRIES: ProjectEntry[] = [];
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
+const COMPOSER_PASTE_DEBUG_PREFIX = "[t3code composer-paste]";
 
 type ThreadPlanCatalogEntry = Pick<Thread, "id" | "proposedPlans">;
 
@@ -246,6 +248,14 @@ function estimateThreadPlanCatalogEntrySize(thread: Thread): number {
         0,
       ),
   );
+}
+
+function logComposerPasteDebug(message: string, context?: Record<string, unknown>) {
+  if (context) {
+    console.info(COMPOSER_PASTE_DEBUG_PREFIX, message, JSON.stringify(context));
+    return;
+  }
+  console.info(COMPOSER_PASTE_DEBUG_PREFIX, message);
 }
 
 function toThreadPlanCatalogEntry(thread: Thread): ThreadPlanCatalogEntry {
@@ -2802,36 +2812,68 @@ export default function ChatView({ threadId }: ChatViewProps) {
   };
 
   const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
+    if (event.defaultPrevented) {
+      logComposerPasteDebug("paste skipped because the event was already prevented");
+      return;
+    }
+
     const files = Array.from(event.clipboardData.files);
+    const pastedText = event.clipboardData.getData("text/plain");
+    const workspaceRoot = activeWorkspaceRoot ?? null;
+    const api = readNativeApi();
+    const shouldConvert = shouldConvertComposerPastedTextToFileReference({
+      text: pastedText,
+      fileCount: files.length,
+      workspaceRoot,
+      pendingUserInputCount: pendingUserInputs.length,
+      envMode,
+      worktreePath: activeThreadWorktreePath,
+    });
+    logComposerPasteDebug("paste received", {
+      files: files.length,
+      imageFiles: files.filter((file) => file.type.startsWith("image/")).length,
+      textLength: pastedText.length,
+      lineCount: pastedText.length === 0 ? 0 : pastedText.split(/\r\n?|\n/).length,
+      hasApi: Boolean(api),
+      workspaceRoot,
+      pendingUserInputs: pendingUserInputs.length,
+      envMode,
+      worktreePath: activeThreadWorktreePath,
+      shouldConvert,
+    });
+
     if (files.length > 0) {
       const imageFiles = files.filter((file) => file.type.startsWith("image/"));
       if (imageFiles.length === 0) {
+        logComposerPasteDebug(
+          "paste ignored because non-image files follow the existing file flow",
+        );
         return;
       }
+      logComposerPasteDebug("paste handled as image attachments", {
+        imageFiles: imageFiles.length,
+      });
       event.preventDefault();
       void addComposerImages(imageFiles);
       return;
     }
-
-    const pastedText = event.clipboardData.getData("text/plain");
-    const workspaceRoot = activeWorkspaceRoot ?? null;
-    const api = readNativeApi();
-    if (
-      !api ||
-      !workspaceRoot ||
-      !shouldConvertComposerPastedTextToFileReference({
-        text: pastedText,
-        fileCount: files.length,
-        workspaceRoot,
-        pendingUserInputCount: pendingUserInputs.length,
-        envMode,
-        worktreePath: activeThreadWorktreePath,
-      })
-    ) {
+    if (!api || !workspaceRoot || !shouldConvert) {
+      logComposerPasteDebug("paste left as normal text", {
+        reason: !api
+          ? "missing-native-api"
+          : !workspaceRoot
+            ? "missing-workspace-root"
+            : "below-threshold-or-blocked",
+      });
       return;
     }
 
     const pasteSnapshot = readComposerSnapshot();
+    logComposerPasteDebug("paste conversion starting", {
+      snapshotPromptLength: pasteSnapshot.value.length,
+      snapshotCursor: pasteSnapshot.cursor,
+      snapshotExpandedCursor: pasteSnapshot.expandedCursor,
+    });
     event.preventDefault();
     updatePendingComposerFileResolutionCount(1);
 
@@ -2844,6 +2886,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
             contents: pastedText,
             writeFile: api.projects.writeFile,
           });
+          await removePastedTextFromComposerWithRetry({
+            pastedText,
+            initialExpandedCursor: pasteSnapshot.expandedCursor,
+          });
+          logComposerPasteDebug("paste conversion saved workspace file", {
+            relativePath,
+            referencePath: reference.path,
+            sizeBytes: reference.sizeBytes,
+          });
           addComposerFileReferencesToDraft([reference]);
           toastManager.add({
             type: "success",
@@ -2851,6 +2902,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
             description: fileReferenceCopy.paste.savedDescription(relativePath),
           });
         } catch (error) {
+          logComposerPasteDebug("paste conversion failed", {
+            error: error instanceof Error ? error.message : String(error),
+          });
           const currentSnapshot = readComposerSnapshot();
           if (
             shouldAutoRestoreComposerPasteSnapshot({
@@ -2864,6 +2918,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
               prompt: pasteSnapshot.value,
               pastedText,
               expandedCursor: pasteSnapshot.expandedCursor,
+            });
+            logComposerPasteDebug("paste conversion auto-restored original text", {
+              restoredPromptLength: restored.text.length,
+              restoredExpandedCursor: restored.expandedCursor,
             });
             applyComposerPromptSnapshot(restored.text, restored.expandedCursor);
             toastManager.add({
@@ -2888,12 +2946,19 @@ export default function ChatView({ threadId }: ChatViewProps) {
                   pastedText,
                   expandedCursor: latestSnapshot.expandedCursor,
                 });
+                logComposerPasteDebug("paste conversion restored original text via toast action", {
+                  restoredPromptLength: restored.text.length,
+                  restoredExpandedCursor: restored.expandedCursor,
+                });
                 applyComposerPromptSnapshot(restored.text, restored.expandedCursor);
               },
             },
           });
         } finally {
           updatePendingComposerFileResolutionCount(-1);
+          logComposerPasteDebug("paste conversion finished", {
+            pendingFileResolutionCount: pendingComposerFileResolutionCountRef.current,
+          });
         }
       });
 
@@ -3868,6 +3933,42 @@ export default function ChatView({ threadId }: ChatViewProps) {
     [setPrompt],
   );
 
+  const removePastedTextFromComposerWithRetry = useCallback(
+    async (input: { pastedText: string; initialExpandedCursor: number }) => {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const currentSnapshot = readComposerSnapshot();
+        const promptWithoutPastedText = removePastedTextFromComposer({
+          prompt: currentSnapshot.value,
+          pastedText: input.pastedText,
+          expandedCursor: input.initialExpandedCursor,
+          currentExpandedCursor: currentSnapshot.expandedCursor,
+        });
+        if (promptWithoutPastedText) {
+          logComposerPasteDebug("paste conversion removed pasted text from composer", {
+            attempt,
+            nextPromptLength: promptWithoutPastedText.text.length,
+            nextExpandedCursor: promptWithoutPastedText.expandedCursor,
+          });
+          applyComposerPromptSnapshot(
+            promptWithoutPastedText.text,
+            promptWithoutPastedText.expandedCursor,
+          );
+          return true;
+        }
+        await new Promise<void>((resolve) => {
+          window.requestAnimationFrame(() => resolve());
+        });
+      }
+      const failedSnapshot = readComposerSnapshot();
+      logComposerPasteDebug("paste conversion could not remove pasted text from composer", {
+        currentPromptLength: failedSnapshot.value.length,
+        currentExpandedCursor: failedSnapshot.expandedCursor,
+      });
+      return false;
+    },
+    [applyComposerPromptSnapshot, readComposerSnapshot],
+  );
+
   const resolveActiveComposerTrigger = useCallback((): {
     snapshot: { value: string; cursor: number; expandedCursor: number };
     trigger: ComposerTrigger | null;
@@ -4384,6 +4485,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                       onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
                       onChange={onPromptChange}
                       onCommandKeyDown={onComposerCommandKey}
+                      onPasteCapture={onComposerPaste}
                       onPaste={onComposerPaste}
                       placeholder={
                         isComposerApprovalState

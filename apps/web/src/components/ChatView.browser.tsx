@@ -2411,6 +2411,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
             useComposerDraftStore.getState().draftsByThreadId[THREAD_ID]?.fileReferences ?? [];
           expect(references).toHaveLength(1);
           expect(references[0]?.path).toBe(`/repo/project/${writeRequest?.relativePath}`);
+          expect(useComposerDraftStore.getState().draftsByThreadId[THREAD_ID]?.prompt ?? "").toBe(
+            "",
+          );
         },
         { timeout: 8_000, interval: 16 },
       );

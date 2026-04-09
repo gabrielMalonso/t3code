@@ -73,6 +73,7 @@ import {
 import { ComposerPendingTerminalContextChip } from "./chat/ComposerPendingTerminalContexts";
 
 const COMPOSER_EDITOR_HMR_KEY = `composer-editor-${Math.random().toString(36).slice(2)}`;
+const COMPOSER_PASTE_DEBUG_PREFIX = "[t3code composer-paste-root]";
 
 type SerializedComposerMentionNode = Spread<
   {
@@ -654,6 +655,7 @@ interface ComposerPromptEditorProps {
     key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab",
     event: KeyboardEvent,
   ) => boolean;
+  onPasteCapture?: ClipboardEventHandler<HTMLElement>;
   onPaste: ClipboardEventHandler<HTMLElement>;
 }
 
@@ -878,6 +880,51 @@ function ComposerInlineTokenBackspacePlugin() {
   return null;
 }
 
+function ComposerPasteDebugPlugin() {
+  const [editor] = useLexicalComposerContext();
+
+  useEffect(() => {
+    const handlePaste = (event: Event) => {
+      if (!(event instanceof ClipboardEvent)) {
+        return;
+      }
+      const text = event.clipboardData?.getData("text/plain") ?? "";
+      console.info(
+        COMPOSER_PASTE_DEBUG_PREFIX,
+        "native root paste observed",
+        JSON.stringify({
+          defaultPrevented: event.defaultPrevented,
+          clipboardTypes: event.clipboardData?.types ?? [],
+          textLength: text.length,
+        }),
+      );
+    };
+    const handleBeforeInput = (event: Event) => {
+      if (!(event instanceof InputEvent) || event.inputType !== "insertFromPaste") {
+        return;
+      }
+      console.info(
+        COMPOSER_PASTE_DEBUG_PREFIX,
+        "native beforeinput paste observed",
+        JSON.stringify({
+          defaultPrevented: event.defaultPrevented,
+          inputType: event.inputType,
+          dataLength: event.data?.length ?? 0,
+        }),
+      );
+    };
+
+    return editor.registerRootListener((rootElement, prevRootElement) => {
+      prevRootElement?.removeEventListener("paste", handlePaste, true);
+      prevRootElement?.removeEventListener("beforeinput", handleBeforeInput, true);
+      rootElement?.addEventListener("paste", handlePaste, true);
+      rootElement?.addEventListener("beforeinput", handleBeforeInput, true);
+    });
+  }, [editor]);
+
+  return null;
+}
+
 function ComposerPromptEditorInner({
   value,
   cursor,
@@ -888,6 +935,7 @@ function ComposerPromptEditorInner({
   onRemoveTerminalContext,
   onChange,
   onCommandKeyDown,
+  onPasteCapture,
   onPaste,
   editorRef,
 }: ComposerPromptEditorInnerProps) {
@@ -1099,6 +1147,7 @@ function ComposerPromptEditorInner({
               data-testid="composer-editor"
               aria-placeholder={placeholder}
               placeholder={<span />}
+              onPasteCapture={onPasteCapture}
               onPaste={onPaste}
             />
           }
@@ -1116,6 +1165,7 @@ function ComposerPromptEditorInner({
         <ComposerInlineTokenArrowPlugin />
         <ComposerInlineTokenSelectionNormalizePlugin />
         <ComposerInlineTokenBackspacePlugin />
+        <ComposerPasteDebugPlugin />
         <HistoryPlugin />
       </div>
     </ComposerTerminalContextActionsContext.Provider>
@@ -1136,6 +1186,7 @@ export const ComposerPromptEditor = forwardRef<
     onRemoveTerminalContext,
     onChange,
     onCommandKeyDown,
+    onPasteCapture,
     onPaste,
   },
   ref,
@@ -1167,6 +1218,7 @@ export const ComposerPromptEditor = forwardRef<
         placeholder={placeholder}
         onRemoveTerminalContext={onRemoveTerminalContext}
         onChange={onChange}
+        {...(onPasteCapture ? { onPasteCapture } : {})}
         onPaste={onPaste}
         editorRef={ref}
         {...(onCommandKeyDown ? { onCommandKeyDown } : {})}
