@@ -180,6 +180,7 @@ import {
   cloneComposerImageForRetry,
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
+  restorePastedTextIntoComposer,
   deriveComposerSendState,
   hasServerAcknowledgedLocalDispatch,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
@@ -191,12 +192,16 @@ import {
   reconcileMountedTerminalThreadIds,
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
+  saveComposerPastedTextAsFileReference,
+  shouldAutoRestoreComposerPasteSnapshot,
+  shouldConvertComposerPastedTextToFileReference,
   threadHasStarted,
   waitForStartedServerThread,
 } from "./ChatView.logic";
 import { ComposerCustomBodySlot, ComposerCustomControlsSlot } from "../t3code-custom/chat";
 import {
   appendFileReferencesToPrompt,
+  fileReferenceCopy,
   resolveComposerFileReferencesFromFiles,
   toDisplayedFileReference,
   type ComposerFileReference,
@@ -743,6 +748,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewHandoffTimeoutByMessageIdRef = useRef<Record<string, number>>({});
   const sendInFlightRef = useRef(false);
+  const composerPasteWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
   const dragDepthRef = useRef(0);
   const terminalOpenByThreadRef = useRef<Record<string, boolean>>({});
   const setMessagesScrollContainerRef = useCallback((element: HTMLDivElement | null) => {
@@ -2797,15 +2803,104 @@ export default function ChatView({ threadId }: ChatViewProps) {
 
   const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
     const files = Array.from(event.clipboardData.files);
-    if (files.length === 0) {
+    if (files.length > 0) {
+      const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+      if (imageFiles.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      void addComposerImages(imageFiles);
       return;
     }
-    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-    if (imageFiles.length === 0) {
+
+    const pastedText = event.clipboardData.getData("text/plain");
+    const workspaceRoot = activeWorkspaceRoot ?? null;
+    const api = readNativeApi();
+    if (
+      !api ||
+      !workspaceRoot ||
+      !shouldConvertComposerPastedTextToFileReference({
+        text: pastedText,
+        fileCount: files.length,
+        workspaceRoot,
+        pendingUserInputCount: pendingUserInputs.length,
+        envMode,
+        worktreePath: activeThreadWorktreePath,
+      })
+    ) {
       return;
     }
+
+    const pasteSnapshot = readComposerSnapshot();
     event.preventDefault();
-    void addComposerImages(imageFiles);
+    updatePendingComposerFileResolutionCount(1);
+
+    const queuedWrite = composerPasteWriteQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        try {
+          const { reference, relativePath } = await saveComposerPastedTextAsFileReference({
+            workspaceRoot,
+            contents: pastedText,
+            writeFile: api.projects.writeFile,
+          });
+          addComposerFileReferencesToDraft([reference]);
+          toastManager.add({
+            type: "success",
+            title: fileReferenceCopy.paste.savedTitle,
+            description: fileReferenceCopy.paste.savedDescription(relativePath),
+          });
+        } catch (error) {
+          const currentSnapshot = readComposerSnapshot();
+          if (
+            shouldAutoRestoreComposerPasteSnapshot({
+              initialPrompt: pasteSnapshot.value,
+              initialCursor: pasteSnapshot.cursor,
+              currentPrompt: currentSnapshot.value,
+              currentCursor: currentSnapshot.cursor,
+            })
+          ) {
+            const restored = restorePastedTextIntoComposer({
+              prompt: pasteSnapshot.value,
+              pastedText,
+              expandedCursor: pasteSnapshot.expandedCursor,
+            });
+            applyComposerPromptSnapshot(restored.text, restored.expandedCursor);
+            toastManager.add({
+              type: "warning",
+              title: fileReferenceCopy.paste.writeFailed,
+              description: fileReferenceCopy.paste.restoredText,
+            });
+            return;
+          }
+
+          toastManager.add({
+            type: "error",
+            title: fileReferenceCopy.paste.writeFailed,
+            description:
+              error instanceof Error ? error.message : fileReferenceCopy.paste.writeFailed,
+            actionProps: {
+              children: fileReferenceCopy.paste.restoreAction,
+              onClick: () => {
+                const latestSnapshot = readComposerSnapshot();
+                const restored = restorePastedTextIntoComposer({
+                  prompt: latestSnapshot.value,
+                  pastedText,
+                  expandedCursor: latestSnapshot.expandedCursor,
+                });
+                applyComposerPromptSnapshot(restored.text, restored.expandedCursor);
+              },
+            },
+          });
+        } finally {
+          updatePendingComposerFileResolutionCount(-1);
+        }
+      });
+
+    composerPasteWriteQueueRef.current = queuedWrite.then(
+      () => undefined,
+      () => undefined,
+    );
   };
 
   const onComposerDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
@@ -3758,6 +3853,20 @@ export default function ChatView({ threadId }: ChatViewProps) {
       terminalContextIds: composerTerminalContexts.map((context) => context.id),
     };
   }, [composerCursor, composerTerminalContexts]);
+
+  const applyComposerPromptSnapshot = useCallback(
+    (nextPrompt: string, nextExpandedCursor: number) => {
+      const nextCursor = collapseExpandedComposerCursor(nextPrompt, nextExpandedCursor);
+      promptRef.current = nextPrompt;
+      setPrompt(nextPrompt);
+      setComposerCursor(nextCursor);
+      setComposerTrigger(detectComposerTrigger(nextPrompt, nextExpandedCursor));
+      window.requestAnimationFrame(() => {
+        composerEditorRef.current?.focusAt(nextCursor);
+      });
+    },
+    [setPrompt],
+  );
 
   const resolveActiveComposerTrigger = useCallback((): {
     snapshot: { value: string; cursor: number; expandedCursor: number };

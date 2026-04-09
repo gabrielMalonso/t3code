@@ -3,14 +3,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useStore } from "../store";
 
 import {
+  COMPOSER_PASTE_FILE_REFERENCE_DIRECTORY,
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
+  buildComposerPastedTextFileRelativePath,
   buildExpiredTerminalContextToastCopy,
   canRestoreComposerDraftAfterSendFailure,
+  createComposerFileReferenceFromWorkspaceTextFile,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
   hasServerAcknowledgedLocalDispatch,
   partitionComposerFilesForDraft,
   reconcileMountedTerminalThreadIds,
+  restorePastedTextIntoComposer,
+  saveComposerPastedTextAsFileReference,
+  shouldAutoRestoreComposerPasteSnapshot,
+  shouldConvertComposerPastedTextToFileReference,
   waitForStartedServerThread,
 } from "./ChatView.logic";
 
@@ -112,6 +119,176 @@ describe("partitionComposerFilesForDraft", () => {
     expect(result.imageFiles.map((file) => file.name)).toEqual(["one.png"]);
     expect(result.nonImageFiles.map((file) => file.name)).toEqual(["report.pdf"]);
     expect(result.errors).toEqual(["You can attach up to 2 images per message."]);
+  });
+});
+
+describe("composer pasted text file references", () => {
+  it("converts only large text pastes when the workspace is ready", () => {
+    expect(
+      shouldConvertComposerPastedTextToFileReference({
+        text: "x".repeat(4_001),
+        fileCount: 0,
+        workspaceRoot: "/repo/project",
+        pendingUserInputCount: 0,
+        envMode: "local",
+        worktreePath: null,
+      }),
+    ).toBe(true);
+    expect(
+      shouldConvertComposerPastedTextToFileReference({
+        text: Array.from({ length: 81 }, (_, index) => `line ${index + 1}`).join("\n"),
+        fileCount: 0,
+        workspaceRoot: "/repo/project",
+        pendingUserInputCount: 0,
+        envMode: "local",
+        worktreePath: null,
+      }),
+    ).toBe(true);
+    expect(
+      shouldConvertComposerPastedTextToFileReference({
+        text: "x".repeat(4_000),
+        fileCount: 0,
+        workspaceRoot: "/repo/project",
+        pendingUserInputCount: 0,
+        envMode: "local",
+        worktreePath: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not convert when files exist, pending input is active, workspace is missing, or worktree bootstrap is pending", () => {
+    expect(
+      shouldConvertComposerPastedTextToFileReference({
+        text: "x".repeat(5_000),
+        fileCount: 1,
+        workspaceRoot: "/repo/project",
+        pendingUserInputCount: 0,
+        envMode: "local",
+        worktreePath: null,
+      }),
+    ).toBe(false);
+    expect(
+      shouldConvertComposerPastedTextToFileReference({
+        text: "x".repeat(5_000),
+        fileCount: 0,
+        workspaceRoot: "/repo/project",
+        pendingUserInputCount: 1,
+        envMode: "local",
+        worktreePath: null,
+      }),
+    ).toBe(false);
+    expect(
+      shouldConvertComposerPastedTextToFileReference({
+        text: "x".repeat(5_000),
+        fileCount: 0,
+        workspaceRoot: null,
+        pendingUserInputCount: 0,
+        envMode: "local",
+        worktreePath: null,
+      }),
+    ).toBe(false);
+    expect(
+      shouldConvertComposerPastedTextToFileReference({
+        text: "x".repeat(5_000),
+        fileCount: 0,
+        workspaceRoot: "/repo/project",
+        pendingUserInputCount: 0,
+        envMode: "worktree",
+        worktreePath: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("builds stable relative paths under the paste directory", () => {
+    const relativePath = buildComposerPastedTextFileRelativePath({
+      now: new Date("2026-04-09T13:24:55.000Z"),
+      randomToken: "AbCd1234Z",
+    });
+
+    expect(relativePath).toBe(
+      `${COMPOSER_PASTE_FILE_REFERENCE_DIRECTORY}/paste-20260409-132455-abcd1234.txt`,
+    );
+  });
+
+  it("saves pasted text as a workspace file reference with an absolute path", async () => {
+    const writeFile = vi.fn(async () => ({
+      relativePath: ".t3code/pastes/paste-20260409-132455-abcd1234.txt",
+    }));
+
+    const result = await saveComposerPastedTextAsFileReference({
+      workspaceRoot: "/repo/project",
+      contents: "hello\nlogs",
+      writeFile,
+      now: new Date("2026-04-09T13:24:55.000Z"),
+      randomToken: "AbCd1234",
+      referenceId: "paste-ref-1",
+    });
+
+    expect(writeFile).toHaveBeenCalledWith({
+      cwd: "/repo/project",
+      relativePath: ".t3code/pastes/paste-20260409-132455-abcd1234.txt",
+      contents: "hello\nlogs",
+    });
+    expect(result).toEqual({
+      relativePath: ".t3code/pastes/paste-20260409-132455-abcd1234.txt",
+      reference: {
+        id: "paste-ref-1",
+        name: "paste-20260409-132455-abcd1234.txt",
+        path: "/repo/project/.t3code/pastes/paste-20260409-132455-abcd1234.txt",
+        mimeType: "text/plain",
+        sizeBytes: new TextEncoder().encode("hello\nlogs").byteLength,
+      },
+    });
+  });
+
+  it("normalizes a workspace text file reference for display", () => {
+    expect(
+      createComposerFileReferenceFromWorkspaceTextFile({
+        workspaceRoot: "C:\\repo\\project",
+        relativePath: ".t3code/pastes/paste-20260409-132455-abcd1234.txt",
+        contents: "abc",
+        id: "paste-ref-2",
+      }),
+    ).toEqual({
+      id: "paste-ref-2",
+      name: "paste-20260409-132455-abcd1234.txt",
+      path: "C:\\repo\\project/.t3code/pastes/paste-20260409-132455-abcd1234.txt",
+      mimeType: "text/plain",
+      sizeBytes: 3,
+    });
+  });
+
+  it("auto-restores only when the composer snapshot is unchanged", () => {
+    expect(
+      shouldAutoRestoreComposerPasteSnapshot({
+        initialPrompt: "prefix ",
+        initialCursor: 7,
+        currentPrompt: "prefix ",
+        currentCursor: 7,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAutoRestoreComposerPasteSnapshot({
+        initialPrompt: "prefix ",
+        initialCursor: 7,
+        currentPrompt: "prefix changed",
+        currentCursor: 14,
+      }),
+    ).toBe(false);
+  });
+
+  it("restores pasted text at the captured cursor", () => {
+    expect(
+      restorePastedTextIntoComposer({
+        prompt: "prefix ",
+        pastedText: "hello",
+        expandedCursor: 7,
+      }),
+    ).toEqual({
+      text: "prefix hello",
+      collapsedCursor: 12,
+      expandedCursor: 12,
+    });
   });
 });
 

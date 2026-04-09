@@ -71,6 +71,29 @@ it.layer(TestLayer)("WorkspaceFileSystemLive", (it) => {
       }),
     );
 
+    it.effect("creates hidden workspace directories when saving paste references", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+
+        const result = yield* workspaceFileSystem.writeFile({
+          cwd,
+          relativePath: ".t3code/pastes/paste-20260409-132455-abcd1234.txt",
+          contents: "logs\n",
+        });
+        const saved = yield* fileSystem
+          .readFileString(path.join(cwd, ".t3code/pastes/paste-20260409-132455-abcd1234.txt"))
+          .pipe(Effect.orDie);
+
+        expect(result).toEqual({
+          relativePath: ".t3code/pastes/paste-20260409-132455-abcd1234.txt",
+        });
+        expect(saved).toBe("logs\n");
+      }),
+    );
+
     it.effect("invalidates workspace entry search cache after writes", () =>
       Effect.gen(function* () {
         const workspaceEntries = yield* WorkspaceEntries;

@@ -1,7 +1,17 @@
-import { ProjectId, type ModelSelection, type ThreadId, type TurnId } from "@t3tools/contracts";
+import {
+  ProjectId,
+  type ModelSelection,
+  type ProjectWriteFileResult,
+  type ThreadId,
+  type TurnId,
+} from "@t3tools/contracts";
 import { type ChatMessage, type SessionPhase, type Thread, type ThreadSession } from "../types";
 import { randomUUID } from "~/lib/utils";
-import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
+import {
+  type ComposerImageAttachment,
+  type DraftThreadEnvMode,
+  type DraftThreadState,
+} from "../composerDraftStore";
 import { Schema } from "effect";
 import { useStore } from "../store";
 import {
@@ -9,9 +19,14 @@ import {
   stripInlineTerminalContextPlaceholders,
   type TerminalContextDraft,
 } from "../lib/terminalContext";
+import type { ComposerFileReference } from "../t3code-custom/file-references";
+import { replaceTextRange } from "../composer-logic";
 
 export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by-project";
 export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 10;
+export const COMPOSER_PASTE_FILE_REFERENCE_CHAR_THRESHOLD = 4_000;
+export const COMPOSER_PASTE_FILE_REFERENCE_LINE_THRESHOLD = 80;
+export const COMPOSER_PASTE_FILE_REFERENCE_DIRECTORY = ".t3code/pastes";
 const WORKTREE_BRANCH_PREFIX = "t3code";
 
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
@@ -219,6 +234,158 @@ export function partitionComposerFilesForDraft(options: {
     imageFiles,
     nonImageFiles,
     errors,
+  };
+}
+
+function countTextLines(text: string): number {
+  if (text.length === 0) {
+    return 0;
+  }
+  return text.split(/\r\n?|\n/).length;
+}
+
+function basenameOfRelativePath(pathValue: string): string {
+  const normalized = pathValue.replaceAll("\\", "/");
+  const slashIndex = normalized.lastIndexOf("/");
+  return slashIndex === -1 ? normalized : normalized.slice(slashIndex + 1);
+}
+
+export function shouldConvertComposerPastedTextToFileReference(options: {
+  text: string;
+  fileCount: number;
+  workspaceRoot: string | null | undefined;
+  pendingUserInputCount: number;
+  envMode: DraftThreadEnvMode;
+  worktreePath: string | null | undefined;
+}): boolean {
+  if (options.fileCount > 0) {
+    return false;
+  }
+  if (options.text.length === 0) {
+    return false;
+  }
+  if (!options.workspaceRoot) {
+    return false;
+  }
+  if (options.pendingUserInputCount > 0) {
+    return false;
+  }
+  if (options.envMode === "worktree" && !options.worktreePath) {
+    return false;
+  }
+  return (
+    options.text.length > COMPOSER_PASTE_FILE_REFERENCE_CHAR_THRESHOLD ||
+    countTextLines(options.text) > COMPOSER_PASTE_FILE_REFERENCE_LINE_THRESHOLD
+  );
+}
+
+export function buildComposerPastedTextFileRelativePath(options?: {
+  now?: Date;
+  randomToken?: string;
+}): string {
+  const now = options?.now ?? new Date();
+  const timestamp = [
+    now.getUTCFullYear().toString().padStart(4, "0"),
+    (now.getUTCMonth() + 1).toString().padStart(2, "0"),
+    now.getUTCDate().toString().padStart(2, "0"),
+    "-",
+    now.getUTCHours().toString().padStart(2, "0"),
+    now.getUTCMinutes().toString().padStart(2, "0"),
+    now.getUTCSeconds().toString().padStart(2, "0"),
+  ].join("");
+  const fallbackToken = randomUUID().slice(0, 8);
+  const randomToken = (options?.randomToken ?? fallbackToken)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+  const safeToken = randomToken.length > 0 ? randomToken.slice(0, 8) : "paste";
+  return `${COMPOSER_PASTE_FILE_REFERENCE_DIRECTORY}/paste-${timestamp}-${safeToken}.txt`;
+}
+
+export function joinWorkspaceRootAndRelativePath(
+  workspaceRoot: string,
+  relativePath: string,
+): string {
+  const trimmedWorkspaceRoot = workspaceRoot.replace(/[\\/]+$/g, "");
+  const trimmedRelativePath = relativePath.replace(/^[\\/]+/g, "");
+  return `${trimmedWorkspaceRoot}/${trimmedRelativePath}`;
+}
+
+export function byteLengthOfTextContents(contents: string): number {
+  return new TextEncoder().encode(contents).byteLength;
+}
+
+export function createComposerFileReferenceFromWorkspaceTextFile(input: {
+  workspaceRoot: string;
+  relativePath: string;
+  contents: string;
+  id?: string;
+}): ComposerFileReference {
+  return {
+    id: input.id ?? randomUUID(),
+    name: basenameOfRelativePath(input.relativePath),
+    path: joinWorkspaceRootAndRelativePath(input.workspaceRoot, input.relativePath),
+    mimeType: "text/plain",
+    sizeBytes: byteLengthOfTextContents(input.contents),
+  };
+}
+
+export async function saveComposerPastedTextAsFileReference(input: {
+  workspaceRoot: string;
+  contents: string;
+  writeFile: (input: {
+    cwd: string;
+    relativePath: string;
+    contents: string;
+  }) => Promise<ProjectWriteFileResult>;
+  now?: Date;
+  randomToken?: string;
+  referenceId?: string;
+}): Promise<{ reference: ComposerFileReference; relativePath: string }> {
+  const relativePath = buildComposerPastedTextFileRelativePath({
+    ...(input.now ? { now: input.now } : {}),
+    ...(input.randomToken ? { randomToken: input.randomToken } : {}),
+  });
+  const result = await input.writeFile({
+    cwd: input.workspaceRoot,
+    relativePath,
+    contents: input.contents,
+  });
+
+  return {
+    relativePath: result.relativePath,
+    reference: createComposerFileReferenceFromWorkspaceTextFile({
+      workspaceRoot: input.workspaceRoot,
+      relativePath: result.relativePath,
+      contents: input.contents,
+      ...(input.referenceId ? { id: input.referenceId } : {}),
+    }),
+  };
+}
+
+export function shouldAutoRestoreComposerPasteSnapshot(input: {
+  initialPrompt: string;
+  initialCursor: number;
+  currentPrompt: string;
+  currentCursor: number;
+}): boolean {
+  return input.initialPrompt === input.currentPrompt && input.initialCursor === input.currentCursor;
+}
+
+export function restorePastedTextIntoComposer(input: {
+  prompt: string;
+  pastedText: string;
+  expandedCursor: number;
+}): { text: string; collapsedCursor: number; expandedCursor: number } {
+  const restored = replaceTextRange(
+    input.prompt,
+    input.expandedCursor,
+    input.expandedCursor,
+    input.pastedText,
+  );
+  return {
+    text: restored.text,
+    collapsedCursor: restored.cursor,
+    expandedCursor: restored.cursor,
   };
 }
 
