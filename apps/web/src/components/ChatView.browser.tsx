@@ -2455,7 +2455,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       await vi.waitFor(
         () => {
           const sendButton = document.querySelector<HTMLButtonElement>(
-            'button[aria-label="Send message"]',
+            'button[aria-label="Resolving file references"]',
           );
           expect(sendButton).not.toBeNull();
           expect(sendButton?.disabled).toBe(true);
@@ -2463,10 +2463,18 @@ describe("ChatView timeline estimator parity (full app)", () => {
         { timeout: 8_000, interval: 16 },
       );
 
+      await vi.waitFor(
+        () => {
+          expect(
+            wsRequests.find((request) => request._tag === WS_METHODS.projectsWriteFile),
+          ).toBeDefined();
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
       const writeRequest = wsRequests.find(
         (request) => request._tag === WS_METHODS.projectsWriteFile,
       );
-      expect(writeRequest).toBeDefined();
       const relativePath =
         writeRequest && typeof writeRequest.relativePath === "string"
           ? writeRequest.relativePath
