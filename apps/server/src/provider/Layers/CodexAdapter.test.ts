@@ -282,6 +282,28 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
       });
     }),
   );
+
+  it.effect("forwards structured codex skills when present", () =>
+    Effect.gen(function* () {
+      sessionErrorManager.sendTurnImpl.mockClear();
+      const adapter = yield* CodexAdapter;
+
+      yield* Effect.ignore(
+        adapter.sendTurn({
+          threadId: asThreadId("sess-missing"),
+          input: "hello",
+          skills: [{ name: "review", path: "/Users/example/.codex/skills/review" }],
+          attachments: [],
+        }),
+      );
+
+      assert.deepStrictEqual(sessionErrorManager.sendTurnImpl.mock.calls[0]?.[0], {
+        threadId: asThreadId("sess-missing"),
+        input: "hello",
+        skills: [{ name: "review", path: "/Users/example/.codex/skills/review" }],
+      });
+    }),
+  );
 });
 
 const lifecycleManager = new FakeCodexManager();

@@ -546,6 +546,33 @@ describe("sendTurn", () => {
     });
   });
 
+  it("sends structured skill items to turn/start", async () => {
+    const { manager, context, sendRequest } = createSendTurnHarness();
+
+    await manager.sendTurn({
+      threadId: asThreadId("thread_1"),
+      input: "Use the review skill",
+      skills: [{ name: "review", path: "/Users/example/.codex/skills/review" }],
+    });
+
+    expect(sendRequest).toHaveBeenCalledWith(context, "turn/start", {
+      threadId: "thread_1",
+      input: [
+        {
+          type: "text",
+          text: "Use the review skill",
+          text_elements: [],
+        },
+        {
+          type: "skill",
+          name: "review",
+          path: "/Users/example/.codex/skills/review",
+        },
+      ],
+      model: "gpt-5.3-codex",
+    });
+  });
+
   it("passes Codex plan mode as a collaboration preset on turn/start", async () => {
     const { manager, context, sendRequest } = createSendTurnHarness();
 
@@ -644,7 +671,7 @@ describe("sendTurn", () => {
       manager.sendTurn({
         threadId: asThreadId("thread_1"),
       }),
-    ).rejects.toThrow("Turn input must include text or attachments.");
+    ).rejects.toThrow("Turn input must include text, attachments, or skills.");
   });
 });
 

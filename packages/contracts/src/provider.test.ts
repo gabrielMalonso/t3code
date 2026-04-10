@@ -74,6 +74,7 @@ describe("ProviderSendTurnInput", () => {
   it("accepts codex modelSelection", () => {
     const parsed = decodeProviderSendTurnInput({
       threadId: "thread-1",
+      skills: [{ name: "review", path: "/Users/example/.codex/skills/review" }],
       modelSelection: {
         provider: "codex",
         model: "gpt-5.3-codex",
@@ -86,6 +87,9 @@ describe("ProviderSendTurnInput", () => {
 
     expect(parsed.modelSelection?.provider).toBe("codex");
     expect(parsed.modelSelection?.model).toBe("gpt-5.3-codex");
+    expect(parsed.skills).toEqual([
+      { name: "review", path: "/Users/example/.codex/skills/review" },
+    ]);
     if (parsed.modelSelection?.provider !== "codex") {
       throw new Error("Expected codex modelSelection");
     }

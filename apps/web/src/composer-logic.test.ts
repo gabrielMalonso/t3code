@@ -60,6 +60,39 @@ describe("detectComposerTrigger", () => {
     });
   });
 
+  it("detects provider-discovered slash commands while typing", () => {
+    const text = "/sim";
+    const trigger = detectComposerTrigger(text, text.length, {
+      slashCommands: ["model", "plan", "default", "simplify"],
+    });
+
+    expect(trigger).toEqual({
+      kind: "slash-command",
+      query: "sim",
+      rangeStart: 0,
+      rangeEnd: text.length,
+    });
+  });
+
+  it("detects codex skill trigger while typing", () => {
+    const text = "Use $rev";
+    const cursor = text.length;
+    const trigger = detectComposerTrigger(text, cursor, { enableSkillTrigger: true });
+
+    expect(trigger).toEqual({
+      kind: "skill",
+      query: "rev",
+      rangeStart: "Use ".length,
+      rangeEnd: cursor,
+    });
+  });
+
+  it("does not collapse shell variables into inline tokens without a known skill catalog", () => {
+    expect(collapseExpandedComposerCursor("echo $HOME ", "echo $HOME ".length)).toBe(
+      "echo $HOME ".length,
+    );
+  });
+
   it("detects @path trigger in the middle of existing text", () => {
     // User typed @ between "inspect " and "in this sentence"
     const text = "Please inspect @in this sentence";

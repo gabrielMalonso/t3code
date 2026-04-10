@@ -1,10 +1,11 @@
 import { type ProjectEntry, type ProviderKind } from "@t3tools/contracts";
 import { memo, useLayoutEffect, useRef } from "react";
-import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
+import { type ComposerTriggerKind } from "../../composer-logic";
 import { BotIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
 import { Command, CommandItem, CommandList } from "../ui/command";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { VscodeEntryIcon } from "./VscodeEntryIcon";
 
 export type ComposerCommandItem =
@@ -19,7 +20,16 @@ export type ComposerCommandItem =
   | {
       id: string;
       type: "slash-command";
-      command: ComposerSlashCommand;
+      command: string;
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
+      type: "skill";
+      provider: ProviderKind;
+      name: string;
+      path: string;
       label: string;
       description: string;
     }
@@ -80,10 +90,16 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
         {props.items.length === 0 && (
           <p className="px-3 py-2 text-muted-foreground/70 text-xs">
             {props.isLoading
-              ? "Searching workspace files..."
+              ? props.triggerKind === "path"
+                ? "Searching workspace files..."
+                : props.triggerKind === "skill"
+                  ? "Loading skills..."
+                  : "Loading commands..."
               : props.triggerKind === "path"
                 ? "No matching files or folders."
-                : "No matching command."}
+                : props.triggerKind === "skill"
+                  ? "No matching skill."
+                  : "No matching command."}
           </p>
         )}
       </div>
@@ -98,7 +114,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
   onHighlight: (itemId: string | null) => void;
   onSelect: (item: ComposerCommandItem) => void;
 }) {
-  return (
+  const itemElement = (
     <CommandItem
       value={props.item.id}
       data-composer-item-id={props.item.id}
@@ -131,10 +147,26 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
           model
         </Badge>
       ) : null}
-      <span className="flex min-w-0 items-center gap-1.5 truncate">
+      <span className="flex min-w-36 shrink-0 basis-1/4 items-center gap-1.5">
         <span className="truncate">{props.item.label}</span>
       </span>
-      <span className="truncate text-muted-foreground/70 text-xs">{props.item.description}</span>
+      <span className="min-w-0 flex-1 truncate text-muted-foreground/70 text-xs">
+        {props.item.description}
+      </span>
     </CommandItem>
+  );
+
+  if (props.item.type !== "skill") {
+    return itemElement;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger delay={300} render={itemElement} />
+      <TooltipPopup side="top" className="max-w-80 whitespace-normal leading-tight">
+        <div className="font-medium text-foreground">{props.item.label}</div>
+        <div className="mt-1 text-muted-foreground/80">{props.item.description}</div>
+      </TooltipPopup>
+    </Tooltip>
   );
 });
