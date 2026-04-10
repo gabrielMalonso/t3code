@@ -812,6 +812,25 @@ async function waitForComposerEditor(): Promise<HTMLElement> {
   );
 }
 
+async function dispatchComposerPaste(input: {
+  text: string;
+  files?: ReadonlyArray<File>;
+}): Promise<Event> {
+  const composerEditor = await waitForComposerEditor();
+  const event = new Event("paste", {
+    bubbles: true,
+    cancelable: true,
+  });
+  Object.defineProperty(event, "clipboardData", {
+    value: {
+      files: [...(input.files ?? [])],
+      getData: (type: string) => (type === "text/plain" ? input.text : ""),
+    },
+  });
+  composerEditor.dispatchEvent(event);
+  return event;
+}
+
 async function waitForComposerMenuItem(itemId: string): Promise<HTMLElement> {
   return waitForElement(
     () => document.querySelector<HTMLElement>(`[data-composer-item-id="${itemId}"]`),
@@ -2323,6 +2342,193 @@ describe("ChatView timeline estimator parity (full app)", () => {
           );
           expect(document.body.textContent).not.toContain(expiredLabel);
           expect(document.body.textContent).toContain("yoowaddup");
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("converts a large pasted text block into a workspace file reference", async () => {
+    const pastedText = Array.from({ length: 90 }, (_, index) => `log line ${index + 1}`).join("\n");
+    const pendingWrite: { resolve: (value: { relativePath: string }) => void } = {
+      resolve: () => {
+        throw new Error("Expected the large paste write request to be pending.");
+      },
+    };
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-paste-file-reference" as MessageId,
+        targetText: "paste file reference target",
+      }),
+      resolveRpc: (body) => {
+        if (body._tag === WS_METHODS.projectsWriteFile) {
+          return new Promise<{ relativePath: string }>((resolve) => {
+            pendingWrite.resolve = resolve;
+          });
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      const pasteEvent = await dispatchComposerPaste({ text: pastedText });
+      expect(pasteEvent.defaultPrevented).toBe(true);
+
+      await vi.waitFor(
+        () => {
+          expect(wsRequests.some((request) => request._tag === WS_METHODS.projectsWriteFile)).toBe(
+            true,
+          );
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      const writeRequest = wsRequests.find(
+        (request) => request._tag === WS_METHODS.projectsWriteFile,
+      );
+      expect(writeRequest).toBeDefined();
+      expect(writeRequest?.cwd).toBe("/repo/project");
+      expect(writeRequest?.contents).toBe(pastedText);
+      expect(typeof writeRequest?.relativePath).toBe("string");
+      expect(writeRequest?.relativePath).toMatch(/^\.t3code\/pastes\/paste-.*\.txt$/);
+      const relativePath =
+        writeRequest && typeof writeRequest.relativePath === "string"
+          ? writeRequest.relativePath
+          : null;
+      if (!relativePath) {
+        throw new Error("Expected the large paste write request to be pending.");
+      }
+
+      pendingWrite.resolve({ relativePath });
+
+      await vi.waitFor(
+        () => {
+          const references =
+            useComposerDraftStore.getState().draftsByThreadId[THREAD_ID]?.fileReferences ?? [];
+          expect(references).toHaveLength(1);
+          expect(references[0]?.path).toBe(`/repo/project/${writeRequest?.relativePath}`);
+          expect(useComposerDraftStore.getState().draftsByThreadId[THREAD_ID]?.prompt ?? "").toBe(
+            "",
+          );
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("keeps send disabled while a large pasted text file reference is still being written", async () => {
+    const pastedText = Array.from({ length: 90 }, (_, index) => `log line ${index + 1}`).join("\n");
+    const pendingWrite: { resolve: (value: { relativePath: string }) => void } = {
+      resolve: () => {
+        throw new Error("Expected the pending large paste write request.");
+      },
+    };
+
+    useComposerDraftStore.getState().setPrompt(THREAD_ID, "keep this prompt");
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-paste-send-disabled" as MessageId,
+        targetText: "paste send disabled target",
+      }),
+      resolveRpc: (body) => {
+        if (body._tag === WS_METHODS.projectsWriteFile) {
+          return new Promise<{ relativePath: string }>((resolve) => {
+            pendingWrite.resolve = resolve;
+          });
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      const pasteEvent = await dispatchComposerPaste({ text: pastedText });
+      expect(pasteEvent.defaultPrevented).toBe(true);
+
+      await vi.waitFor(
+        () => {
+          const sendButton = document.querySelector<HTMLButtonElement>(
+            'button[aria-label="Resolving file references"]',
+          );
+          expect(sendButton).not.toBeNull();
+          expect(sendButton?.disabled).toBe(true);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      await vi.waitFor(
+        () => {
+          expect(
+            wsRequests.find((request) => request._tag === WS_METHODS.projectsWriteFile),
+          ).toBeDefined();
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      const writeRequest = wsRequests.find(
+        (request) => request._tag === WS_METHODS.projectsWriteFile,
+      );
+      const relativePath =
+        writeRequest && typeof writeRequest.relativePath === "string"
+          ? writeRequest.relativePath
+          : null;
+      if (!relativePath) {
+        throw new Error("Expected the pending large paste write request.");
+      }
+
+      pendingWrite.resolve({ relativePath });
+
+      await vi.waitFor(
+        () => {
+          const sendButton = document.querySelector<HTMLButtonElement>(
+            'button[aria-label="Send message"]',
+          );
+          expect(sendButton).not.toBeNull();
+          expect(sendButton?.disabled).toBe(false);
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("restores the original pasted text when saving the workspace file fails before the user edits again", async () => {
+    const pastedText = Array.from({ length: 90 }, (_, index) => `log line ${index + 1}`).join("\n");
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-paste-restore" as MessageId,
+        targetText: "paste restore target",
+      }),
+      resolveRpc: (body) => {
+        if (body._tag === WS_METHODS.projectsWriteFile) {
+          return Promise.reject(new Error("disk full"));
+        }
+        return undefined;
+      },
+    });
+
+    try {
+      await waitForComposerEditor();
+      await page.getByTestId("composer-editor").fill("prefix ");
+
+      const pasteEvent = await dispatchComposerPaste({ text: pastedText });
+      expect(pasteEvent.defaultPrevented).toBe(true);
+
+      await vi.waitFor(
+        () => {
+          expect(useComposerDraftStore.getState().draftsByThreadId[THREAD_ID]?.prompt).toBe(
+            `prefix ${pastedText}`,
+          );
         },
         { timeout: 8_000, interval: 16 },
       );

@@ -47,7 +47,7 @@ export function getArm64IntelBuildWarningDescription(state: DesktopUpdateState):
     return "This Mac has Apple Silicon, but T3 Code is still running the Intel build under Rosetta. Download the available update to switch to the native Apple Silicon build.";
   }
   if (action === "install") {
-    return "This Mac has Apple Silicon, but T3 Code is still running the Intel build under Rosetta. Restart to install the downloaded Apple Silicon build.";
+    return "This Mac has Apple Silicon, but T3 Code is still running the Intel build under Rosetta. Install the downloaded Apple Silicon build to replace this Intel app.";
   }
   return "This Mac has Apple Silicon, but T3 Code is still running the Intel build under Rosetta. The next app update will replace it with the native Apple Silicon build.";
 }
@@ -62,7 +62,7 @@ export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string
     return `Downloading update${progress}`;
   }
   if (state.status === "downloaded") {
-    return `Update ${state.downloadedVersion ?? state.availableVersion ?? "ready"} downloaded. Click to restart and install.`;
+    return `Update ${state.downloadedVersion ?? state.availableVersion ?? "ready"} downloaded. Click to install it and relaunch T3 Code.`;
   }
   if (state.status === "error") {
     if (state.errorContext === "download" && state.availableVersion) {
@@ -76,11 +76,15 @@ export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string
   return "Up to date";
 }
 
+export function getDesktopUpdateDownloadedDescription(): string {
+  return "The downloaded build is ready. Install it from the update button to replace this app.";
+}
+
 export function getDesktopUpdateInstallConfirmationMessage(
   state: Pick<DesktopUpdateState, "availableVersion" | "downloadedVersion">,
 ): string {
   const version = state.downloadedVersion ?? state.availableVersion;
-  return `Install update${version ? ` ${version}` : ""} and restart T3 Code?\n\nAny running tasks will be interrupted. Make sure you're ready before continuing.`;
+  return `Install update${version ? ` ${version}` : ""} and relaunch T3 Code?\n\nThe current app install will be replaced, and any running tasks will be interrupted. Make sure you're ready before continuing.`;
 }
 
 export function getDesktopUpdateActionError(result: DesktopUpdateActionResult): string | null {

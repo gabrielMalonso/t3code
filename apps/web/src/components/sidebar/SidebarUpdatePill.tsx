@@ -11,6 +11,7 @@ import {
   getArm64IntelBuildWarningDescription,
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
+  getDesktopUpdateDownloadedDescription,
   getDesktopUpdateInstallConfirmationMessage,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
@@ -49,7 +50,7 @@ export function SidebarUpdatePill() {
             toastManager.add({
               type: "success",
               title: "Update downloaded",
-              description: "Restart the app from the update button to install it.",
+              description: getDesktopUpdateDownloadedDescription(),
             });
           }
           if (!shouldToastDesktopUpdateActionResult(result)) return;
@@ -129,7 +130,7 @@ export function SidebarUpdatePill() {
                   {action === "install" ? (
                     <>
                       <RotateCwIcon className="size-3.5" />
-                      <span>Restart to update</span>
+                      <span>Install update</span>
                     </>
                   ) : state?.status === "downloading" ? (
                     <>

@@ -18,6 +18,14 @@ export const fileReferenceCopy = {
       `Não foi possível resolver o caminho real de '${name}' no desktop.`,
     pendingUserInput: "Adicione referências de arquivo depois de responder as perguntas pendentes.",
   },
+  paste: {
+    savedTitle: "Texto grande colado salvo como arquivo do workspace",
+    savedDescription: (relativePath: string) =>
+      `Referência adicionada ao composer: ${relativePath}`,
+    writeFailed: "Não foi possível salvar o texto colado como arquivo.",
+    restoredText: "O texto original foi mantido no composer.",
+    restoreAction: "Colar texto original",
+  },
   timeline: {
     header: "Arquivos referenciados",
   },
