@@ -555,7 +555,9 @@ describe("composerDraftStore file references", () => {
       .getOptions()
       .merge(persistedState, useComposerDraftStore.getInitialState());
 
-    expect(mergedState.draftsByThreadKey[threadKeyFor(threadId)]?.fileReferences).toEqual([
+    expect(
+      mergedState.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.fileReferences,
+    ).toEqual([
       {
         id: "ref-1",
         name: "report.pdf",

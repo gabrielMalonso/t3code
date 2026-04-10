@@ -248,6 +248,7 @@ function toThreadShell(thread: Thread): ThreadShell {
     updatedAt: thread.updatedAt,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
+    loop: thread.loop ?? null,
   };
 }
 
@@ -336,7 +337,8 @@ function threadShellsEqual(left: ThreadShell | undefined, right: ThreadShell): b
     left.archivedAt === right.archivedAt &&
     left.updatedAt === right.updatedAt &&
     left.branch === right.branch &&
-    left.worktreePath === right.worktreePath
+    left.worktreePath === right.worktreePath &&
+    left.loop === right.loop
   );
 }
 
@@ -473,6 +475,7 @@ function getThread(state: EnvironmentState, threadId: ThreadId): Thread | undefi
     activities: selectThreadActivities(state, threadId),
     proposedPlans: selectThreadProposedPlans(state, threadId),
     turnDiffSummaries: selectThreadTurnDiffSummaries(state, threadId),
+    loop: shell.loop ?? null,
   };
 }
 

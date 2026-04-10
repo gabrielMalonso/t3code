@@ -126,6 +126,7 @@ function makeState(thread: Thread): AppState {
         updatedAt: thread.updatedAt,
         branch: thread.branch,
         worktreePath: thread.worktreePath,
+        loop: thread.loop ?? null,
       },
     },
     threadSessionById: {
