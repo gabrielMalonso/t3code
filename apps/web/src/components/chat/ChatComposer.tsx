@@ -12,10 +12,7 @@ import type {
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
-import {
-  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
-} from "@t3tools/contracts";
+import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "@t3tools/contracts";
 import { normalizeModelSlug } from "@t3tools/shared/model";
 import {
   forwardRef,
@@ -39,11 +36,7 @@ import {
   expandCollapsedComposerCursor,
   replaceTextRange,
 } from "../../composer-logic";
-import {
-  deriveComposerSendState,
-  partitionComposerFilesForDraft,
-  readFileAsDataUrl,
-} from "../ChatView.logic";
+import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
 import {
   type DraftThreadEnvMode,
   type ComposerImageAttachment,
@@ -87,7 +80,6 @@ import { Separator } from "../ui/separator";
 import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { toastManager } from "../ui/toast";
 import {
   BotIcon,
   CircleAlertIcon,
@@ -105,12 +97,8 @@ import type { SessionPhase, Thread } from "../../types";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
 import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow";
-import { ComposerCustomBodySlot, ComposerCustomControlsSlot } from "../../t3code-custom/chat";
-import {
-  resolveComposerFileReferencesFromFiles,
-  type ComposerFileReference,
-} from "../../t3code-custom/file-references";
-import { useComposerPasteFileReference } from "../../t3code-custom/hooks";
+import type { ComposerFileReference } from "../../t3code-custom/file-references";
+import { useComposerCustomExtension } from "../../t3code-custom/chat";
 
 const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB`;
 
@@ -546,9 +534,6 @@ export const ChatComposer = memo(
     const addComposerDraftImage = useComposerDraftStore((store) => store.addImage);
     const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
     const removeComposerDraftImage = useComposerDraftStore((store) => store.removeImage);
-    const addComposerDraftFileReferences = useComposerDraftStore(
-      (store) => store.addFileReferences,
-    );
     const insertComposerDraftTerminalContext = useComposerDraftStore(
       (store) => store.insertTerminalContext,
     );
@@ -665,7 +650,6 @@ export const ChatComposer = memo(
       detectComposerTrigger(prompt, prompt.length),
     );
     const [composerHighlightedItemId, setComposerHighlightedItemId] = useState<string | null>(null);
-    const [isDragOverComposer, setIsDragOverComposer] = useState(false);
     const [isComposerFooterCompact, setIsComposerFooterCompact] = useState(false);
     const [isComposerPrimaryActionsCompact, setIsComposerPrimaryActionsCompact] = useState(false);
 
@@ -682,9 +666,6 @@ export const ChatComposer = memo(
     const composerMenuOpenRef = useRef(false);
     const composerMenuItemsRef = useRef<ComposerCommandItem[]>([]);
     const activeComposerMenuItemRef = useRef<ComposerCommandItem | null>(null);
-    const dragDepthRef = useRef(0);
-    const pendingComposerFileResolutionCountRef = useRef(0);
-    const [pendingComposerFileResolutionCount, setPendingComposerFileResolutionCount] = useState(0);
 
     // ------------------------------------------------------------------
     // Derived: composer send state
@@ -1040,10 +1021,6 @@ export const ChatComposer = memo(
         collapseExpandedComposerCursor(promptRef.current, promptRef.current.length),
       );
       setComposerTrigger(detectComposerTrigger(promptRef.current, promptRef.current.length));
-      dragDepthRef.current = 0;
-      pendingComposerFileResolutionCountRef.current = 0;
-      setPendingComposerFileResolutionCount(0);
-      setIsDragOverComposer(false);
     }, [draftId, activeThreadId, promptRef]);
 
     // ------------------------------------------------------------------
@@ -1314,6 +1291,36 @@ export const ChatComposer = memo(
       };
     }, [composerCursor, composerTerminalContexts, promptRef]);
 
+    const customExtension = useComposerCustomExtension({
+      composerDraftTarget,
+      environmentId,
+      activeThreadId,
+      activeThread,
+      workspaceRoot: activeWorkspaceRoot,
+      pendingUserInputCount: pendingUserInputs.length,
+      envMode,
+      promptRef,
+      composerImages,
+      imageSizeLimitLabel: IMAGE_SIZE_LIMIT_LABEL,
+      readComposerSnapshot,
+      applyComposerPromptSnapshot: (nextPrompt, nextExpandedCursor) => {
+        const nextCollapsedCursor = collapseExpandedComposerCursor(nextPrompt, nextExpandedCursor);
+        promptRef.current = nextPrompt;
+        setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+        setComposerCursor(nextCollapsedCursor);
+        setComposerTrigger(detectComposerTrigger(nextPrompt, nextExpandedCursor));
+        window.requestAnimationFrame(() => {
+          composerEditorRef.current?.focusAt(nextCollapsedCursor);
+        });
+      },
+      setComposerDraftPrompt,
+      addComposerImage,
+      addComposerImagesToDraft,
+      removeComposerImageFromDraft,
+      setThreadError,
+      focusComposer,
+    });
+
     const resolveActiveComposerTrigger = useCallback((): {
       snapshot: { value: string; cursor: number; expandedCursor: number };
       trigger: ComposerTrigger | null;
@@ -1453,161 +1460,6 @@ export const ChatComposer = memo(
       return false;
     };
 
-    // ------------------------------------------------------------------
-    // Callbacks: images
-    // ------------------------------------------------------------------
-    const addComposerImages = (files: File[]) => {
-      if (!activeThreadId || files.length === 0) return;
-      if (pendingUserInputs.length > 0) {
-        toastManager.add({
-          type: "error",
-          title: "Attach images after answering plan questions.",
-        });
-        return;
-      }
-      const { errors, imageFiles, nonImageFiles } = partitionComposerFilesForDraft({
-        files,
-        existingImageCount: composerImagesRef.current.length,
-        maxImages: PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-        maxImageBytes: PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
-        imageSizeLimitLabel: IMAGE_SIZE_LIMIT_LABEL,
-      });
-      const nextImages: ComposerImageAttachment[] = [];
-      for (const file of imageFiles) {
-        const previewUrl = URL.createObjectURL(file);
-        nextImages.push({
-          type: "image",
-          id: randomUUID(),
-          name: file.name || "image",
-          mimeType: file.type,
-          sizeBytes: file.size,
-          previewUrl,
-          file,
-        });
-      }
-      if (nextImages.length === 1 && nextImages[0]) {
-        addComposerImage(nextImages[0]);
-      } else if (nextImages.length > 1) {
-        addComposerImagesToDraft(nextImages);
-      }
-
-      if (nonImageFiles.length > 0) {
-        pendingComposerFileResolutionCountRef.current += 1;
-        setPendingComposerFileResolutionCount(pendingComposerFileResolutionCountRef.current);
-        void resolveComposerFileReferencesFromFiles(nonImageFiles)
-          .then(({ errors: referenceErrors, references }) => {
-            if (references.length > 0) {
-              addComposerDraftFileReferences(composerDraftTarget, references);
-            }
-            if (referenceErrors.length > 0) {
-              errors.push(...referenceErrors);
-            }
-          })
-          .finally(() => {
-            pendingComposerFileResolutionCountRef.current = Math.max(
-              0,
-              pendingComposerFileResolutionCountRef.current - 1,
-            );
-            setPendingComposerFileResolutionCount(pendingComposerFileResolutionCountRef.current);
-            setThreadError(activeThreadId, errors.at(-1) ?? null);
-          });
-        return;
-      }
-
-      setThreadError(activeThreadId, errors.at(-1) ?? null);
-    };
-
-    const removeComposerImage = (imageId: string) => {
-      removeComposerImageFromDraft(imageId);
-    };
-
-    // ------------------------------------------------------------------
-    // Callbacks: paste / drag
-    // ------------------------------------------------------------------
-    const onComposerPasteFileReference = useComposerPasteFileReference({
-      environmentId,
-      threadId: activeThreadId ?? "",
-      workspaceRoot: activeWorkspaceRoot,
-      pendingUserInputCount: pendingUserInputs.length,
-      envMode,
-      worktreePath: activeThread?.worktreePath,
-      readActiveThreadId: () => activeThreadId ?? "",
-      readComposerSnapshot,
-      setComposerPromptForThread: (nextPrompt) => {
-        if (!activeThreadId) return;
-        setComposerDraftPrompt(composerDraftTarget, nextPrompt);
-      },
-      applyComposerPromptSnapshot: (nextPrompt, nextExpandedCursor) => {
-        const nextCollapsedCursor = collapseExpandedComposerCursor(nextPrompt, nextExpandedCursor);
-        promptRef.current = nextPrompt;
-        setComposerDraftPrompt(composerDraftTarget, nextPrompt);
-        setComposerCursor(nextCollapsedCursor);
-        setComposerTrigger(detectComposerTrigger(nextPrompt, nextExpandedCursor));
-        window.requestAnimationFrame(() => {
-          composerEditorRef.current?.focusAt(nextCollapsedCursor);
-        });
-      },
-      addComposerFileReferencesToDraft: (references) => {
-        addComposerDraftFileReferences(composerDraftTarget, references);
-      },
-      updatePendingComposerFileResolutionCount: (delta) => {
-        pendingComposerFileResolutionCountRef.current = Math.max(
-          0,
-          pendingComposerFileResolutionCountRef.current + delta,
-        );
-        setPendingComposerFileResolutionCount(pendingComposerFileResolutionCountRef.current);
-      },
-    });
-
-    const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
-      if (event.defaultPrevented) return;
-      const files = Array.from(event.clipboardData.files);
-      if (files.length > 0) {
-        const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-        if (imageFiles.length === 0) {
-          return;
-        }
-        event.preventDefault();
-        addComposerImages(imageFiles);
-        return;
-      }
-      onComposerPasteFileReference(event);
-    };
-
-    const onComposerDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
-      if (!event.dataTransfer.types.includes("Files")) return;
-      event.preventDefault();
-      dragDepthRef.current += 1;
-      setIsDragOverComposer(true);
-    };
-
-    const onComposerDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-      if (!event.dataTransfer.types.includes("Files")) return;
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "copy";
-      setIsDragOverComposer(true);
-    };
-
-    const onComposerDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
-      if (!event.dataTransfer.types.includes("Files")) return;
-      event.preventDefault();
-      const nextTarget = event.relatedTarget;
-      if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
-      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
-      if (dragDepthRef.current === 0) {
-        setIsDragOverComposer(false);
-      }
-    };
-
-    const onComposerDrop = (event: React.DragEvent<HTMLDivElement>) => {
-      if (!event.dataTransfer.types.includes("Files")) return;
-      event.preventDefault();
-      dragDepthRef.current = 0;
-      setIsDragOverComposer(false);
-      const files = Array.from(event.dataTransfer.files);
-      addComposerImages(files);
-      focusComposer();
-    };
     const handleInterruptPrimaryAction = useCallback(() => {
       void onInterrupt();
     }, [onInterrupt]);
@@ -1688,7 +1540,7 @@ export const ChatComposer = memo(
           images: composerImagesRef.current,
           fileReferences: composerFileReferencesRef.current,
           terminalContexts: composerTerminalContextsRef.current,
-          isResolvingFileReferences: pendingComposerFileResolutionCountRef.current > 0,
+          isResolvingFileReferences: customExtension.isResolvingFileReferences,
           selectedPromptEffort,
           selectedModelOptionsForDispatch,
           selectedModelSelection,
@@ -1707,7 +1559,7 @@ export const ChatComposer = memo(
         composerImagesRef,
         composerFileReferencesRef,
         composerTerminalContextsRef,
-        pendingComposerFileResolutionCountRef,
+        customExtension.isResolvingFileReferences,
         readComposerSnapshot,
         selectedModel,
         selectedModelOptionsForDispatch,
@@ -1732,15 +1584,17 @@ export const ChatComposer = memo(
             "group rounded-[22px] p-px transition-colors duration-200",
             composerProviderState.composerFrameClassName,
           )}
-          onDragEnter={onComposerDragEnter}
-          onDragOver={onComposerDragOver}
-          onDragLeave={onComposerDragLeave}
-          onDrop={onComposerDrop}
+          onDragEnter={customExtension.onComposerDragEnter}
+          onDragOver={customExtension.onComposerDragOver}
+          onDragLeave={customExtension.onComposerDragLeave}
+          onDrop={customExtension.onComposerDrop}
         >
           <div
             className={cn(
               "rounded-[20px] border bg-card transition-colors duration-200 has-focus-visible:border-ring/45",
-              isDragOverComposer ? "border-primary/70 bg-accent/30" : "border-border",
+              customExtension.isDragOverComposer
+                ? "border-primary/70 bg-accent/30"
+                : "border-border",
               composerProviderState.composerSurfaceClassName,
             )}
           >
@@ -1848,7 +1702,7 @@ export const ChatComposer = memo(
                           variant="ghost"
                           size="icon-xs"
                           className="absolute right-1 top-1 bg-background/80 hover:bg-background/90"
-                          onClick={() => removeComposerImage(image.id)}
+                          onClick={() => customExtension.removeComposerImage(image.id)}
                           aria-label={`Remove ${image.name}`}
                         >
                           <XIcon />
@@ -1858,13 +1712,9 @@ export const ChatComposer = memo(
                   </div>
                 )}
 
-              {activeThreadId ? (
-                <ComposerCustomBodySlot
-                  composerDraftTarget={composerDraftTarget}
-                  workspaceRoot={activeWorkspaceRoot}
-                  visible={!isComposerApprovalState && pendingUserInputs.length === 0}
-                />
-              ) : null}
+              {!isComposerApprovalState && pendingUserInputs.length === 0
+                ? customExtension.bodySlot
+                : null}
 
               <ComposerPromptEditor
                 ref={composerEditorRef}
@@ -1884,8 +1734,8 @@ export const ChatComposer = memo(
                 onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
                 onChange={onPromptChange}
                 onCommandKeyDown={onComposerCommandKey}
-                onPasteCapture={onComposerPaste}
-                onPaste={onComposerPaste}
+                onPasteCapture={customExtension.onComposerPaste}
+                onPaste={customExtension.onComposerPaste}
                 placeholder={
                   isComposerApprovalState
                     ? (activePendingApproval?.detail ?? "Resolve this approval request to continue")
@@ -1947,9 +1797,7 @@ export const ChatComposer = memo(
 
                   {isComposerFooterCompact ? (
                     <>
-                      {activeThread ? (
-                        <ComposerCustomControlsSlot compact thread={activeThread} />
-                      ) : null}
+                      {customExtension.compactControls}
                       <CompactComposerControlsMenu
                         activePlan={showPlanSidebarToggle}
                         interactionMode={interactionMode}
@@ -1972,7 +1820,7 @@ export const ChatComposer = memo(
                           {providerTraitsPicker}
                         </>
                       ) : null}
-                      {activeThread ? <ComposerCustomControlsSlot thread={activeThread} /> : null}
+                      {customExtension.controls}
                       <ComposerFooterModeControls
                         interactionMode={interactionMode}
                         runtimeMode={runtimeMode}
@@ -2005,7 +1853,7 @@ export const ChatComposer = memo(
                     }
                     promptHasText={prompt.trim().length > 0}
                     isSendBusy={isSendBusy}
-                    isResolvingFileReferences={pendingComposerFileResolutionCount > 0}
+                    isResolvingFileReferences={customExtension.isResolvingFileReferences}
                     isConnecting={isConnecting}
                     isPreparingWorktree={isPreparingWorktree}
                     hasSendableContent={composerSendState.hasSendableContent}

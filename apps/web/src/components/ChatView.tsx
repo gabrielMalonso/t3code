@@ -37,10 +37,7 @@ import { readEnvironmentApi } from "../environmentApi";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
 import { parseDiffRouteSearch, stripDiffSearchParams } from "../diffRouteSearch";
-import {
-  collapseExpandedComposerCursor,
-  parseStandaloneComposerSlashCommand,
-} from "../composer-logic";
+import { parseStandaloneComposerSlashCommand } from "../composer-logic";
 import {
   deriveCompletionDividerBeforeEntryId,
   derivePendingApprovals,
@@ -142,7 +139,6 @@ import {
   buildExpiredTerminalContextToastCopy,
   buildLocalDraftThread,
   buildTemporaryWorktreeBranchName,
-  canRestoreComposerDraftAfterSendFailure,
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
@@ -151,7 +147,6 @@ import {
   LastInvokedScriptByProjectSchema,
   type LocalDispatchSnapshot,
   PullRequestDialogState,
-  cloneComposerImageForRetry,
   deriveLockedProvider,
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
@@ -160,11 +155,8 @@ import {
   shouldWriteThreadErrorToCurrentServerThread,
   waitForStartedServerThread,
 } from "./ChatView.logic";
-import {
-  appendFileReferencesToPrompt,
-  type ComposerFileReference,
-  toDisplayedFileReference,
-} from "../t3code-custom/file-references";
+import type { ComposerFileReference } from "../t3code-custom/file-references";
+import { useComposerFileReferenceSend } from "../t3code-custom/hooks";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import {
   useServerAvailableEditors,
@@ -1411,6 +1403,18 @@ export default function ChatView(props: ChatViewProps) {
   const activeProjectCwd = activeProject?.cwd ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
   const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
+  const composerFileReferenceSend = useComposerFileReferenceSend({
+    composerDraftTarget,
+    workspaceRoot: activeWorkspaceRoot,
+    promptRef,
+    composerImagesRef,
+    composerFileReferencesRef,
+    composerTerminalContextsRef,
+    setComposerDraftPrompt,
+    addComposerDraftImages,
+    setComposerDraftFileReferences,
+    setComposerDraftTerminalContexts,
+  });
   const activeTerminalLaunchContext =
     terminalLaunchContext?.threadId === activeThreadId
       ? terminalLaunchContext
@@ -2470,11 +2474,9 @@ export default function ChatView(props: ChatViewProps) {
       fileReferenceCount: composerFileReferences.length,
       terminalContexts: composerTerminalContexts,
     });
-    const trimmedWithFileReferences = appendFileReferencesToPrompt(
+    const trimmedWithFileReferences = composerFileReferenceSend.appendPromptWithFileReferences(
       trimmed,
-      composerFileReferences.map((reference) =>
-        toDisplayedFileReference(reference, activeWorkspaceRoot),
-      ),
+      composerFileReferences,
     );
     if (showPlanFollowUpPrompt && activeProposedPlan) {
       const followUp = resolvePlanFollowUpSubmission({
@@ -2540,11 +2542,9 @@ export default function ChatView(props: ChatViewProps) {
     const composerImagesSnapshot = [...composerImages];
     const composerFileReferencesSnapshot = [...composerFileReferences];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
-    const promptWithFileReferences = appendFileReferencesToPrompt(
+    const promptWithFileReferences = composerFileReferenceSend.appendPromptWithFileReferences(
       promptForSend,
-      composerFileReferencesSnapshot.map((reference) =>
-        toDisplayedFileReference(reference, activeWorkspaceRoot),
-      ),
+      composerFileReferencesSnapshot,
     );
     const messageTextForSend = appendTerminalContextsToPrompt(
       promptWithFileReferences,
@@ -2616,18 +2616,16 @@ export default function ChatView(props: ChatViewProps) {
           firstComposerImageName = firstComposerImage.name;
         }
       }
-      let titleSeed = trimmed;
-      if (!titleSeed) {
-        if (firstComposerImageName) {
-          titleSeed = `Image: ${firstComposerImageName}`;
-        } else if (composerFileReferencesSnapshot.length > 0) {
-          titleSeed = composerFileReferencesSnapshot[0]?.name ?? "Referenced file";
-        } else if (composerTerminalContextsSnapshot.length > 0) {
-          titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
-        } else {
-          titleSeed = "New thread";
-        }
-      }
+      const titleSeed = composerFileReferenceSend.deriveTitleSeed({
+        trimmedPrompt: trimmed,
+        firstImageName: firstComposerImageName,
+        fileReferences: composerFileReferencesSnapshot,
+        terminalContexts: composerTerminalContextsSnapshot,
+        terminalContextLabel:
+          composerTerminalContextsSnapshot.length > 0
+            ? formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!)
+            : null,
+      });
       const title = truncate(titleSeed);
       const threadCreateModelSelection: ModelSelection = {
         provider: ctxSelectedProvider,
@@ -2712,11 +2710,12 @@ export default function ChatView(props: ChatViewProps) {
     })().catch(async (err: unknown) => {
       if (
         !turnStartSucceeded &&
-        canRestoreComposerDraftAfterSendFailure({
-          prompt: promptRef.current,
-          imageCount: composerImagesRef.current.length,
-          fileReferenceCount: composerFileReferencesRef.current.length,
-          terminalContexts: composerTerminalContextsRef.current,
+        composerFileReferenceSend.restoreDraftAfterSendFailure({
+          promptForSend,
+          composerImagesSnapshot,
+          composerFileReferencesSnapshot,
+          composerTerminalContextsSnapshot,
+          resetCursorState: (options) => composerRef.current?.resetCursorState(options),
         })
       ) {
         setOptimisticUserMessages((existing) => {
@@ -2726,20 +2725,6 @@ export default function ChatView(props: ChatViewProps) {
           }
           const next = existing.filter((message) => message.id !== messageIdForSend);
           return next.length === existing.length ? existing : next;
-        });
-        promptRef.current = promptForSend;
-        const retryComposerImages = composerImagesSnapshot.map(cloneComposerImageForRetry);
-        composerImagesRef.current = retryComposerImages;
-        composerFileReferencesRef.current = composerFileReferencesSnapshot;
-        composerTerminalContextsRef.current = composerTerminalContextsSnapshot;
-        setComposerDraftPrompt(composerDraftTarget, promptForSend);
-        addComposerDraftImages(composerDraftTarget, retryComposerImages);
-        setComposerDraftFileReferences(composerDraftTarget, composerFileReferencesSnapshot);
-        setComposerDraftTerminalContexts(composerDraftTarget, composerTerminalContextsSnapshot);
-        composerRef.current?.resetCursorState({
-          cursor: collapseExpandedComposerCursor(promptForSend, promptForSend.length),
-          prompt: promptForSend,
-          detectTrigger: true,
         });
       }
       setThreadError(
