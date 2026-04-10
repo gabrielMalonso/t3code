@@ -1,6 +1,6 @@
 import { type ProjectEntry, type ProviderKind } from "@t3tools/contracts";
 import { memo, useLayoutEffect, useRef } from "react";
-import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
+import { type ComposerTriggerKind } from "../../composer-logic";
 import { BotIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
@@ -19,7 +19,16 @@ export type ComposerCommandItem =
   | {
       id: string;
       type: "slash-command";
-      command: ComposerSlashCommand;
+      command: string;
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
+      type: "skill";
+      provider: ProviderKind;
+      name: string;
+      path: string;
       label: string;
       description: string;
     }
@@ -80,10 +89,16 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
         {props.items.length === 0 && (
           <p className="px-3 py-2 text-muted-foreground/70 text-xs">
             {props.isLoading
-              ? "Searching workspace files..."
+              ? props.triggerKind === "path"
+                ? "Searching workspace files..."
+                : props.triggerKind === "skill"
+                  ? "Loading skills..."
+                  : "Loading commands..."
               : props.triggerKind === "path"
                 ? "No matching files or folders."
-                : "No matching command."}
+                : props.triggerKind === "skill"
+                  ? "No matching skill."
+                  : "No matching command."}
           </p>
         )}
       </div>
@@ -131,10 +146,12 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
           model
         </Badge>
       ) : null}
-      <span className="flex min-w-0 items-center gap-1.5 truncate">
+      <span className="flex min-w-36 shrink-0 basis-1/4 items-center gap-1.5">
         <span className="truncate">{props.item.label}</span>
       </span>
-      <span className="truncate text-muted-foreground/70 text-xs">{props.item.description}</span>
+      <span className="min-w-0 flex-1 truncate text-muted-foreground/70 text-xs">
+        {props.item.description}
+      </span>
     </CommandItem>
   );
 });

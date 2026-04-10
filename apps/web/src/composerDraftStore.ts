@@ -43,6 +43,7 @@ import { createDebouncedStorage, createMemoryStorage } from "./lib/storage";
 import { getDefaultServerModel } from "./providerModels";
 import { UnifiedSettings } from "@t3tools/contracts/settings";
 import type { ComposerFileReference } from "./t3code-custom/file-references";
+import type { ComposerSkillSelection } from "./codexSkillSelections";
 
 export const COMPOSER_DRAFT_STORAGE_KEY = "t3code:composer-drafts:v1";
 const COMPOSER_DRAFT_STORAGE_VERSION = 5;
@@ -107,6 +108,16 @@ const PersistedComposerThreadDraftState = Schema.Struct({
     ),
   ),
   terminalContexts: Schema.optionalKey(Schema.Array(PersistedTerminalContextDraft)),
+  skillSelections: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        name: Schema.String,
+        path: Schema.String,
+        rangeStart: Schema.Number,
+        rangeEnd: Schema.Number,
+      }),
+    ),
+  ),
   modelSelectionByProvider: Schema.optionalKey(
     Schema.Record(ProviderKind, Schema.optionalKey(ModelSelection)),
   ),
@@ -215,6 +226,7 @@ export interface ComposerThreadDraftState {
   nonPersistedImageIds: string[];
   persistedAttachments: PersistedComposerImageAttachment[];
   terminalContexts: TerminalContextDraft[];
+  skillSelections: ComposerSkillSelection[];
   modelSelectionByProvider: Partial<Record<ProviderKind, ModelSelection>>;
   activeProvider: ProviderKind | null;
   runtimeMode: RuntimeMode | null;
@@ -342,6 +354,10 @@ interface ComposerDraftStoreState {
   clearDraftThread: (threadRef: ComposerThreadTarget) => void;
   setStickyModelSelection: (modelSelection: ModelSelection | null | undefined) => void;
   setPrompt: (threadRef: ComposerThreadTarget, prompt: string) => void;
+  setSkillSelections: (
+    threadRef: ComposerThreadTarget,
+    selections: ComposerSkillSelection[],
+  ) => void;
   setTerminalContexts: (threadRef: ComposerThreadTarget, contexts: TerminalContextDraft[]) => void;
   setModelSelection: (
     threadRef: ComposerThreadTarget,
@@ -441,10 +457,12 @@ const EMPTY_FILE_REFERENCES: ComposerFileReference[] = [];
 const EMPTY_IDS: string[] = [];
 const EMPTY_PERSISTED_ATTACHMENTS: PersistedComposerImageAttachment[] = [];
 const EMPTY_TERMINAL_CONTEXTS: TerminalContextDraft[] = [];
+const EMPTY_SKILL_SELECTIONS: ComposerSkillSelection[] = [];
 Object.freeze(EMPTY_IMAGES);
 Object.freeze(EMPTY_FILE_REFERENCES);
 Object.freeze(EMPTY_IDS);
 Object.freeze(EMPTY_PERSISTED_ATTACHMENTS);
+Object.freeze(EMPTY_SKILL_SELECTIONS);
 const EMPTY_MODEL_SELECTION_BY_PROVIDER: Partial<Record<ProviderKind, ModelSelection>> =
   Object.freeze({});
 const EMPTY_COMPOSER_DRAFT_MODEL_STATE = Object.freeze<ComposerDraftModelState>({
@@ -459,6 +477,7 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   nonPersistedImageIds: EMPTY_IDS,
   persistedAttachments: EMPTY_PERSISTED_ATTACHMENTS,
   terminalContexts: EMPTY_TERMINAL_CONTEXTS,
+  skillSelections: EMPTY_SKILL_SELECTIONS,
   modelSelectionByProvider: EMPTY_MODEL_SELECTION_BY_PROVIDER,
   activeProvider: null,
   runtimeMode: null,
@@ -473,6 +492,7 @@ function createEmptyThreadDraft(): ComposerThreadDraftState {
     nonPersistedImageIds: [],
     persistedAttachments: [],
     terminalContexts: [],
+    skillSelections: [],
     modelSelectionByProvider: {},
     activeProvider: null,
     runtimeMode: null,
@@ -550,6 +570,7 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     draft.fileReferences.length === 0 &&
     draft.persistedAttachments.length === 0 &&
     draft.terminalContexts.length === 0 &&
+    draft.skillSelections.length === 0 &&
     Object.keys(draft.modelSelectionByProvider).length === 0 &&
     draft.activeProvider === null &&
     draft.runtimeMode === null &&
@@ -1453,6 +1474,8 @@ function normalizePersistedDraftsByThreadId(
       attachments.length === 0 &&
       fileReferences.length === 0 &&
       terminalContexts.length === 0 &&
+      (!Array.isArray(draftCandidate.skillSelections) ||
+        draftCandidate.skillSelections.length === 0) &&
       !hasModelData &&
       !runtimeMode &&
       !interactionMode
@@ -1476,6 +1499,9 @@ function normalizePersistedDraftsByThreadId(
       attachments,
       ...(fileReferences.length > 0 ? { fileReferences } : {}),
       ...(terminalContexts.length > 0 ? { terminalContexts } : {}),
+      ...(Array.isArray(draftCandidate.skillSelections) && draftCandidate.skillSelections.length > 0
+        ? { skillSelections: draftCandidate.skillSelections }
+        : {}),
       ...(hasModelData ? { modelSelectionByProvider, activeProvider } : {}),
       ...(runtimeMode ? { runtimeMode } : {}),
       ...(interactionMode ? { interactionMode } : {}),
@@ -1554,6 +1580,7 @@ function partializeComposerDraftStoreState(
       draft.persistedAttachments.length === 0 &&
       draft.fileReferences.length === 0 &&
       draft.terminalContexts.length === 0 &&
+      draft.skillSelections.length === 0 &&
       !hasModelData &&
       draft.runtimeMode === null &&
       draft.interactionMode === null
@@ -1577,6 +1604,7 @@ function partializeComposerDraftStoreState(
             })),
           }
         : {}),
+      ...(draft.skillSelections.length > 0 ? { skillSelections: draft.skillSelections } : {}),
       ...(hasModelData
         ? {
             modelSelectionByProvider: draft.modelSelectionByProvider,
@@ -1805,6 +1833,7 @@ function toHydratedThreadDraft(
         ...context,
         text: "",
       })) ?? [],
+    skillSelections: [...(persistedDraft.skillSelections ?? [])],
     modelSelectionByProvider,
     activeProvider,
     runtimeMode: persistedDraft.runtimeMode ?? null,
@@ -2223,6 +2252,26 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const nextDraft: ComposerThreadDraftState = {
               ...existing,
               prompt,
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        setSkillSelections: (threadRef, selections) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0) {
+            return;
+          }
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            const nextDraft: ComposerThreadDraftState = {
+              ...existing,
+              skillSelections: [...selections],
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) {
@@ -2870,6 +2919,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               nonPersistedImageIds: [],
               persistedAttachments: [],
               terminalContexts: [],
+              skillSelections: [],
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) {

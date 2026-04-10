@@ -4,6 +4,7 @@ import type {
   ModelSelection,
   ProjectEntry,
   ProviderApprovalDecision,
+  ProviderCommandEntry,
   ProviderInteractionMode,
   ProviderKind,
   RuntimeMode,
@@ -28,6 +29,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useDebouncedValue } from "@tanstack/react-pacer";
 import { projectSearchEntriesQueryOptions } from "~/lib/projectReactQuery";
+import { providerCommandsQueryOptions } from "~/lib/providerCommandsReactQuery";
 import {
   clampCollapsedComposerCursor,
   type ComposerTrigger,
@@ -99,6 +101,13 @@ import type { PendingApproval, PendingUserInput } from "../../session-logic";
 import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow";
 import type { ComposerFileReference } from "../../t3code-custom/file-references";
 import { useComposerCustomExtension } from "../../t3code-custom/chat";
+import {
+  createComposerSkillSelection,
+  insertComposerSkillSelection,
+  reconcileComposerSkillSelections,
+  toCodexSkillReferencesForSend,
+  type ComposerSkillSelection,
+} from "../../codexSkillSelections";
 
 const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB`;
 
@@ -126,6 +135,23 @@ const runtimeModeConfig: Record<
 const runtimeModeOptions = Object.keys(runtimeModeConfig) as RuntimeMode[];
 const COMPOSER_PATH_QUERY_DEBOUNCE_MS = 120;
 const EMPTY_PROJECT_ENTRIES: ProjectEntry[] = [];
+const EMPTY_PROVIDER_COMMANDS: ReadonlyArray<ProviderCommandEntry> = Object.freeze([]);
+const BUILT_IN_SLASH_COMMANDS = ["model", "plan", "default"] as const;
+
+function uniqueStrings(values: ReadonlyArray<string>): string[] {
+  return [...new Set(values)];
+}
+
+function buildDefaultComposerPlaceholder(provider: ProviderKind, phase: SessionPhase): string {
+  if (phase === "disconnected") {
+    return provider === "codex"
+      ? "Ask for follow-up changes, type $ to mention skills, or attach images"
+      : "Ask for follow-up changes or attach images";
+  }
+  return provider === "codex"
+    ? "Ask anything, @tag files/folders, type $ to mention skills, or use / to show available commands"
+    : "Ask anything, @tag files/folders, or use / to show available commands";
+}
 
 const extendReplacementRangeForTrailingSpace = (
   text: string,
@@ -329,6 +355,7 @@ export interface ChatComposerHandle {
     images: ComposerImageAttachment[];
     fileReferences: ComposerFileReference[];
     terminalContexts: TerminalContextDraft[];
+    selectedSkills: Array<{ name: string; path: string }>;
     isResolvingFileReferences: boolean;
     selectedPromptEffort: string | null;
     selectedModelOptionsForDispatch: unknown;
@@ -528,9 +555,13 @@ export const ChatComposer = memo(
     const composerImages = composerDraft.images;
     const composerFileReferences = composerDraft.fileReferences;
     const composerTerminalContexts = composerDraft.terminalContexts;
+    const composerSkillSelections = composerDraft.skillSelections;
     const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
 
     const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
+    const setComposerDraftSkillSelections = useComposerDraftStore(
+      (store) => store.setSkillSelections,
+    );
     const addComposerDraftImage = useComposerDraftStore((store) => store.addImage);
     const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
     const removeComposerDraftImage = useComposerDraftStore((store) => store.removeImage);
@@ -640,15 +671,51 @@ export const ChatComposer = memo(
       [activeThreadActivities],
     );
 
+    const providerCommandsQuery = useQuery(
+      providerCommandsQueryOptions({
+        environmentId,
+        provider: selectedProvider,
+        cwd: gitCwd,
+        enabled: true,
+      }),
+    );
+    const discoveredProviderCommands =
+      providerCommandsQuery.data?.commands ?? EMPTY_PROVIDER_COMMANDS;
+    const discoveredProviderSkills = providerCommandsQuery.data?.skills ?? EMPTY_PROVIDER_COMMANDS;
+    const discoveredSlashCommands = useMemo(
+      () =>
+        uniqueStrings([
+          ...BUILT_IN_SLASH_COMMANDS,
+          ...discoveredProviderCommands.map((entry) => entry.name),
+          ...(selectedProvider === "claudeAgent"
+            ? discoveredProviderSkills.map((entry) => entry.name)
+            : []),
+        ]),
+      [discoveredProviderCommands, discoveredProviderSkills, selectedProvider],
+    );
+    const codexDiscoveredSkills = useMemo(
+      () =>
+        selectedProvider === "codex"
+          ? discoveredProviderSkills.filter((entry) => typeof entry.path === "string")
+          : [],
+      [discoveredProviderSkills, selectedProvider],
+    );
+    const detectComposerTriggerForContext = useCallback(
+      (text: string, cursorInput: number) =>
+        detectComposerTrigger(text, cursorInput, {
+          slashCommands: discoveredSlashCommands,
+          enableSkillTrigger: selectedProvider === "codex",
+        }),
+      [discoveredSlashCommands, selectedProvider],
+    );
+
     // ------------------------------------------------------------------
     // Composer-local state
     // ------------------------------------------------------------------
     const [composerCursor, setComposerCursor] = useState(() =>
       collapseExpandedComposerCursor(prompt, prompt.length),
     );
-    const [composerTrigger, setComposerTrigger] = useState<ComposerTrigger | null>(() =>
-      detectComposerTrigger(prompt, prompt.length),
-    );
+    const [composerTrigger, setComposerTrigger] = useState<ComposerTrigger | null>(null);
     const [composerHighlightedItemId, setComposerHighlightedItemId] = useState<string | null>(null);
     const [isComposerFooterCompact, setIsComposerFooterCompact] = useState(false);
     const [isComposerPrimaryActionsCompact, setIsComposerPrimaryActionsCompact] = useState(false);
@@ -666,6 +733,7 @@ export const ChatComposer = memo(
     const composerMenuOpenRef = useRef(false);
     const composerMenuItemsRef = useRef<ComposerCommandItem[]>([]);
     const activeComposerMenuItemRef = useRef<ComposerCommandItem | null>(null);
+    const composerSkillSelectionsRef = useRef<ComposerSkillSelection[]>([]);
 
     // ------------------------------------------------------------------
     // Derived: composer send state
@@ -686,7 +754,9 @@ export const ChatComposer = memo(
     // ------------------------------------------------------------------
     const composerTriggerKind = composerTrigger?.kind ?? null;
     const pathTriggerQuery = composerTrigger?.kind === "path" ? composerTrigger.query : "";
+    const skillTriggerQuery = composerTrigger?.kind === "skill" ? composerTrigger.query : "";
     const isPathTrigger = composerTriggerKind === "path";
+    const isSkillTrigger = composerTriggerKind === "skill";
     const [debouncedPathQuery, composerPathQueryDebouncer] = useDebouncedValue(
       pathTriggerQuery,
       { wait: COMPOSER_PATH_QUERY_DEBOUNCE_MS },
@@ -717,7 +787,7 @@ export const ChatComposer = memo(
         }));
       }
       if (composerTrigger.kind === "slash-command") {
-        const slashCommandItems = [
+        const slashCommandItems: ComposerCommandItem[] = [
           {
             id: "slash:model",
             type: "slash-command",
@@ -739,13 +809,64 @@ export const ChatComposer = memo(
             label: "/default",
             description: "Switch this thread back to normal build mode",
           },
-        ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
+          ...discoveredProviderCommands.map((entry) => ({
+            id: `slash:${selectedProvider}:${entry.source}:${entry.name}`,
+            type: "slash-command" as const,
+            command: entry.name,
+            label: `/${entry.name}`,
+            description:
+              entry.description ||
+              (entry.source === "project" ? "Project command" : "User command"),
+          })),
+          ...(selectedProvider === "claudeAgent"
+            ? discoveredProviderSkills.map((entry) => ({
+                id: `slash-skill:${selectedProvider}:${entry.source}:${entry.name}`,
+                type: "slash-command" as const,
+                command: entry.name,
+                label: `/${entry.name}`,
+                description:
+                  entry.description ||
+                  (entry.source === "builtin"
+                    ? "Built-in Claude command"
+                    : entry.source === "project"
+                      ? "Project Claude skill"
+                      : "User Claude skill"),
+              }))
+            : []),
+        ];
         const query = composerTrigger.query.trim().toLowerCase();
         if (!query) {
-          return [...slashCommandItems];
+          return slashCommandItems;
         }
-        return slashCommandItems.filter(
-          (item) => item.command.includes(query) || item.label.slice(1).includes(query),
+        return slashCommandItems.filter((item) =>
+          `${item.label} ${item.description}`.toLowerCase().includes(query),
+        );
+      }
+      if (composerTrigger.kind === "skill") {
+        const query = skillTriggerQuery.trim().toLowerCase();
+        const filteredSkills = !query
+          ? codexDiscoveredSkills
+          : codexDiscoveredSkills.filter((entry) =>
+              `${entry.name} ${entry.description ?? ""} ${entry.path ?? ""}`
+                .toLowerCase()
+                .includes(query),
+            );
+        return filteredSkills.flatMap((entry) =>
+          entry.path
+            ? [
+                {
+                  id: `skill:${entry.source}:${entry.path}`,
+                  type: "skill" as const,
+                  provider: selectedProvider,
+                  name: entry.name,
+                  path: entry.path,
+                  label: `$${entry.name}`,
+                  description:
+                    entry.description ||
+                    (entry.source === "project" ? entry.path : `${entry.source} · ${entry.path}`),
+                },
+              ]
+            : [],
         );
       }
       return searchableModelOptions
@@ -766,7 +887,16 @@ export const ChatComposer = memo(
           label: name,
           description: `${providerLabel} · ${slug}`,
         }));
-    }, [composerTrigger, searchableModelOptions, workspaceEntries]);
+    }, [
+      codexDiscoveredSkills,
+      composerTrigger,
+      discoveredProviderCommands,
+      discoveredProviderSkills,
+      searchableModelOptions,
+      selectedProvider,
+      skillTriggerQuery,
+      workspaceEntries,
+    ]);
 
     const composerMenuOpen = Boolean(composerTrigger);
     const activeComposerMenuItem = useMemo(
@@ -819,10 +949,29 @@ export const ChatComposer = memo(
     ]);
 
     const isComposerMenuLoading =
-      composerTriggerKind === "path" &&
-      ((pathTriggerQuery.length > 0 && composerPathQueryDebouncer.state.isPending) ||
-        workspaceEntriesQuery.isLoading ||
-        workspaceEntriesQuery.isFetching);
+      (composerTriggerKind === "path" &&
+        ((pathTriggerQuery.length > 0 && composerPathQueryDebouncer.state.isPending) ||
+          workspaceEntriesQuery.isLoading ||
+          workspaceEntriesQuery.isFetching)) ||
+      ((composerTriggerKind === "slash-command" || isSkillTrigger) &&
+        (providerCommandsQuery.isLoading || providerCommandsQuery.isFetching));
+
+    const syncCodexSkillSelectionsForPrompt = useCallback(
+      (previousPrompt: string, nextPrompt: string) => {
+        const nextSelections =
+          selectedProvider === "codex"
+            ? reconcileComposerSkillSelections({
+                previousPrompt,
+                nextPrompt,
+                selections: composerSkillSelectionsRef.current,
+              })
+            : [];
+        composerSkillSelectionsRef.current = nextSelections;
+        setComposerDraftSkillSelections(composerDraftTarget, nextSelections);
+        return nextSelections;
+      },
+      [composerDraftTarget, selectedProvider, setComposerDraftSkillSelections],
+    );
 
     // ------------------------------------------------------------------
     // Provider traits UI
@@ -835,13 +984,21 @@ export const ChatComposer = memo(
           return;
         }
         promptRef.current = nextPrompt;
+        syncCodexSkillSelectionsForPrompt(currentPrompt, nextPrompt);
         setComposerDraftPrompt(composerDraftTarget, nextPrompt);
         const nextCursor = collapseExpandedComposerCursor(nextPrompt, nextPrompt.length);
         setComposerCursor(nextCursor);
-        setComposerTrigger(detectComposerTrigger(nextPrompt, nextPrompt.length));
+        setComposerTrigger(detectComposerTriggerForContext(nextPrompt, nextPrompt.length));
         scheduleComposerFocus();
       },
-      [composerDraftTarget, promptRef, scheduleComposerFocus, setComposerDraftPrompt],
+      [
+        composerDraftTarget,
+        detectComposerTriggerForContext,
+        promptRef,
+        scheduleComposerFocus,
+        setComposerDraftPrompt,
+        syncCodexSkillSelectionsForPrompt,
+      ],
     );
 
     const providerTraitsMenuContent = renderProviderTraitsMenuContent({
@@ -916,19 +1073,23 @@ export const ChatComposer = memo(
         );
         if (contextIndex < 0) return;
         const removal = removeInlineTerminalContextPlaceholder(promptRef.current, contextIndex);
+        const previousPrompt = promptRef.current;
         promptRef.current = removal.prompt;
         setPrompt(removal.prompt);
+        syncCodexSkillSelectionsForPrompt(previousPrompt, removal.prompt);
         removeComposerDraftTerminalContext(composerDraftTarget, contextId);
         const nextCursor = collapseExpandedComposerCursor(removal.prompt, removal.cursor);
         setComposerCursor(nextCursor);
-        setComposerTrigger(detectComposerTrigger(removal.prompt, removal.cursor));
+        setComposerTrigger(detectComposerTriggerForContext(removal.prompt, removal.cursor));
       },
       [
         composerDraftTarget,
         composerTerminalContexts,
+        detectComposerTriggerForContext,
         promptRef,
         removeComposerDraftTerminalContext,
         setPrompt,
+        syncCodexSkillSelectionsForPrompt,
       ],
     );
 
@@ -939,6 +1100,10 @@ export const ChatComposer = memo(
       promptRef.current = prompt;
       setComposerCursor((existing) => clampCollapsedComposerCursor(prompt, existing));
     }, [prompt, promptRef]);
+
+    useEffect(() => {
+      composerSkillSelectionsRef.current = composerSkillSelections;
+    }, [composerSkillSelections]);
 
     useEffect(() => {
       composerImagesRef.current = composerImages;
@@ -995,11 +1160,13 @@ export const ChatComposer = memo(
         return;
       }
 
+      const previousPrompt = promptRef.current;
       promptRef.current = nextCustomAnswer;
+      syncCodexSkillSelectionsForPrompt(previousPrompt, nextCustomAnswer);
       const nextCursor = collapseExpandedComposerCursor(nextCustomAnswer, nextCustomAnswer.length);
       setComposerCursor(nextCursor);
       setComposerTrigger(
-        detectComposerTrigger(
+        detectComposerTriggerForContext(
           nextCustomAnswer,
           expandCollapsedComposerCursor(nextCustomAnswer, nextCursor),
         ),
@@ -1009,7 +1176,9 @@ export const ChatComposer = memo(
       activePendingProgress?.customAnswer,
       activePendingProgress?.activeQuestion?.id,
       activePendingUserInput?.requestId,
+      detectComposerTriggerForContext,
       promptRef,
+      syncCodexSkillSelectionsForPrompt,
     ]);
 
     // ------------------------------------------------------------------
@@ -1020,8 +1189,15 @@ export const ChatComposer = memo(
       setComposerCursor(
         collapseExpandedComposerCursor(promptRef.current, promptRef.current.length),
       );
-      setComposerTrigger(detectComposerTrigger(promptRef.current, promptRef.current.length));
-    }, [draftId, activeThreadId, promptRef]);
+      setComposerTrigger(
+        detectComposerTriggerForContext(promptRef.current, promptRef.current.length),
+      );
+    }, [detectComposerTriggerForContext, draftId, activeThreadId, promptRef]);
+
+    useEffect(() => {
+      const expandedCursor = expandCollapsedComposerCursor(promptRef.current, composerCursor);
+      setComposerTrigger(detectComposerTriggerForContext(promptRef.current, expandedCursor));
+    }, [composerCursor, detectComposerTriggerForContext, promptRef]);
 
     // ------------------------------------------------------------------
     // Footer compact layout observation
@@ -1177,7 +1353,9 @@ export const ChatComposer = memo(
         if (activePendingProgress?.activeQuestion && pendingUserInputs.length > 0) {
           setComposerCursor(nextCursor);
           setComposerTrigger(
-            cursorAdjacentToMention ? null : detectComposerTrigger(nextPrompt, expandedCursor),
+            cursorAdjacentToMention
+              ? null
+              : detectComposerTriggerForContext(nextPrompt, expandedCursor),
           );
           onChangeActivePendingUserInputCustomAnswer(
             activePendingProgress.activeQuestion.id,
@@ -1188,8 +1366,10 @@ export const ChatComposer = memo(
           );
           return;
         }
+        const previousPrompt = promptRef.current;
         promptRef.current = nextPrompt;
         setPrompt(nextPrompt);
+        syncCodexSkillSelectionsForPrompt(previousPrompt, nextPrompt);
         if (!terminalContextIdListsEqual(composerTerminalContexts, terminalContextIds)) {
           setComposerDraftTerminalContexts(
             composerDraftTarget,
@@ -1198,18 +1378,22 @@ export const ChatComposer = memo(
         }
         setComposerCursor(nextCursor);
         setComposerTrigger(
-          cursorAdjacentToMention ? null : detectComposerTrigger(nextPrompt, expandedCursor),
+          cursorAdjacentToMention
+            ? null
+            : detectComposerTriggerForContext(nextPrompt, expandedCursor),
         );
       },
       [
         activePendingProgress?.activeQuestion,
         pendingUserInputs.length,
         onChangeActivePendingUserInputCustomAnswer,
+        detectComposerTriggerForContext,
         promptRef,
         setPrompt,
         composerDraftTarget,
         composerTerminalContexts,
         setComposerDraftTerminalContexts,
+        syncCodexSkillSelectionsForPrompt,
       ],
     );
 
@@ -1235,7 +1419,9 @@ export const ChatComposer = memo(
         const next = replaceTextRange(promptRef.current, rangeStart, rangeEnd, replacement);
         const nextCursor = collapseExpandedComposerCursor(next.text, next.cursor);
         const nextExpandedCursor = expandCollapsedComposerCursor(next.text, nextCursor);
+        const previousPrompt = promptRef.current;
         promptRef.current = next.text;
+        syncCodexSkillSelectionsForPrompt(previousPrompt, next.text);
         const activePendingQuestion = activePendingProgress?.activeQuestion;
         if (activePendingQuestion && activePendingUserInput) {
           onChangeActivePendingUserInputCustomAnswer(
@@ -1249,7 +1435,7 @@ export const ChatComposer = memo(
           setPrompt(next.text);
         }
         setComposerCursor(nextCursor);
-        setComposerTrigger(detectComposerTrigger(next.text, nextExpandedCursor));
+        setComposerTrigger(detectComposerTriggerForContext(next.text, nextExpandedCursor));
         window.requestAnimationFrame(() => {
           composerEditorRef.current?.focusAt(nextCursor);
         });
@@ -1258,9 +1444,11 @@ export const ChatComposer = memo(
       [
         activePendingProgress?.activeQuestion,
         activePendingUserInput,
+        detectComposerTriggerForContext,
         onChangeActivePendingUserInputCustomAnswer,
         promptRef,
         setPrompt,
+        syncCodexSkillSelectionsForPrompt,
       ],
     );
 
@@ -1305,10 +1493,12 @@ export const ChatComposer = memo(
       readComposerSnapshot,
       applyComposerPromptSnapshot: (nextPrompt, nextExpandedCursor) => {
         const nextCollapsedCursor = collapseExpandedComposerCursor(nextPrompt, nextExpandedCursor);
+        const previousPrompt = promptRef.current;
         promptRef.current = nextPrompt;
+        syncCodexSkillSelectionsForPrompt(previousPrompt, nextPrompt);
         setComposerDraftPrompt(composerDraftTarget, nextPrompt);
         setComposerCursor(nextCollapsedCursor);
-        setComposerTrigger(detectComposerTrigger(nextPrompt, nextExpandedCursor));
+        setComposerTrigger(detectComposerTriggerForContext(nextPrompt, nextExpandedCursor));
         window.requestAnimationFrame(() => {
           composerEditorRef.current?.focusAt(nextCollapsedCursor);
         });
@@ -1328,9 +1518,9 @@ export const ChatComposer = memo(
       const snapshot = readComposerSnapshot();
       return {
         snapshot,
-        trigger: detectComposerTrigger(snapshot.value, snapshot.expandedCursor),
+        trigger: detectComposerTriggerForContext(snapshot.value, snapshot.expandedCursor),
       };
-    }, [readComposerSnapshot]);
+    }, [detectComposerTriggerForContext, readComposerSnapshot]);
 
     const onSelectComposerItem = useCallback(
       (item: ComposerCommandItem) => {
@@ -1378,13 +1568,68 @@ export const ChatComposer = memo(
             }
             return;
           }
-          void handleInteractionModeChange(item.command === "plan" ? "plan" : "default");
-          const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
-            expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
-          });
+          if (item.command === "plan" || item.command === "default") {
+            void handleInteractionModeChange(item.command === "plan" ? "plan" : "default");
+            const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+              expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+            });
+            if (applied) {
+              setComposerHighlightedItemId(null);
+            }
+            return;
+          }
+          const replacement = `/${item.command} `;
+          const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+            snapshot.value,
+            trigger.rangeEnd,
+            replacement,
+          );
+          const applied = applyPromptReplacement(
+            trigger.rangeStart,
+            replacementRangeEnd,
+            replacement,
+            { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
+          );
           if (applied) {
             setComposerHighlightedItemId(null);
           }
+          return;
+        }
+        if (item.type === "skill") {
+          const replacement = `$${item.name} `;
+          const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+            snapshot.value,
+            trigger.rangeEnd,
+            replacement,
+          );
+          const next = replaceTextRange(
+            snapshot.value,
+            trigger.rangeStart,
+            replacementRangeEnd,
+            replacement,
+          );
+          const nextCursor = collapseExpandedComposerCursor(next.text, next.cursor);
+          const nextExpandedCursor = expandCollapsedComposerCursor(next.text, nextCursor);
+          const nextSelections = insertComposerSkillSelection({
+            previousPrompt: snapshot.value,
+            nextPrompt: next.text,
+            selections: composerSkillSelectionsRef.current,
+            insertedSelection: createComposerSkillSelection({
+              name: item.name,
+              path: item.path,
+              rangeStart: trigger.rangeStart,
+            }),
+          });
+          composerSkillSelectionsRef.current = nextSelections;
+          setComposerDraftSkillSelections(composerDraftTarget, nextSelections);
+          promptRef.current = next.text;
+          setPrompt(next.text);
+          setComposerCursor(nextCursor);
+          setComposerTrigger(detectComposerTriggerForContext(next.text, nextExpandedCursor));
+          setComposerHighlightedItemId(null);
+          window.requestAnimationFrame(() => {
+            composerEditorRef.current?.focusAt(nextCursor);
+          });
           return;
         }
         onProviderModelSelect(item.provider, item.model);
@@ -1397,9 +1642,14 @@ export const ChatComposer = memo(
       },
       [
         applyPromptReplacement,
+        composerDraftTarget,
+        detectComposerTriggerForContext,
         handleInteractionModeChange,
         onProviderModelSelect,
+        promptRef,
+        setComposerDraftSkillSelections,
         resolveActiveComposerTrigger,
+        setPrompt,
       ],
     );
 
@@ -1493,7 +1743,7 @@ export const ChatComposer = memo(
           setComposerCursor(cursor);
           setComposerTrigger(
             options?.detectTrigger
-              ? detectComposerTrigger(
+              ? detectComposerTriggerForContext(
                   promptForState,
                   expandCollapsedComposerCursor(promptForState, cursor),
                 )
@@ -1528,9 +1778,10 @@ export const ChatComposer = memo(
             insertion.contextIndex,
           );
           if (!inserted) return;
+          syncCodexSkillSelectionsForPrompt(snapshot.value, insertion.prompt);
           promptRef.current = insertion.prompt;
           setComposerCursor(nextCollapsedCursor);
-          setComposerTrigger(detectComposerTrigger(insertion.prompt, insertion.cursor));
+          setComposerTrigger(detectComposerTriggerForContext(insertion.prompt, insertion.cursor));
           window.requestAnimationFrame(() => {
             composerEditorRef.current?.focusAt(nextCollapsedCursor);
           });
@@ -1540,6 +1791,10 @@ export const ChatComposer = memo(
           images: composerImagesRef.current,
           fileReferences: composerFileReferencesRef.current,
           terminalContexts: composerTerminalContextsRef.current,
+          selectedSkills:
+            selectedProvider === "codex"
+              ? toCodexSkillReferencesForSend(composerSkillSelectionsRef.current)
+              : [],
           isResolvingFileReferences: customExtension.isResolvingFileReferences,
           selectedPromptEffort,
           selectedModelOptionsForDispatch,
@@ -1559,6 +1814,8 @@ export const ChatComposer = memo(
         composerImagesRef,
         composerFileReferencesRef,
         composerTerminalContextsRef,
+        composerSkillSelectionsRef,
+        detectComposerTriggerForContext,
         customExtension.isResolvingFileReferences,
         readComposerSnapshot,
         selectedModel,
@@ -1567,6 +1824,7 @@ export const ChatComposer = memo(
         selectedPromptEffort,
         selectedProvider,
         selectedProviderModels,
+        syncCodexSkillSelectionsForPrompt,
       ],
     );
 
@@ -1743,9 +2001,7 @@ export const ChatComposer = memo(
                       ? "Type your own answer, or leave this blank to use the selected option"
                       : showPlanFollowUpPrompt && activeProposedPlan
                         ? "Add feedback to refine the plan, or leave this blank to implement it"
-                        : phase === "disconnected"
-                          ? "Ask for follow-up changes or attach images"
-                          : "Ask anything, @tag files/folders, or use / to show available commands"
+                        : buildDefaultComposerPlaceholder(selectedProvider, phase)
                 }
                 disabled={isConnecting || isComposerApprovalState}
               />

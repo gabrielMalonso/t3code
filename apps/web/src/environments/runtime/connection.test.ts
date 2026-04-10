@@ -76,6 +76,7 @@ function createTestClient(options?: {
     },
     projects: {
       searchEntries: vi.fn(async () => []),
+      listProviderCommands: vi.fn(async () => ({ provider: "codex", commands: [], skills: [] })),
       writeFile: vi.fn(async () => undefined),
     },
     shell: {
