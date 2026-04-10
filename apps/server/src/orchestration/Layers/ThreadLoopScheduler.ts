@@ -20,8 +20,7 @@ import { sessionStatusAllowsActiveTurn } from "../sessionState.ts";
 
 const THREAD_LOOP_SCHEDULER_INTERVAL_MS = 10_000;
 
-const serverCommandId = (tag: string) =>
-  CommandId.make(`server:${tag}:${crypto.randomUUID()}`);
+const serverCommandId = (tag: string) => CommandId.make(`server:${tag}:${crypto.randomUUID()}`);
 
 const isThreadLoopBusy = (thread: {
   readonly session: {
@@ -46,7 +45,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
       type: "thread.activity.append",
       commandId: serverCommandId("thread-loop-activity"),
       threadId: input.threadId,
-        activity: {
+      activity: {
         id: EventId.make(crypto.randomUUID()),
         tone: input.tone ?? "info",
         kind: input.kind,

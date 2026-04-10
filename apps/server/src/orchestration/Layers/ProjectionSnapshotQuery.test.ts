@@ -602,30 +602,15 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       const snapshot = yield* snapshotQuery.getSnapshot();
       const threadById = new Map(snapshot.threads.map((thread) => [thread.id, thread] as const));
 
-      assert.equal(
-        threadById.get(ThreadId.make("thread-ready"))?.session?.activeTurnId,
-        null,
-      );
-      assert.equal(
-        threadById.get(ThreadId.make("thread-stopped"))?.session?.activeTurnId,
-        null,
-      );
+      assert.equal(threadById.get(ThreadId.make("thread-ready"))?.session?.activeTurnId, null);
+      assert.equal(threadById.get(ThreadId.make("thread-stopped"))?.session?.activeTurnId, null);
       assert.equal(
         threadById.get(ThreadId.make("thread-interrupted"))?.session?.activeTurnId,
         null,
       );
-      assert.equal(
-        threadById.get(ThreadId.make("thread-error"))?.session?.activeTurnId,
-        null,
-      );
-      assert.equal(
-        threadById.get(ThreadId.make("thread-running"))?.session?.status,
-        "interrupted",
-      );
-      assert.equal(
-        threadById.get(ThreadId.make("thread-running"))?.session?.activeTurnId,
-        null,
-      );
+      assert.equal(threadById.get(ThreadId.make("thread-error"))?.session?.activeTurnId, null);
+      assert.equal(threadById.get(ThreadId.make("thread-running"))?.session?.status, "interrupted");
+      assert.equal(threadById.get(ThreadId.make("thread-running"))?.session?.activeTurnId, null);
       assert.equal(
         threadById.get(ThreadId.make("thread-running"))?.latestTurn?.state,
         "interrupted",
