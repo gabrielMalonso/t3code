@@ -201,6 +201,7 @@ import {
   toDisplayedFileReference,
   type ComposerFileReference,
 } from "../t3code-custom/file-references";
+import { useComposerPasteFileReference } from "../t3code-custom/hooks";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import {
   useServerAvailableEditors,
@@ -661,6 +662,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
     (store) => store.draftThreadsByThreadId[threadId] ?? null,
   );
   const promptRef = useRef(prompt);
+  const activeComposerThreadIdRef = useRef(threadId);
+  activeComposerThreadIdRef.current = threadId;
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [isDragOverComposer, setIsDragOverComposer] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
@@ -1670,10 +1673,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
       if (!activeThread) {
         return;
       }
+      const expandedCursor = expandCollapsedComposerCursor(promptRef.current, composerCursor);
       const snapshot = composerEditorRef.current?.readSnapshot() ?? {
         value: promptRef.current,
         cursor: composerCursor,
-        expandedCursor: expandCollapsedComposerCursor(promptRef.current, composerCursor),
+        expandedCursor,
+        selectionStart: composerCursor,
+        selectionEnd: composerCursor,
+        expandedSelectionStart: expandedCursor,
+        expandedSelectionEnd: expandedCursor,
         terminalContextIds: composerTerminalContexts.map((context) => context.id),
       };
       const insertion = insertInlineTerminalContextPlaceholder(
@@ -2796,16 +2804,20 @@ export default function ChatView({ threadId }: ChatViewProps) {
   };
 
   const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
+    if (event.defaultPrevented) {
+      return;
+    }
     const files = Array.from(event.clipboardData.files);
-    if (files.length === 0) {
+    if (files.length > 0) {
+      const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+      if (imageFiles.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      void addComposerImages(imageFiles);
       return;
     }
-    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-    if (imageFiles.length === 0) {
-      return;
-    }
-    event.preventDefault();
-    void addComposerImages(imageFiles);
+    onComposerPasteFileReference(event);
   };
 
   const onComposerDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
@@ -3745,19 +3757,56 @@ export default function ChatView({ threadId }: ChatViewProps) {
     value: string;
     cursor: number;
     expandedCursor: number;
+    selectionStart: number;
+    selectionEnd: number;
+    expandedSelectionStart: number;
+    expandedSelectionEnd: number;
     terminalContextIds: string[];
   } => {
     const editorSnapshot = composerEditorRef.current?.readSnapshot();
     if (editorSnapshot) {
       return editorSnapshot;
     }
+    const expandedCursor = expandCollapsedComposerCursor(promptRef.current, composerCursor);
     return {
       value: promptRef.current,
       cursor: composerCursor,
-      expandedCursor: expandCollapsedComposerCursor(promptRef.current, composerCursor),
+      expandedCursor,
+      selectionStart: composerCursor,
+      selectionEnd: composerCursor,
+      expandedSelectionStart: expandedCursor,
+      expandedSelectionEnd: expandedCursor,
       terminalContextIds: composerTerminalContexts.map((context) => context.id),
     };
   }, [composerCursor, composerTerminalContexts]);
+
+  const applyComposerPromptSnapshot = useCallback(
+    (nextPrompt: string, nextExpandedCursor: number) => {
+      const nextCursor = collapseExpandedComposerCursor(nextPrompt, nextExpandedCursor);
+      promptRef.current = nextPrompt;
+      setPrompt(nextPrompt);
+      setComposerCursor(nextCursor);
+      setComposerTrigger(detectComposerTrigger(nextPrompt, nextExpandedCursor));
+      window.requestAnimationFrame(() => {
+        composerEditorRef.current?.focusAt(nextCursor);
+      });
+    },
+    [setPrompt],
+  );
+
+  const onComposerPasteFileReference = useComposerPasteFileReference({
+    threadId,
+    workspaceRoot: activeWorkspaceRoot,
+    pendingUserInputCount: pendingUserInputs.length,
+    envMode,
+    worktreePath: activeThreadWorktreePath,
+    readActiveThreadId: () => activeComposerThreadIdRef.current,
+    readComposerSnapshot,
+    setComposerPromptForThread: setPrompt,
+    applyComposerPromptSnapshot,
+    addComposerFileReferencesToDraft,
+    updatePendingComposerFileResolutionCount,
+  });
 
   const resolveActiveComposerTrigger = useCallback((): {
     snapshot: { value: string; cursor: number; expandedCursor: number };
@@ -4275,6 +4324,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                       onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
                       onChange={onPromptChange}
                       onCommandKeyDown={onComposerCommandKey}
+                      onPasteCapture={onComposerPaste}
                       onPaste={onComposerPaste}
                       placeholder={
                         isComposerApprovalState

@@ -564,6 +564,26 @@ function $readSelectionOffsetFromEditorState(fallback: number): number {
   return Math.max(0, Math.min(offset, composerLength));
 }
 
+function $readSelectionOffsetsFromEditorState(fallback: { start: number; end: number }): {
+  start: number;
+  end: number;
+} {
+  const selection = $getSelection();
+  if (!$isRangeSelection(selection)) {
+    return fallback;
+  }
+  const anchorOffset = getAbsoluteOffsetForPoint(
+    selection.anchor.getNode(),
+    selection.anchor.offset,
+  );
+  const focusOffset = getAbsoluteOffsetForPoint(selection.focus.getNode(), selection.focus.offset);
+  const composerLength = $getComposerRootLength();
+  return {
+    start: Math.max(0, Math.min(Math.min(anchorOffset, focusOffset), composerLength)),
+    end: Math.max(0, Math.min(Math.max(anchorOffset, focusOffset), composerLength)),
+  };
+}
+
 function $readExpandedSelectionOffsetFromEditorState(fallback: number): number {
   const selection = $getSelection();
   if (!$isRangeSelection(selection) || !selection.isCollapsed()) {
@@ -573,6 +593,29 @@ function $readExpandedSelectionOffsetFromEditorState(fallback: number): number {
   const offset = getExpandedAbsoluteOffsetForPoint(anchorNode, selection.anchor.offset);
   const expandedLength = $getRoot().getTextContent().length;
   return Math.max(0, Math.min(offset, expandedLength));
+}
+
+function $readExpandedSelectionOffsetsFromEditorState(fallback: { start: number; end: number }): {
+  start: number;
+  end: number;
+} {
+  const selection = $getSelection();
+  if (!$isRangeSelection(selection)) {
+    return fallback;
+  }
+  const anchorOffset = getExpandedAbsoluteOffsetForPoint(
+    selection.anchor.getNode(),
+    selection.anchor.offset,
+  );
+  const focusOffset = getExpandedAbsoluteOffsetForPoint(
+    selection.focus.getNode(),
+    selection.focus.offset,
+  );
+  const expandedLength = $getRoot().getTextContent().length;
+  return {
+    start: Math.max(0, Math.min(Math.min(anchorOffset, focusOffset), expandedLength)),
+    end: Math.max(0, Math.min(Math.max(anchorOffset, focusOffset), expandedLength)),
+  };
 }
 
 function $appendTextWithLineBreaks(parent: ElementNode, text: string): void {
@@ -631,6 +674,10 @@ export interface ComposerPromptEditorHandle {
     value: string;
     cursor: number;
     expandedCursor: number;
+    selectionStart: number;
+    selectionEnd: number;
+    expandedSelectionStart: number;
+    expandedSelectionEnd: number;
     terminalContextIds: string[];
   };
 }
@@ -654,6 +701,7 @@ interface ComposerPromptEditorProps {
     key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab",
     event: KeyboardEvent,
   ) => boolean;
+  onPasteCapture?: ClipboardEventHandler<HTMLElement>;
   onPaste: ClipboardEventHandler<HTMLElement>;
 }
 
@@ -888,6 +936,7 @@ function ComposerPromptEditorInner({
   onRemoveTerminalContext,
   onChange,
   onCommandKeyDown,
+  onPasteCapture,
   onPaste,
   editorRef,
 }: ComposerPromptEditorInnerProps) {
@@ -896,10 +945,15 @@ function ComposerPromptEditorInner({
   const initialCursor = clampCollapsedComposerCursor(value, cursor);
   const terminalContextsSignature = terminalContextSignature(terminalContexts);
   const terminalContextsSignatureRef = useRef(terminalContextsSignature);
+  const initialExpandedCursor = expandCollapsedComposerCursor(value, initialCursor);
   const snapshotRef = useRef({
     value,
     cursor: initialCursor,
-    expandedCursor: expandCollapsedComposerCursor(value, initialCursor),
+    expandedCursor: initialExpandedCursor,
+    selectionStart: initialCursor,
+    selectionEnd: initialCursor,
+    expandedSelectionStart: initialExpandedCursor,
+    expandedSelectionEnd: initialExpandedCursor,
     terminalContextIds: terminalContexts.map((context) => context.id),
   });
   const isApplyingControlledUpdateRef = useRef(false);
@@ -932,6 +986,10 @@ function ComposerPromptEditorInner({
       value,
       cursor: normalizedCursor,
       expandedCursor: expandCollapsedComposerCursor(value, normalizedCursor),
+      selectionStart: normalizedCursor,
+      selectionEnd: normalizedCursor,
+      expandedSelectionStart: expandCollapsedComposerCursor(value, normalizedCursor),
+      expandedSelectionEnd: expandCollapsedComposerCursor(value, normalizedCursor),
       terminalContextIds: terminalContexts.map((context) => context.id),
     };
     terminalContextsSignatureRef.current = terminalContextsSignature;
@@ -970,6 +1028,16 @@ function ComposerPromptEditorInner({
         value: snapshotRef.current.value,
         cursor: boundedCursor,
         expandedCursor: expandCollapsedComposerCursor(snapshotRef.current.value, boundedCursor),
+        selectionStart: boundedCursor,
+        selectionEnd: boundedCursor,
+        expandedSelectionStart: expandCollapsedComposerCursor(
+          snapshotRef.current.value,
+          boundedCursor,
+        ),
+        expandedSelectionEnd: expandCollapsedComposerCursor(
+          snapshotRef.current.value,
+          boundedCursor,
+        ),
         terminalContextIds: snapshotRef.current.terminalContextIds,
       };
       onChangeRef.current(
@@ -987,6 +1055,10 @@ function ComposerPromptEditorInner({
     value: string;
     cursor: number;
     expandedCursor: number;
+    selectionStart: number;
+    selectionEnd: number;
+    expandedSelectionStart: number;
+    expandedSelectionEnd: number;
     terminalContextIds: string[];
   } => {
     let snapshot = snapshotRef.current;
@@ -1005,11 +1077,23 @@ function ComposerPromptEditorInner({
         nextValue,
         $readExpandedSelectionOffsetFromEditorState(fallbackExpandedCursor),
       );
+      const selectionOffsets = $readSelectionOffsetsFromEditorState({
+        start: clampCollapsedComposerCursor(nextValue, snapshotRef.current.selectionStart),
+        end: clampCollapsedComposerCursor(nextValue, snapshotRef.current.selectionEnd),
+      });
+      const expandedSelectionOffsets = $readExpandedSelectionOffsetsFromEditorState({
+        start: clampExpandedCursor(nextValue, snapshotRef.current.expandedSelectionStart),
+        end: clampExpandedCursor(nextValue, snapshotRef.current.expandedSelectionEnd),
+      });
       const terminalContextIds = collectTerminalContextIds($getRoot());
       snapshot = {
         value: nextValue,
         cursor: nextCursor,
         expandedCursor: nextExpandedCursor,
+        selectionStart: selectionOffsets.start,
+        selectionEnd: selectionOffsets.end,
+        expandedSelectionStart: expandedSelectionOffsets.start,
+        expandedSelectionEnd: expandedSelectionOffsets.end,
         terminalContextIds,
       };
     });
@@ -1053,12 +1137,24 @@ function ComposerPromptEditorInner({
         nextValue,
         $readExpandedSelectionOffsetFromEditorState(fallbackExpandedCursor),
       );
+      const selectionOffsets = $readSelectionOffsetsFromEditorState({
+        start: clampCollapsedComposerCursor(nextValue, snapshotRef.current.selectionStart),
+        end: clampCollapsedComposerCursor(nextValue, snapshotRef.current.selectionEnd),
+      });
+      const expandedSelectionOffsets = $readExpandedSelectionOffsetsFromEditorState({
+        start: clampExpandedCursor(nextValue, snapshotRef.current.expandedSelectionStart),
+        end: clampExpandedCursor(nextValue, snapshotRef.current.expandedSelectionEnd),
+      });
       const terminalContextIds = collectTerminalContextIds($getRoot());
       const previousSnapshot = snapshotRef.current;
       if (
         previousSnapshot.value === nextValue &&
         previousSnapshot.cursor === nextCursor &&
         previousSnapshot.expandedCursor === nextExpandedCursor &&
+        previousSnapshot.selectionStart === selectionOffsets.start &&
+        previousSnapshot.selectionEnd === selectionOffsets.end &&
+        previousSnapshot.expandedSelectionStart === expandedSelectionOffsets.start &&
+        previousSnapshot.expandedSelectionEnd === expandedSelectionOffsets.end &&
         previousSnapshot.terminalContextIds.length === terminalContextIds.length &&
         previousSnapshot.terminalContextIds.every((id, index) => id === terminalContextIds[index])
       ) {
@@ -1071,6 +1167,10 @@ function ComposerPromptEditorInner({
         value: nextValue,
         cursor: nextCursor,
         expandedCursor: nextExpandedCursor,
+        selectionStart: selectionOffsets.start,
+        selectionEnd: selectionOffsets.end,
+        expandedSelectionStart: expandedSelectionOffsets.start,
+        expandedSelectionEnd: expandedSelectionOffsets.end,
         terminalContextIds,
       };
       const cursorAdjacentToMention =
@@ -1099,6 +1199,7 @@ function ComposerPromptEditorInner({
               data-testid="composer-editor"
               aria-placeholder={placeholder}
               placeholder={<span />}
+              onPasteCapture={onPasteCapture}
               onPaste={onPaste}
             />
           }
@@ -1136,6 +1237,7 @@ export const ComposerPromptEditor = forwardRef<
     onRemoveTerminalContext,
     onChange,
     onCommandKeyDown,
+    onPasteCapture,
     onPaste,
   },
   ref,
@@ -1167,6 +1269,7 @@ export const ComposerPromptEditor = forwardRef<
         placeholder={placeholder}
         onRemoveTerminalContext={onRemoveTerminalContext}
         onChange={onChange}
+        {...(onPasteCapture ? { onPasteCapture } : {})}
         onPaste={onPaste}
         editorRef={ref}
         {...(onCommandKeyDown ? { onCommandKeyDown } : {})}
