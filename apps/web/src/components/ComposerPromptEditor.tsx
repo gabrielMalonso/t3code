@@ -102,10 +102,10 @@ type SerializedComposerMentionNode = Spread<
   SerializedTextNode
 >;
 
-type SerializedComposerSkillNode = Spread<
+type SerializedComposerCustomTokenNode = Spread<
   {
-    skillName: string;
-    type: "composer-skill";
+    tokenText: string;
+    type: "composer-custom-token";
     version: 1;
   },
   SerializedTextNode
@@ -198,44 +198,45 @@ function $createComposerMentionNode(path: string): ComposerMentionNode {
   return $applyNodeReplacement(new ComposerMentionNode(path));
 }
 
-function renderSkillChipDom(container: HTMLElement, skillName: string): void {
+function renderCustomTokenChipDom(container: HTMLElement, tokenText: string): void {
   container.textContent = "";
   container.style.setProperty("user-select", "none");
   container.style.setProperty("-webkit-user-select", "none");
 
   const label = document.createElement("span");
   label.className = COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME;
-  label.textContent = `$${skillName}`;
+  label.textContent = tokenText;
 
   container.append(label);
 }
 
-class ComposerSkillNode extends TextNode {
-  __skillName: string;
+class ComposerCustomTokenNode extends TextNode {
+  __tokenText: string;
 
   static override getType(): string {
-    return "composer-skill";
+    return "composer-custom-token";
   }
 
-  static override clone(node: ComposerSkillNode): ComposerSkillNode {
-    return new ComposerSkillNode(node.__skillName, node.__key);
+  static override clone(node: ComposerCustomTokenNode): ComposerCustomTokenNode {
+    return new ComposerCustomTokenNode(node.__tokenText, node.__key);
   }
 
-  static override importJSON(serializedNode: SerializedComposerSkillNode): ComposerSkillNode {
-    return $createComposerSkillNode(serializedNode.skillName);
+  static override importJSON(
+    serializedNode: SerializedComposerCustomTokenNode,
+  ): ComposerCustomTokenNode {
+    return $createComposerCustomTokenNode(serializedNode.tokenText);
   }
 
-  constructor(skillName: string, key?: NodeKey) {
-    const normalizedSkillName = skillName.startsWith("$") ? skillName.slice(1) : skillName;
-    super(`$${normalizedSkillName}`, key);
-    this.__skillName = normalizedSkillName;
+  constructor(tokenText: string, key?: NodeKey) {
+    super(tokenText, key);
+    this.__tokenText = tokenText;
   }
 
-  override exportJSON(): SerializedComposerSkillNode {
+  override exportJSON(): SerializedComposerCustomTokenNode {
     return {
       ...super.exportJSON(),
-      skillName: this.__skillName,
-      type: "composer-skill",
+      tokenText: this.__tokenText,
+      type: "composer-custom-token",
       version: 1,
     };
   }
@@ -245,18 +246,18 @@ class ComposerSkillNode extends TextNode {
     dom.className = COMPOSER_INLINE_CHIP_CLASS_NAME;
     dom.contentEditable = "false";
     dom.setAttribute("spellcheck", "false");
-    renderSkillChipDom(dom, this.__skillName);
+    renderCustomTokenChipDom(dom, this.__tokenText);
     return dom;
   }
 
   override updateDOM(
-    prevNode: ComposerSkillNode,
+    prevNode: ComposerCustomTokenNode,
     dom: HTMLElement,
     _config: EditorConfig,
   ): boolean {
     dom.contentEditable = "false";
-    if (prevNode.__text !== this.__text || prevNode.__skillName !== this.__skillName) {
-      renderSkillChipDom(dom, this.__skillName);
+    if (prevNode.__text !== this.__text || prevNode.__tokenText !== this.__tokenText) {
+      renderCustomTokenChipDom(dom, this.__tokenText);
     }
     return false;
   }
@@ -278,8 +279,8 @@ class ComposerSkillNode extends TextNode {
   }
 }
 
-function $createComposerSkillNode(skillName: string): ComposerSkillNode {
-  return $applyNodeReplacement(new ComposerSkillNode(skillName));
+function $createComposerCustomTokenNode(tokenText: string): ComposerCustomTokenNode {
+  return $applyNodeReplacement(new ComposerCustomTokenNode(tokenText));
 }
 
 function ComposerTerminalContextDecorator(props: { context: TerminalContextDraft }) {
@@ -348,13 +349,13 @@ function $createComposerTerminalContextNode(
 
 type ComposerInlineTokenNode =
   | ComposerMentionNode
-  | ComposerSkillNode
+  | ComposerCustomTokenNode
   | ComposerTerminalContextNode;
 
 function isComposerInlineTokenNode(candidate: unknown): candidate is ComposerInlineTokenNode {
   return (
     candidate instanceof ComposerMentionNode ||
-    candidate instanceof ComposerSkillNode ||
+    candidate instanceof ComposerCustomTokenNode ||
     candidate instanceof ComposerTerminalContextNode
   );
 }
@@ -400,8 +401,8 @@ function terminalContextSignature(contexts: ReadonlyArray<TerminalContextDraft>)
     .join("\u001e");
 }
 
-function skillNamesSignature(skillNames: ReadonlyArray<string>): string {
-  return skillNames.join("\u001e");
+function customTokenTextsSignature(customTokenTexts: ReadonlyArray<string>): string {
+  return customTokenTexts.join("\u001e");
 }
 
 function clampExpandedCursor(value: string, cursor: number): number {
@@ -512,7 +513,7 @@ function getAbsoluteOffsetForPoint(node: LexicalNode, pointOffset: number): numb
   }
 
   if ($isTextNode(node)) {
-    if (node instanceof ComposerMentionNode || node instanceof ComposerSkillNode) {
+    if (node instanceof ComposerMentionNode || node instanceof ComposerCustomTokenNode) {
       return getAbsoluteOffsetForInlineTokenPoint(node, offset, pointOffset);
     }
     return offset + Math.min(pointOffset, node.getTextContentSize());
@@ -559,7 +560,7 @@ function getExpandedAbsoluteOffsetForPoint(node: LexicalNode, pointOffset: numbe
   }
 
   if ($isTextNode(node)) {
-    if (node instanceof ComposerMentionNode || node instanceof ComposerSkillNode) {
+    if (node instanceof ComposerMentionNode || node instanceof ComposerCustomTokenNode) {
       return getExpandedAbsoluteOffsetForInlineTokenPoint(node, offset, pointOffset);
     }
     return offset + Math.min(pointOffset, node.getTextContentSize());
@@ -593,7 +594,7 @@ function findSelectionPointAtOffset(
   if (node instanceof ComposerMentionNode) {
     return findSelectionPointForInlineToken(node, remainingRef);
   }
-  if (node instanceof ComposerSkillNode) {
+  if (node instanceof ComposerCustomTokenNode) {
     return findSelectionPointForInlineToken(node, remainingRef);
   }
   if (node instanceof ComposerTerminalContextNode) {
@@ -805,21 +806,23 @@ function $appendTextWithLineBreaks(parent: ElementNode, text: string): void {
 function $setComposerEditorPrompt(
   prompt: string,
   terminalContexts: ReadonlyArray<TerminalContextDraft>,
-  skillNames: ReadonlyArray<string> = [],
+  customTokenTexts: ReadonlyArray<string> = [],
 ): void {
   const root = $getRoot();
   root.clear();
   const paragraph = $createParagraphNode();
   root.append(paragraph);
 
-  const segments = splitPromptIntoComposerSegments(prompt, terminalContexts, { skillNames });
+  const segments = splitPromptIntoComposerSegments(prompt, terminalContexts, {
+    customTokenTexts,
+  });
   for (const segment of segments) {
     if (segment.type === "mention") {
       paragraph.append($createComposerMentionNode(segment.path));
       continue;
     }
-    if (segment.type === "skill") {
-      paragraph.append($createComposerSkillNode(segment.name));
+    if (segment.type === "custom-token") {
+      paragraph.append($createComposerCustomTokenNode(segment.tokenText));
       continue;
     }
     if (segment.type === "terminal-context") {
@@ -862,7 +865,7 @@ interface ComposerPromptEditorProps {
   value: string;
   cursor: number;
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
-  skillNames?: ReadonlyArray<string>;
+  customTokenTexts?: ReadonlyArray<string>;
   disabled: boolean;
   placeholder: string;
   className?: string;
@@ -942,7 +945,7 @@ function ComposerCommandKeyPlugin(props: {
   return null;
 }
 
-function ComposerInlineTokenArrowPlugin(props: { skillNames: ReadonlyArray<string> }) {
+function ComposerInlineTokenArrowPlugin(props: { customTokenTexts: ReadonlyArray<string> }) {
   const [editor] = useLexicalComposerContext();
 
   useEffect(() => {
@@ -958,7 +961,7 @@ function ComposerInlineTokenArrowPlugin(props: { skillNames: ReadonlyArray<strin
           const promptValue = $getRoot().getTextContent();
           if (
             !isCollapsedCursorAdjacentToInlineToken(promptValue, currentOffset, "left", {
-              skillNames: props.skillNames,
+              customTokenTexts: props.customTokenTexts,
             })
           ) {
             return;
@@ -989,7 +992,7 @@ function ComposerInlineTokenArrowPlugin(props: { skillNames: ReadonlyArray<strin
           const promptValue = $getRoot().getTextContent();
           if (
             !isCollapsedCursorAdjacentToInlineToken(promptValue, currentOffset, "right", {
-              skillNames: props.skillNames,
+              customTokenTexts: props.customTokenTexts,
             })
           ) {
             return;
@@ -1011,7 +1014,7 @@ function ComposerInlineTokenArrowPlugin(props: { skillNames: ReadonlyArray<strin
       unregisterLeft();
       unregisterRight();
     };
-  }, [editor, props.skillNames]);
+  }, [editor, props.customTokenTexts]);
 
   return null;
 }
@@ -1113,11 +1116,11 @@ function ComposerInlineTokenBackspacePlugin() {
 
 function ComposerSurroundSelectionPlugin(props: {
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
-  skillNames: ReadonlyArray<string>;
+  customTokenTexts: ReadonlyArray<string>;
 }) {
   const [editor] = useLexicalComposerContext();
   const terminalContextsRef = useRef(props.terminalContexts);
-  const skillNamesRef = useRef(props.skillNames);
+  const customTokenTextsRef = useRef(props.customTokenTexts);
   const pendingSurroundSelectionRef = useRef<{
     value: string;
     expandedStart: number;
@@ -1134,8 +1137,8 @@ function ComposerSurroundSelectionPlugin(props: {
   }, [props.terminalContexts]);
 
   useEffect(() => {
-    skillNamesRef.current = props.skillNames;
-  }, [props.skillNames]);
+    customTokenTextsRef.current = props.customTokenTexts;
+  }, [props.customTokenTexts]);
 
   const applySurroundInsertion = useCallback(
     (inputData: string): boolean => {
@@ -1165,7 +1168,7 @@ function ComposerSurroundSelectionPlugin(props: {
             const value = $getRoot().getTextContent();
             if (
               selectionTouchesMentionBoundary(value, range.start, range.end, {
-                skillNames: skillNamesRef.current,
+                customTokenTexts: customTokenTextsRef.current,
               })
             ) {
               return null;
@@ -1186,11 +1189,15 @@ function ComposerSurroundSelectionPlugin(props: {
           selectionSnapshot.expandedEnd,
         );
         const nextValue = `${selectionSnapshot.value.slice(0, selectionSnapshot.expandedStart)}${inputData}${selectedText}${surroundCloseSymbol}${selectionSnapshot.value.slice(selectionSnapshot.expandedEnd)}`;
-        $setComposerEditorPrompt(nextValue, terminalContextsRef.current, skillNamesRef.current);
+        $setComposerEditorPrompt(
+          nextValue,
+          terminalContextsRef.current,
+          customTokenTextsRef.current,
+        );
         const selectionStart = collapseExpandedComposerCursor(
           nextValue,
           selectionSnapshot.expandedStart,
-          { skillNames: skillNamesRef.current },
+          { customTokenTexts: customTokenTextsRef.current },
         );
         $setSelectionRangeAtComposerOffsets(
           selectionStart + inputData.length,
@@ -1241,7 +1248,7 @@ function ComposerSurroundSelectionPlugin(props: {
         const value = $getRoot().getTextContent();
         if (
           selectionTouchesMentionBoundary(value, range.start, range.end, {
-            skillNames: skillNamesRef.current,
+            customTokenTexts: customTokenTextsRef.current,
           })
         ) {
           pendingSurroundSelectionRef.current = null;
@@ -1327,7 +1334,7 @@ function ComposerSurroundSelectionPlugin(props: {
             const replacementStart = collapseExpandedComposerCursor(
               currentValue,
               pendingDeadKeySelection.expandedStart,
-              { skillNames: skillNamesRef.current },
+              { customTokenTexts: customTokenTextsRef.current },
             );
             $setSelectionRangeAtComposerOffsets(replacementStart, replacementStart + 1);
             const replacementSelection = $getSelection();
@@ -1394,7 +1401,7 @@ function ComposerPromptEditorInner({
   value,
   cursor,
   terminalContexts,
-  skillNames = [],
+  customTokenTexts = [],
   disabled,
   placeholder,
   className,
@@ -1407,13 +1414,15 @@ function ComposerPromptEditorInner({
 }: ComposerPromptEditorInnerProps) {
   const [editor] = useLexicalComposerContext();
   const onChangeRef = useRef(onChange);
-  const skillNamesRef = useRef(skillNames);
-  const initialCursor = clampCollapsedComposerCursor(value, cursor, { skillNames });
+  const customTokenTextsRef = useRef(customTokenTexts);
+  const initialCursor = clampCollapsedComposerCursor(value, cursor, { customTokenTexts });
   const terminalContextsSignature = terminalContextSignature(terminalContexts);
-  const currentSkillNamesSignature = skillNamesSignature(skillNames);
+  const currentCustomTokenTextsSignature = customTokenTextsSignature(customTokenTexts);
   const terminalContextsSignatureRef = useRef(terminalContextsSignature);
-  const skillNamesSignatureRef = useRef(currentSkillNamesSignature);
-  const initialExpandedCursor = expandCollapsedComposerCursor(value, initialCursor, { skillNames });
+  const customTokenTextsSignatureRef = useRef(currentCustomTokenTextsSignature);
+  const initialExpandedCursor = expandCollapsedComposerCursor(value, initialCursor, {
+    customTokenTexts,
+  });
   const snapshotRef = useRef({
     value,
     cursor: initialCursor,
@@ -1435,23 +1444,24 @@ function ComposerPromptEditorInner({
   }, [onChange]);
 
   useEffect(() => {
-    skillNamesRef.current = skillNames;
-  }, [skillNames]);
+    customTokenTextsRef.current = customTokenTexts;
+  }, [customTokenTexts]);
 
   useEffect(() => {
     editor.setEditable(!disabled);
   }, [disabled, editor]);
 
   useLayoutEffect(() => {
-    const normalizedCursor = clampCollapsedComposerCursor(value, cursor, { skillNames });
+    const normalizedCursor = clampCollapsedComposerCursor(value, cursor, { customTokenTexts });
     const previousSnapshot = snapshotRef.current;
     const contextsChanged = terminalContextsSignatureRef.current !== terminalContextsSignature;
-    const skillsChanged = skillNamesSignatureRef.current !== currentSkillNamesSignature;
+    const customTokensChanged =
+      customTokenTextsSignatureRef.current !== currentCustomTokenTextsSignature;
     if (
       previousSnapshot.value === value &&
       previousSnapshot.cursor === normalizedCursor &&
       !contextsChanged &&
-      !skillsChanged
+      !customTokensChanged
     ) {
       return;
     }
@@ -1459,30 +1469,39 @@ function ComposerPromptEditorInner({
     snapshotRef.current = {
       value,
       cursor: normalizedCursor,
-      expandedCursor: expandCollapsedComposerCursor(value, normalizedCursor, { skillNames }),
+      expandedCursor: expandCollapsedComposerCursor(value, normalizedCursor, {
+        customTokenTexts,
+      }),
       selectionStart: normalizedCursor,
       selectionEnd: normalizedCursor,
       expandedSelectionStart: expandCollapsedComposerCursor(value, normalizedCursor, {
-        skillNames,
+        customTokenTexts,
       }),
-      expandedSelectionEnd: expandCollapsedComposerCursor(value, normalizedCursor, { skillNames }),
+      expandedSelectionEnd: expandCollapsedComposerCursor(value, normalizedCursor, {
+        customTokenTexts,
+      }),
       terminalContextIds: terminalContexts.map((context) => context.id),
     };
     terminalContextsSignatureRef.current = terminalContextsSignature;
-    skillNamesSignatureRef.current = currentSkillNamesSignature;
+    customTokenTextsSignatureRef.current = currentCustomTokenTextsSignature;
 
     const rootElement = editor.getRootElement();
     const isFocused = Boolean(rootElement && document.activeElement === rootElement);
-    if (previousSnapshot.value === value && !contextsChanged && !skillsChanged && !isFocused) {
+    if (
+      previousSnapshot.value === value &&
+      !contextsChanged &&
+      !customTokensChanged &&
+      !isFocused
+    ) {
       return;
     }
 
     isApplyingControlledUpdateRef.current = true;
     editor.update(() => {
       const shouldRewriteEditorState =
-        previousSnapshot.value !== value || contextsChanged || skillsChanged;
+        previousSnapshot.value !== value || contextsChanged || customTokensChanged;
       if (shouldRewriteEditorState) {
-        $setComposerEditorPrompt(value, terminalContexts, skillNames);
+        $setComposerEditorPrompt(value, terminalContexts, customTokenTexts);
       }
       if (shouldRewriteEditorState || isFocused) {
         $setSelectionAtComposerOffset(normalizedCursor);
@@ -1492,10 +1511,10 @@ function ComposerPromptEditorInner({
       isApplyingControlledUpdateRef.current = false;
     });
   }, [
-    currentSkillNamesSignature,
+    currentCustomTokenTextsSignature,
+    customTokenTexts,
     cursor,
     editor,
-    skillNames,
     terminalContexts,
     terminalContextsSignature,
     value,
@@ -1506,7 +1525,7 @@ function ComposerPromptEditorInner({
       const rootElement = editor.getRootElement();
       if (!rootElement) return;
       const boundedCursor = clampCollapsedComposerCursor(snapshotRef.current.value, nextCursor, {
-        skillNames: skillNamesRef.current,
+        customTokenTexts: customTokenTextsRef.current,
       });
       rootElement.focus();
       editor.update(() => {
@@ -1516,19 +1535,19 @@ function ComposerPromptEditorInner({
         value: snapshotRef.current.value,
         cursor: boundedCursor,
         expandedCursor: expandCollapsedComposerCursor(snapshotRef.current.value, boundedCursor, {
-          skillNames: skillNamesRef.current,
+          customTokenTexts: customTokenTextsRef.current,
         }),
         selectionStart: boundedCursor,
         selectionEnd: boundedCursor,
         expandedSelectionStart: expandCollapsedComposerCursor(
           snapshotRef.current.value,
           boundedCursor,
-          { skillNames: skillNamesRef.current },
+          { customTokenTexts: customTokenTextsRef.current },
         ),
         expandedSelectionEnd: expandCollapsedComposerCursor(
           snapshotRef.current.value,
           boundedCursor,
-          { skillNames: skillNamesRef.current },
+          { customTokenTexts: customTokenTextsRef.current },
         ),
         terminalContextIds: snapshotRef.current.terminalContextIds,
       };
@@ -1557,12 +1576,12 @@ function ComposerPromptEditorInner({
     editor.getEditorState().read(() => {
       const nextValue = $getRoot().getTextContent();
       const fallbackCursor = clampCollapsedComposerCursor(nextValue, snapshotRef.current.cursor, {
-        skillNames: skillNamesRef.current,
+        customTokenTexts: customTokenTextsRef.current,
       });
       const nextCursor = clampCollapsedComposerCursor(
         nextValue,
         $readSelectionOffsetFromEditorState(fallbackCursor),
-        { skillNames: skillNamesRef.current },
+        { customTokenTexts: customTokenTextsRef.current },
       );
       const fallbackExpandedCursor = clampExpandedCursor(
         nextValue,
@@ -1574,10 +1593,10 @@ function ComposerPromptEditorInner({
       );
       const selectionOffsets = $readSelectionOffsetsFromEditorState({
         start: clampCollapsedComposerCursor(nextValue, snapshotRef.current.selectionStart, {
-          skillNames: skillNamesRef.current,
+          customTokenTexts: customTokenTextsRef.current,
         }),
         end: clampCollapsedComposerCursor(nextValue, snapshotRef.current.selectionEnd, {
-          skillNames: skillNamesRef.current,
+          customTokenTexts: customTokenTextsRef.current,
         }),
       });
       const expandedSelectionOffsets = $readExpandedSelectionOffsetsFromEditorState({
@@ -1612,7 +1631,7 @@ function ComposerPromptEditorInner({
           collapseExpandedComposerCursor(
             snapshotRef.current.value,
             snapshotRef.current.value.length,
-            { skillNames: skillNamesRef.current },
+            { customTokenTexts: customTokenTextsRef.current },
           ),
         );
       },
@@ -1625,12 +1644,12 @@ function ComposerPromptEditorInner({
     editorState.read(() => {
       const nextValue = $getRoot().getTextContent();
       const fallbackCursor = clampCollapsedComposerCursor(nextValue, snapshotRef.current.cursor, {
-        skillNames: skillNamesRef.current,
+        customTokenTexts: customTokenTextsRef.current,
       });
       const nextCursor = clampCollapsedComposerCursor(
         nextValue,
         $readSelectionOffsetFromEditorState(fallbackCursor),
-        { skillNames: skillNamesRef.current },
+        { customTokenTexts: customTokenTextsRef.current },
       );
       const fallbackExpandedCursor = clampExpandedCursor(
         nextValue,
@@ -1642,10 +1661,10 @@ function ComposerPromptEditorInner({
       );
       const selectionOffsets = $readSelectionOffsetsFromEditorState({
         start: clampCollapsedComposerCursor(nextValue, snapshotRef.current.selectionStart, {
-          skillNames: skillNamesRef.current,
+          customTokenTexts: customTokenTextsRef.current,
         }),
         end: clampCollapsedComposerCursor(nextValue, snapshotRef.current.selectionEnd, {
-          skillNames: skillNamesRef.current,
+          customTokenTexts: customTokenTextsRef.current,
         }),
       });
       const expandedSelectionOffsets = $readExpandedSelectionOffsetsFromEditorState({
@@ -1682,10 +1701,10 @@ function ComposerPromptEditorInner({
       };
       const cursorAdjacentToMention =
         isCollapsedCursorAdjacentToInlineToken(nextValue, nextCursor, "left", {
-          skillNames: skillNamesRef.current,
+          customTokenTexts: customTokenTextsRef.current,
         }) ||
         isCollapsedCursorAdjacentToInlineToken(nextValue, nextCursor, "right", {
-          skillNames: skillNamesRef.current,
+          customTokenTexts: customTokenTextsRef.current,
         });
       onChangeRef.current(
         nextValue,
@@ -1727,9 +1746,9 @@ function ComposerPromptEditorInner({
         <ComposerCommandKeyPlugin {...(onCommandKeyDown ? { onCommandKeyDown } : {})} />
         <ComposerSurroundSelectionPlugin
           terminalContexts={terminalContexts}
-          skillNames={skillNames}
+          customTokenTexts={customTokenTexts}
         />
-        <ComposerInlineTokenArrowPlugin skillNames={skillNames} />
+        <ComposerInlineTokenArrowPlugin customTokenTexts={customTokenTexts} />
         <ComposerInlineTokenSelectionNormalizePlugin />
         <ComposerInlineTokenBackspacePlugin />
         <HistoryPlugin />
@@ -1746,7 +1765,7 @@ export const ComposerPromptEditor = forwardRef<
     value,
     cursor,
     terminalContexts,
-    skillNames = [],
+    customTokenTexts = [],
     disabled,
     placeholder,
     className,
@@ -1760,17 +1779,17 @@ export const ComposerPromptEditor = forwardRef<
 ) {
   const initialValueRef = useRef(value);
   const initialTerminalContextsRef = useRef(terminalContexts);
-  const initialSkillNamesRef = useRef(skillNames);
+  const initialCustomTokenTextsRef = useRef(customTokenTexts);
   const initialConfig = useMemo<InitialConfigType>(
     () => ({
       namespace: "t3tools-composer-editor",
       editable: true,
-      nodes: [ComposerMentionNode, ComposerSkillNode, ComposerTerminalContextNode],
+      nodes: [ComposerMentionNode, ComposerCustomTokenNode, ComposerTerminalContextNode],
       editorState: () => {
         $setComposerEditorPrompt(
           initialValueRef.current,
           initialTerminalContextsRef.current,
-          initialSkillNamesRef.current,
+          initialCustomTokenTextsRef.current,
         );
       },
       onError: (error) => {
@@ -1786,7 +1805,7 @@ export const ComposerPromptEditor = forwardRef<
         value={value}
         cursor={cursor}
         terminalContexts={terminalContexts}
-        skillNames={skillNames}
+        customTokenTexts={customTokenTexts}
         disabled={disabled}
         placeholder={placeholder}
         onRemoveTerminalContext={onRemoveTerminalContext}

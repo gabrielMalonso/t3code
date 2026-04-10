@@ -31,23 +31,29 @@ describe("splitPromptIntoComposerSegments", () => {
 
   it("splits codex skill tokens followed by whitespace into skill segments", () => {
     expect(
-      splitPromptIntoComposerSegments("Use $review please", [], { skillNames: ["review"] }),
+      splitPromptIntoComposerSegments("Use $review please", [], {
+        customTokenTexts: ["$review"],
+      }),
     ).toEqual([
       { type: "text", text: "Use " },
-      { type: "skill", name: "review" },
+      { type: "custom-token", tokenText: "$review" },
       { type: "text", text: " please" },
     ]);
   });
 
   it("does not convert an incomplete trailing skill token", () => {
-    expect(splitPromptIntoComposerSegments("Use $review", [], { skillNames: ["review"] })).toEqual([
-      { type: "text", text: "Use $review" },
-    ]);
+    expect(
+      splitPromptIntoComposerSegments("Use $review", [], {
+        customTokenTexts: ["$review"],
+      }),
+    ).toEqual([{ type: "text", text: "Use $review" }]);
   });
 
   it("keeps unknown shell-style variables as text", () => {
     expect(
-      splitPromptIntoComposerSegments("echo $HOME please", [], { skillNames: ["review"] }),
+      splitPromptIntoComposerSegments("echo $HOME please", [], {
+        customTokenTexts: ["$review"],
+      }),
     ).toEqual([{ type: "text", text: "echo $HOME please" }]);
   });
 
@@ -125,7 +131,7 @@ describe("selectionTouchesMentionBoundary", () => {
         "use $review now",
         "use $review".length,
         "use $review now".length,
-        { skillNames: ["review"] },
+        { customTokenTexts: ["$review"] },
       ),
     ).toBe(true);
   });

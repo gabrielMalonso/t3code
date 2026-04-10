@@ -3,8 +3,8 @@ import {
   type TerminalContextDraft,
 } from "./lib/terminalContext";
 
-export interface ComposerPromptSkillOptions {
-  skillNames?: readonly string[];
+export interface ComposerPromptInlineTokenOptions {
+  customTokenTexts?: readonly string[];
 }
 
 export type ComposerPromptSegment =
@@ -17,8 +17,8 @@ export type ComposerPromptSegment =
       path: string;
     }
   | {
-      type: "skill";
-      name: string;
+      type: "custom-token";
+      tokenText: string;
     }
   | {
       type: "terminal-context";
@@ -26,13 +26,23 @@ export type ComposerPromptSegment =
     };
 
 const MENTION_TOKEN_REGEX = /(^|\s)@([^\s@]+)(?=\s)/g;
-const SKILL_TOKEN_REGEX = /(^|\s)\$([a-zA-Z][a-zA-Z0-9_:-]*)(?=\s)/g;
 
-function toSkillNameSet(skillNames?: readonly string[]): ReadonlySet<string> | null {
-  if (!skillNames || skillNames.length === 0) {
+function toCustomTokenTexts(tokenTexts?: readonly string[]): readonly string[] {
+  if (!tokenTexts || tokenTexts.length === 0) {
+    return [];
+  }
+  return [...new Set(tokenTexts)].toSorted((left, right) => right.length - left.length);
+}
+
+function escapeRegexFragment(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildCustomTokenRegex(tokenTexts: readonly string[]): RegExp | null {
+  if (tokenTexts.length === 0) {
     return null;
   }
-  return new Set(skillNames);
+  return new RegExp(`(^|\\s)(${tokenTexts.map(escapeRegexFragment).join("|")})(?=\\s)`, "g");
 }
 
 function rangeIncludesIndex(start: number, end: number, index: number): boolean {
@@ -127,20 +137,16 @@ function forEachMentionMatch(
   });
 }
 
-function forEachSkillMatch(
+function forEachCustomTokenMatch(
   prompt: string,
-  skillNames: ReadonlySet<string> | null,
+  customTokenRegex: RegExp | null,
   visitor: (match: RegExpMatchArray, promptOffset: number) => boolean | void,
 ): boolean {
-  if (skillNames === null) {
+  if (customTokenRegex === null) {
     return false;
   }
   return forEachPromptTextSlice(prompt, (text, promptOffset) => {
-    for (const match of text.matchAll(SKILL_TOKEN_REGEX)) {
-      const skillName = match[2] ?? "";
-      if (!skillNames.has(skillName)) {
-        continue;
-      }
+    for (const match of text.matchAll(customTokenRegex)) {
       if (visitor(match, promptOffset) === true) {
         return true;
       }
@@ -151,7 +157,7 @@ function forEachSkillMatch(
 
 function splitPromptTextIntoComposerSegments(
   text: string,
-  skillNames: ReadonlySet<string> | null,
+  customTokenRegex: RegExp | null,
 ): ComposerPromptSegment[] {
   const segments: ComposerPromptSegment[] = [];
   if (!text) {
@@ -168,22 +174,25 @@ function splitPromptTextIntoComposerSegments(
       const end = start + fullMatch.length - prefix.length;
       return { type: "mention" as const, value: path, start, end };
     }),
-    ...Array.from(text.matchAll(SKILL_TOKEN_REGEX), (match) => {
+    ...Array.from(text.matchAll(customTokenRegex ?? /$^/g), (match) => {
       const fullMatch = match[0];
       const prefix = match[1] ?? "";
-      const name = match[2] ?? "";
-      if (skillNames === null || !skillNames.has(name)) {
-        return null;
-      }
+      const tokenText = match[2] ?? "";
       const matchIndex = match.index ?? 0;
       const start = matchIndex + prefix.length;
       const end = start + fullMatch.length - prefix.length;
-      return { type: "skill" as const, value: name, start, end };
+      return { type: "custom-token" as const, value: tokenText, start, end };
     }),
   ]
     .filter(
-      (match): match is { type: "mention" | "skill"; value: string; start: number; end: number } =>
-        match !== null,
+      (
+        match,
+      ): match is {
+        type: "mention" | "custom-token";
+        value: string;
+        start: number;
+        end: number;
+      } => match !== null,
     )
     .toSorted((left, right) => left.start - right.start);
 
@@ -202,7 +211,7 @@ function splitPromptTextIntoComposerSegments(
         pushTextSegment(segments, text.slice(match.start, match.end));
       }
     } else if (match.value.length > 0) {
-      segments.push({ type: "skill", name: match.value });
+      segments.push({ type: "custom-token", tokenText: match.value });
     } else {
       pushTextSegment(segments, text.slice(match.start, match.end));
     }
@@ -220,12 +229,12 @@ export function selectionTouchesMentionBoundary(
   prompt: string,
   start: number,
   end: number,
-  options?: ComposerPromptSkillOptions,
+  options?: ComposerPromptInlineTokenOptions,
 ): boolean {
   if (!prompt || start >= end) {
     return false;
   }
-  const skillNames = toSkillNameSet(options?.skillNames);
+  const customTokenRegex = buildCustomTokenRegex(toCustomTokenTexts(options?.customTokenTexts));
 
   const touchesBoundary = (
     match: RegExpMatchArray,
@@ -260,7 +269,7 @@ export function selectionTouchesMentionBoundary(
 
   return (
     forEachMentionMatch(prompt, (match, promptOffset) => touchesBoundary(match, promptOffset, 1)) ||
-    forEachSkillMatch(prompt, skillNames, (match, promptOffset) =>
+    forEachCustomTokenMatch(prompt, customTokenRegex, (match, promptOffset) =>
       touchesBoundary(match, promptOffset, 1),
     )
   );
@@ -269,7 +278,7 @@ export function selectionTouchesMentionBoundary(
 export function splitPromptIntoComposerSegments(
   prompt: string,
   terminalContexts: ReadonlyArray<TerminalContextDraft> = [],
-  options?: ComposerPromptSkillOptions,
+  options?: ComposerPromptInlineTokenOptions,
 ): ComposerPromptSegment[] {
   if (!prompt) {
     return [];
@@ -277,10 +286,10 @@ export function splitPromptIntoComposerSegments(
 
   const segments: ComposerPromptSegment[] = [];
   let terminalContextIndex = 0;
-  const skillNames = toSkillNameSet(options?.skillNames);
+  const customTokenRegex = buildCustomTokenRegex(toCustomTokenTexts(options?.customTokenTexts));
   forEachPromptSegmentSlice(prompt, (slice) => {
     if (slice.type === "text") {
-      segments.push(...splitPromptTextIntoComposerSegments(slice.text, skillNames));
+      segments.push(...splitPromptTextIntoComposerSegments(slice.text, customTokenRegex));
       return false;
     }
 

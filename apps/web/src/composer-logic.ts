@@ -1,5 +1,5 @@
 import {
-  type ComposerPromptSkillOptions,
+  type ComposerPromptInlineTokenOptions,
   splitPromptIntoComposerSegments,
 } from "./composer-editor-mentions";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
@@ -19,7 +19,7 @@ const isInlineTokenSegment = (
   segment:
     | { type: "text"; text: string }
     | { type: "mention" }
-    | { type: "skill" }
+    | { type: "custom-token"; tokenText: string }
     | { type: "terminal-context" },
 ): boolean => segment.type !== "text";
 
@@ -49,7 +49,7 @@ function tokenStartForCursor(text: string, cursor: number): number {
 export function expandCollapsedComposerCursor(
   text: string,
   cursorInput: number,
-  options?: ComposerPromptSkillOptions,
+  options?: ComposerPromptInlineTokenOptions,
 ): number {
   const collapsedCursor = clampCursor(text, cursorInput);
   const segments = splitPromptIntoComposerSegments(text, [], options);
@@ -61,9 +61,9 @@ export function expandCollapsedComposerCursor(
   let expandedCursor = 0;
 
   for (const segment of segments) {
-    if (segment.type === "mention" || segment.type === "skill") {
+    if (segment.type === "mention" || segment.type === "custom-token") {
       const expandedLength =
-        (segment.type === "mention" ? segment.path.length : segment.name.length) + 1;
+        segment.type === "mention" ? segment.path.length + 1 : segment.tokenText.length;
       if (remaining <= 1) {
         return expandedCursor + (remaining === 0 ? 0 : expandedLength);
       }
@@ -95,7 +95,7 @@ function collapsedSegmentLength(
   segment:
     | { type: "text"; text: string }
     | { type: "mention" }
-    | { type: "skill" }
+    | { type: "custom-token"; tokenText: string }
     | { type: "terminal-context" },
 ): number {
   if (segment.type === "text") {
@@ -108,7 +108,7 @@ function clampCollapsedComposerCursorForSegments(
   segments: ReadonlyArray<
     | { type: "text"; text: string }
     | { type: "mention" }
-    | { type: "skill" }
+    | { type: "custom-token"; tokenText: string }
     | { type: "terminal-context" }
   >,
   cursorInput: number,
@@ -126,7 +126,7 @@ function clampCollapsedComposerCursorForSegments(
 export function clampCollapsedComposerCursor(
   text: string,
   cursorInput: number,
-  options?: ComposerPromptSkillOptions,
+  options?: ComposerPromptInlineTokenOptions,
 ): number {
   return clampCollapsedComposerCursorForSegments(
     splitPromptIntoComposerSegments(text, [], options),
@@ -137,7 +137,7 @@ export function clampCollapsedComposerCursor(
 export function collapseExpandedComposerCursor(
   text: string,
   cursorInput: number,
-  options?: ComposerPromptSkillOptions,
+  options?: ComposerPromptInlineTokenOptions,
 ): number {
   const expandedCursor = clampCursor(text, cursorInput);
   const segments = splitPromptIntoComposerSegments(text, [], options);
@@ -149,9 +149,9 @@ export function collapseExpandedComposerCursor(
   let collapsedCursor = 0;
 
   for (const segment of segments) {
-    if (segment.type === "mention" || segment.type === "skill") {
+    if (segment.type === "mention" || segment.type === "custom-token") {
       const expandedLength =
-        (segment.type === "mention" ? segment.path.length : segment.name.length) + 1;
+        segment.type === "mention" ? segment.path.length + 1 : segment.tokenText.length;
       if (remaining === 0) {
         return collapsedCursor;
       }
@@ -186,7 +186,7 @@ export function isCollapsedCursorAdjacentToInlineToken(
   text: string,
   cursorInput: number,
   direction: "left" | "right",
-  options?: ComposerPromptSkillOptions,
+  options?: ComposerPromptInlineTokenOptions,
 ): boolean {
   const segments = splitPromptIntoComposerSegments(text, [], options);
   if (!segments.some(isInlineTokenSegment)) {
