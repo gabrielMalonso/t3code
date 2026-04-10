@@ -654,6 +654,7 @@ interface ComposerPromptEditorProps {
     key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab",
     event: KeyboardEvent,
   ) => boolean;
+  onPasteCapture?: ClipboardEventHandler<HTMLElement>;
   onPaste: ClipboardEventHandler<HTMLElement>;
 }
 
@@ -888,6 +889,7 @@ function ComposerPromptEditorInner({
   onRemoveTerminalContext,
   onChange,
   onCommandKeyDown,
+  onPasteCapture,
   onPaste,
   editorRef,
 }: ComposerPromptEditorInnerProps) {
@@ -1099,6 +1101,7 @@ function ComposerPromptEditorInner({
               data-testid="composer-editor"
               aria-placeholder={placeholder}
               placeholder={<span />}
+              onPasteCapture={onPasteCapture}
               onPaste={onPaste}
             />
           }
@@ -1136,6 +1139,7 @@ export const ComposerPromptEditor = forwardRef<
     onRemoveTerminalContext,
     onChange,
     onCommandKeyDown,
+    onPasteCapture,
     onPaste,
   },
   ref,
@@ -1167,6 +1171,7 @@ export const ComposerPromptEditor = forwardRef<
         placeholder={placeholder}
         onRemoveTerminalContext={onRemoveTerminalContext}
         onChange={onChange}
+        {...(onPasteCapture ? { onPasteCapture } : {})}
         onPaste={onPaste}
         editorRef={ref}
         {...(onCommandKeyDown ? { onCommandKeyDown } : {})}

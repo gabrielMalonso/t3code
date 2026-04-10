@@ -2797,6 +2797,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
   };
 
   const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
+    if (event.defaultPrevented) {
+      return;
+    }
     const files = Array.from(event.clipboardData.files);
     if (files.length > 0) {
       const imageFiles = files.filter((file) => file.type.startsWith("image/"));
@@ -4302,6 +4305,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                       onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
                       onChange={onPromptChange}
                       onCommandKeyDown={onComposerCommandKey}
+                      onPasteCapture={onComposerPaste}
                       onPaste={onComposerPaste}
                       placeholder={
                         isComposerApprovalState
