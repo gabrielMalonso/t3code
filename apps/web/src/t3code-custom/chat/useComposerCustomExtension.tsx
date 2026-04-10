@@ -73,17 +73,23 @@ export function useComposerCustomExtension(input: {
 
   const composerFileReferences = useComposerThreadDraft(composerDraftTarget).fileReferences;
   const addComposerDraftFileReferences = useComposerDraftStore((store) => store.addFileReferences);
+  const composerImageCountRef = useRef(composerImages.length);
   const [pendingComposerFileResolutionCount, setPendingComposerFileResolutionCount] = useState(0);
   const pendingComposerFileResolutionCountRef = useRef(0);
   const dragDepthRef = useRef(0);
   const [isDragOverComposer, setIsDragOverComposer] = useState(false);
 
   useEffect(() => {
+    composerImageCountRef.current = composerImages.length;
+  }, [composerImages.length]);
+
+  useEffect(() => {
+    composerImageCountRef.current = composerImages.length;
     pendingComposerFileResolutionCountRef.current = 0;
     setPendingComposerFileResolutionCount(0);
     dragDepthRef.current = 0;
     setIsDragOverComposer(false);
-  }, [composerDraftTarget]);
+  }, [composerDraftTarget, composerImages.length]);
 
   const updatePendingComposerFileResolutionCount = useCallback((delta: number) => {
     pendingComposerFileResolutionCountRef.current = Math.max(
@@ -106,7 +112,7 @@ export function useComposerCustomExtension(input: {
 
       const { errors, imageFiles, nonImageFiles } = partitionComposerFilesForDraft({
         files,
-        existingImageCount: composerImages.length,
+        existingImageCount: composerImageCountRef.current,
         maxImages: PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
         maxImageBytes: PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
         imageSizeLimitLabel,
@@ -122,8 +128,10 @@ export function useComposerCustomExtension(input: {
       }));
 
       if (nextImages.length === 1 && nextImages[0]) {
+        composerImageCountRef.current += 1;
         addComposerImage(nextImages[0]);
       } else if (nextImages.length > 1) {
+        composerImageCountRef.current += nextImages.length;
         addComposerImagesToDraft(nextImages);
       }
 
@@ -153,7 +161,6 @@ export function useComposerCustomExtension(input: {
       addComposerImage,
       addComposerImagesToDraft,
       composerDraftTarget,
-      composerImages.length,
       imageSizeLimitLabel,
       pendingUserInputCount,
       setThreadError,
