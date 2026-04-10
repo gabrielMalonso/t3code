@@ -71,7 +71,7 @@ function stripExtension(name: string): string {
 
 function normalizeDescription(value: string): string {
   const trimmed = value.trim().replace(/^["']|["']$/g, "");
-  return trimmed.length <= 160 ? trimmed : `${trimmed.slice(0, 157)}...`;
+  return trimmed.length <= 480 ? trimmed : `${trimmed.slice(0, 477)}...`;
 }
 
 function extractDescription(content: string): string | undefined {

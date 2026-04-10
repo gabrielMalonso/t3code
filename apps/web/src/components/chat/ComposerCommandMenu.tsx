@@ -5,6 +5,7 @@ import { BotIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
 import { Command, CommandItem, CommandList } from "../ui/command";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { VscodeEntryIcon } from "./VscodeEntryIcon";
 
 export type ComposerCommandItem =
@@ -113,7 +114,7 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
   onHighlight: (itemId: string | null) => void;
   onSelect: (item: ComposerCommandItem) => void;
 }) {
-  return (
+  const itemElement = (
     <CommandItem
       value={props.item.id}
       data-composer-item-id={props.item.id}
@@ -153,5 +154,19 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
         {props.item.description}
       </span>
     </CommandItem>
+  );
+
+  if (props.item.type !== "skill") {
+    return itemElement;
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger delay={300} render={itemElement} />
+      <TooltipPopup side="top" className="max-w-80 whitespace-normal leading-tight">
+        <div className="font-medium text-foreground">{props.item.label}</div>
+        <div className="mt-1 text-muted-foreground/80">{props.item.description}</div>
+      </TooltipPopup>
+    </Tooltip>
   );
 });
