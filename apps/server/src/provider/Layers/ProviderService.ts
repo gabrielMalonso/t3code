@@ -386,11 +386,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     const input = {
       ...parsed,
       attachments: parsed.attachments ?? [],
+      skills: parsed.skills ?? [],
     };
-    if (!input.input && input.attachments.length === 0) {
+    if (!input.input && input.attachments.length === 0 && input.skills.length === 0) {
       return yield* toValidationError(
         "ProviderService.sendTurn",
-        "Either input text or at least one attachment is required",
+        "Either input text, at least one attachment, or at least one skill is required",
       );
     }
     yield* Effect.annotateCurrentSpan({
@@ -398,6 +399,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       "provider.thread_id": input.threadId,
       "provider.interaction_mode": input.interactionMode,
       "provider.attachment_count": input.attachments.length,
+      "provider.skill_count": input.skills.length,
     });
     let metricProvider = "unknown";
     let metricModel = input.modelSelection?.model;

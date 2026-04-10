@@ -29,6 +29,34 @@ describe("splitPromptIntoComposerSegments", () => {
     ]);
   });
 
+  it("splits codex skill tokens followed by whitespace into skill segments", () => {
+    expect(
+      splitPromptIntoComposerSegments("Use $review please", [], {
+        customTokenTexts: ["$review"],
+      }),
+    ).toEqual([
+      { type: "text", text: "Use " },
+      { type: "custom-token", tokenText: "$review" },
+      { type: "text", text: " please" },
+    ]);
+  });
+
+  it("does not convert an incomplete trailing skill token", () => {
+    expect(
+      splitPromptIntoComposerSegments("Use $review", [], {
+        customTokenTexts: ["$review"],
+      }),
+    ).toEqual([{ type: "text", text: "Use $review" }]);
+  });
+
+  it("keeps unknown shell-style variables as text", () => {
+    expect(
+      splitPromptIntoComposerSegments("echo $HOME please", [], {
+        customTokenTexts: ["$review"],
+      }),
+    ).toEqual([{ type: "text", text: "echo $HOME please" }]);
+  });
+
   it("keeps inline terminal context placeholders at their prompt positions", () => {
     expect(
       splitPromptIntoComposerSegments(
@@ -93,6 +121,17 @@ describe("selectionTouchesMentionBoundary", () => {
         prompt,
         `${INLINE_TERMINAL_CONTEXT_PLACEHOLDER}@AGENTS.md`.length,
         prompt.length,
+      ),
+    ).toBe(true);
+  });
+
+  it("returns true when selection includes whitespace after a skill token", () => {
+    expect(
+      selectionTouchesMentionBoundary(
+        "use $review now",
+        "use $review".length,
+        "use $review now".length,
+        { customTokenTexts: ["$review"] },
       ),
     ).toBe(true);
   });
