@@ -1671,10 +1671,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
       if (!activeThread) {
         return;
       }
+      const expandedCursor = expandCollapsedComposerCursor(promptRef.current, composerCursor);
       const snapshot = composerEditorRef.current?.readSnapshot() ?? {
         value: promptRef.current,
         cursor: composerCursor,
-        expandedCursor: expandCollapsedComposerCursor(promptRef.current, composerCursor),
+        expandedCursor,
+        selectionStart: composerCursor,
+        selectionEnd: composerCursor,
+        expandedSelectionStart: expandedCursor,
+        expandedSelectionEnd: expandedCursor,
         terminalContextIds: composerTerminalContexts.map((context) => context.id),
       };
       const insertion = insertInlineTerminalContextPlaceholder(
@@ -3750,16 +3755,25 @@ export default function ChatView({ threadId }: ChatViewProps) {
     value: string;
     cursor: number;
     expandedCursor: number;
+    selectionStart: number;
+    selectionEnd: number;
+    expandedSelectionStart: number;
+    expandedSelectionEnd: number;
     terminalContextIds: string[];
   } => {
     const editorSnapshot = composerEditorRef.current?.readSnapshot();
     if (editorSnapshot) {
       return editorSnapshot;
     }
+    const expandedCursor = expandCollapsedComposerCursor(promptRef.current, composerCursor);
     return {
       value: promptRef.current,
       cursor: composerCursor,
-      expandedCursor: expandCollapsedComposerCursor(promptRef.current, composerCursor),
+      expandedCursor,
+      selectionStart: composerCursor,
+      selectionEnd: composerCursor,
+      expandedSelectionStart: expandedCursor,
+      expandedSelectionEnd: expandedCursor,
       terminalContextIds: composerTerminalContexts.map((context) => context.id),
     };
   }, [composerCursor, composerTerminalContexts]);

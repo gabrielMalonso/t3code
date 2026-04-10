@@ -141,22 +141,29 @@ export async function saveComposerPastedTextAsFileReference(input: {
 
 export function shouldAutoRestoreComposerPasteSnapshot(input: {
   initialPrompt: string;
-  initialCursor: number;
+  initialSelectionStart: number;
+  initialSelectionEnd: number;
   currentPrompt: string;
-  currentCursor: number;
+  currentSelectionStart: number;
+  currentSelectionEnd: number;
 }): boolean {
-  return input.initialPrompt === input.currentPrompt && input.initialCursor === input.currentCursor;
+  return (
+    input.initialPrompt === input.currentPrompt &&
+    input.initialSelectionStart === input.currentSelectionStart &&
+    input.initialSelectionEnd === input.currentSelectionEnd
+  );
 }
 
 export function restorePastedTextIntoComposer(input: {
   prompt: string;
   pastedText: string;
-  expandedCursor: number;
+  expandedSelectionStart: number;
+  expandedSelectionEnd: number;
 }): { text: string; collapsedCursor: number; expandedCursor: number } {
   const restored = replaceTextRange(
     input.prompt,
-    input.expandedCursor,
-    input.expandedCursor,
+    input.expandedSelectionStart,
+    input.expandedSelectionEnd,
     input.pastedText,
   );
   return {
@@ -169,11 +176,11 @@ export function restorePastedTextIntoComposer(input: {
 export function removePastedTextFromComposer(input: {
   prompt: string;
   pastedText: string;
-  expandedCursor: number;
+  expandedSelectionStart: number;
   currentExpandedCursor: number;
 }): { text: string; collapsedCursor: number; expandedCursor: number } | null {
   const normalizedPastedText = normalizeComposerPastedText(input.pastedText);
-  const pasteStart = Math.max(0, Math.min(input.prompt.length, input.expandedCursor));
+  const pasteStart = Math.max(0, Math.min(input.prompt.length, input.expandedSelectionStart));
   const pasteEnd = pasteStart + normalizedPastedText.length;
   if (input.prompt.slice(pasteStart, pasteEnd) !== normalizedPastedText) {
     return null;

@@ -18,6 +18,10 @@ type ComposerSnapshot = {
   value: string;
   cursor: number;
   expandedCursor: number;
+  selectionStart: number;
+  selectionEnd: number;
+  expandedSelectionStart: number;
+  expandedSelectionEnd: number;
   terminalContextIds: string[];
 };
 
@@ -44,13 +48,13 @@ export function useComposerPasteFileReference(input: {
   const pasteWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   const removePastedTextFromComposerWithRetry = useCallback(
-    async (args: { pastedText: string; initialExpandedCursor: number }) => {
+    async (args: { pastedText: string; initialExpandedSelectionStart: number }) => {
       for (let attempt = 0; attempt < 5; attempt += 1) {
         const currentSnapshot = readComposerSnapshot();
         const promptWithoutPastedText = removePastedTextFromComposer({
           prompt: currentSnapshot.value,
           pastedText: args.pastedText,
-          expandedCursor: args.initialExpandedCursor,
+          expandedSelectionStart: args.initialExpandedSelectionStart,
           currentExpandedCursor: currentSnapshot.expandedCursor,
         });
         if (promptWithoutPastedText) {
@@ -108,7 +112,7 @@ export function useComposerPasteFileReference(input: {
             });
             await removePastedTextFromComposerWithRetry({
               pastedText,
-              initialExpandedCursor: pasteSnapshot.expandedCursor,
+              initialExpandedSelectionStart: pasteSnapshot.expandedSelectionStart,
             });
             addComposerFileReferencesToDraft([reference]);
             toastManager.add({
@@ -121,15 +125,18 @@ export function useComposerPasteFileReference(input: {
             if (
               shouldAutoRestoreComposerPasteSnapshot({
                 initialPrompt: pasteSnapshot.value,
-                initialCursor: pasteSnapshot.cursor,
+                initialSelectionStart: pasteSnapshot.selectionStart,
+                initialSelectionEnd: pasteSnapshot.selectionEnd,
                 currentPrompt: currentSnapshot.value,
-                currentCursor: currentSnapshot.cursor,
+                currentSelectionStart: currentSnapshot.selectionStart,
+                currentSelectionEnd: currentSnapshot.selectionEnd,
               })
             ) {
               const restored = restorePastedTextIntoComposer({
                 prompt: pasteSnapshot.value,
                 pastedText,
-                expandedCursor: pasteSnapshot.expandedCursor,
+                expandedSelectionStart: pasteSnapshot.expandedSelectionStart,
+                expandedSelectionEnd: pasteSnapshot.expandedSelectionEnd,
               });
               applyComposerPromptSnapshot(restored.text, restored.expandedCursor);
               toastManager.add({
@@ -152,7 +159,8 @@ export function useComposerPasteFileReference(input: {
                   const restored = restorePastedTextIntoComposer({
                     prompt: latestSnapshot.value,
                     pastedText,
-                    expandedCursor: latestSnapshot.expandedCursor,
+                    expandedSelectionStart: latestSnapshot.expandedSelectionStart,
+                    expandedSelectionEnd: latestSnapshot.expandedSelectionEnd,
                   });
                   applyComposerPromptSnapshot(restored.text, restored.expandedCursor);
                 },

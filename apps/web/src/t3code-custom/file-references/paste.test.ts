@@ -151,17 +151,21 @@ describe("composer pasted text file references", () => {
     expect(
       shouldAutoRestoreComposerPasteSnapshot({
         initialPrompt: "prefix ",
-        initialCursor: 7,
+        initialSelectionStart: 7,
+        initialSelectionEnd: 7,
         currentPrompt: "prefix ",
-        currentCursor: 7,
+        currentSelectionStart: 7,
+        currentSelectionEnd: 7,
       }),
     ).toBe(true);
     expect(
       shouldAutoRestoreComposerPasteSnapshot({
         initialPrompt: "prefix ",
-        initialCursor: 7,
+        initialSelectionStart: 7,
+        initialSelectionEnd: 12,
         currentPrompt: "prefix changed",
-        currentCursor: 14,
+        currentSelectionStart: 14,
+        currentSelectionEnd: 14,
       }),
     ).toBe(false);
   });
@@ -171,10 +175,26 @@ describe("composer pasted text file references", () => {
       restorePastedTextIntoComposer({
         prompt: "prefix ",
         pastedText: "hello",
-        expandedCursor: 7,
+        expandedSelectionStart: 7,
+        expandedSelectionEnd: 7,
       }),
     ).toEqual({
       text: "prefix hello",
+      collapsedCursor: 12,
+      expandedCursor: 12,
+    });
+  });
+
+  it("restores pasted text over the captured selection", () => {
+    expect(
+      restorePastedTextIntoComposer({
+        prompt: "prefix target suffix",
+        pastedText: "hello",
+        expandedSelectionStart: 7,
+        expandedSelectionEnd: 13,
+      }),
+    ).toEqual({
+      text: "prefix hello suffix",
       collapsedCursor: 12,
       expandedCursor: 12,
     });
@@ -185,7 +205,7 @@ describe("composer pasted text file references", () => {
       removePastedTextFromComposer({
         prompt: "prefix HELLO world",
         pastedText: "HELLO",
-        expandedCursor: 7,
+        expandedSelectionStart: 7,
         currentExpandedCursor: 17,
       }),
     ).toEqual({
@@ -200,7 +220,7 @@ describe("composer pasted text file references", () => {
       removePastedTextFromComposer({
         prompt: "prefix world",
         pastedText: "HELLO",
-        expandedCursor: 7,
+        expandedSelectionStart: 7,
         currentExpandedCursor: 12,
       }),
     ).toBeNull();
