@@ -126,6 +126,9 @@ function makeState(thread: Thread): AppState {
         updatedAt: thread.updatedAt,
         branch: thread.branch,
         worktreePath: thread.worktreePath,
+        // t3code-custom: thread loops are a local extension, so test fixtures
+        // must preserve loop state through the shell shape too.
+        loop: thread.loop ?? null,
       },
     },
     threadSessionById: {
