@@ -1,21 +1,15 @@
-import type { ThreadId } from "@t3tools/contracts";
+import type { ScopedThreadRef } from "@t3tools/contracts";
 import { XIcon } from "lucide-react";
 
 import { Button } from "../../components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../../components/ui/tooltip";
 import { VscodeEntryIcon } from "../../components/chat/VscodeEntryIcon";
-import { useComposerDraftStore } from "~/composerDraftStore";
+import { type DraftId, useComposerDraftStore, useComposerThreadDraft } from "~/composerDraftStore";
 import { useTheme } from "~/hooks/useTheme";
-import {
-  type ComposerFileReference,
-  fileReferenceCopy,
-  toDisplayedFileReference,
-} from "../file-references";
-
-const EMPTY_FILE_REFERENCES: ReadonlyArray<ComposerFileReference> = Object.freeze([]);
+import { fileReferenceCopy, toDisplayedFileReference } from "../file-references";
 
 interface ComposerFileReferencesSlotProps {
-  threadId: ThreadId;
+  composerDraftTarget: ScopedThreadRef | DraftId;
   workspaceRoot: string | null | undefined;
   visible: boolean;
 }
@@ -42,14 +36,12 @@ function fileReferenceKindLabel(pathValue: string): string {
 }
 
 export function ComposerFileReferencesSlot({
-  threadId,
+  composerDraftTarget,
   workspaceRoot,
   visible,
 }: ComposerFileReferencesSlotProps) {
   const { resolvedTheme } = useTheme();
-  const fileReferences = useComposerDraftStore(
-    (store) => store.draftsByThreadId[threadId]?.fileReferences ?? EMPTY_FILE_REFERENCES,
-  );
+  const fileReferences = useComposerThreadDraft(composerDraftTarget).fileReferences;
   const removeFileReference = useComposerDraftStore((store) => store.removeFileReference);
 
   if (!visible || fileReferences.length === 0) {
@@ -111,7 +103,7 @@ export function ComposerFileReferencesSlot({
               variant="ghost"
               size="icon-xs"
               className="shrink-0 bg-background/80 hover:bg-background/90"
-              onClick={() => removeFileReference(threadId, reference.id)}
+              onClick={() => removeFileReference(composerDraftTarget, reference.id)}
               aria-label={fileReferenceCopy.chip.remove}
             >
               <XIcon />

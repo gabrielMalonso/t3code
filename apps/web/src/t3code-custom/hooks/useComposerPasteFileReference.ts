@@ -1,8 +1,10 @@
+import { type EnvironmentId } from "@t3tools/contracts";
 import { useCallback, useRef, type ClipboardEvent as ReactClipboardEvent } from "react";
 
 import type { DraftThreadEnvMode } from "~/composerDraftStore";
 import { toastManager } from "~/components/ui/toast";
-import { readNativeApi } from "~/nativeApi";
+import { readEnvironmentApi } from "~/environmentApi";
+import { readLocalApi } from "~/localApi";
 
 import {
   fileReferenceCopy,
@@ -26,6 +28,7 @@ type ComposerSnapshot = {
 };
 
 export function useComposerPasteFileReference(input: {
+  environmentId: EnvironmentId;
   threadId: string;
   workspaceRoot: string | null | undefined;
   pendingUserInputCount: number;
@@ -39,6 +42,7 @@ export function useComposerPasteFileReference(input: {
   updatePendingComposerFileResolutionCount: (delta: number) => void;
 }) {
   const {
+    environmentId,
     threadId,
     workspaceRoot,
     pendingUserInputCount,
@@ -87,9 +91,11 @@ export function useComposerPasteFileReference(input: {
 
       const files = Array.from(event.clipboardData.files);
       const pastedText = event.clipboardData.getData("text/plain");
-      const api = readNativeApi();
+      const localApi = readLocalApi();
+      const environmentApi = readEnvironmentApi(environmentId);
       if (
-        !api ||
+        !localApi ||
+        !environmentApi ||
         !workspaceRoot ||
         !shouldConvertComposerPastedTextToFileReference({
           text: pastedText,
@@ -115,7 +121,7 @@ export function useComposerPasteFileReference(input: {
             const { reference, relativePath } = await saveComposerPastedTextAsFileReference({
               workspaceRoot,
               contents: pastedText,
-              writeFile: api.projects.writeFile,
+              writeFile: environmentApi.projects.writeFile,
             });
             if (isOriginThreadActive()) {
               await removePastedTextFromComposerWithRetry({
@@ -214,6 +220,7 @@ export function useComposerPasteFileReference(input: {
       addComposerFileReferencesToDraft,
       applyComposerPromptSnapshot,
       envMode,
+      environmentId,
       pendingUserInputCount,
       readActiveThreadId,
       readComposerSnapshot,

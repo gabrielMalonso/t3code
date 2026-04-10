@@ -7,7 +7,7 @@
  * @module ProjectionThreadLoopRepository
  */
 import { IsoDateTime, PositiveInt, ThreadId } from "@t3tools/contracts";
-import { Option, Schema, ServiceMap } from "effect";
+import { Context, Option, Schema } from "effect";
 import type { Effect } from "effect";
 
 import type { ProjectionRepositoryError } from "../Errors.ts";
@@ -68,7 +68,7 @@ export interface ProjectionThreadLoopRepositoryShape {
   ) => Effect.Effect<void, ProjectionRepositoryError>;
 }
 
-export class ProjectionThreadLoopRepository extends ServiceMap.Service<
+export class ProjectionThreadLoopRepository extends Context.Service<
   ProjectionThreadLoopRepository,
   ProjectionThreadLoopRepositoryShape
 >()("t3/persistence/Services/ProjectionThreadLoops/ProjectionThreadLoopRepository") {}

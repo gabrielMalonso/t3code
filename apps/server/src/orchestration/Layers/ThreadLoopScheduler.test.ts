@@ -22,6 +22,7 @@ import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Lay
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
 import { layerConfig as SqlitePersistenceLive } from "../../persistence/Layers/Sqlite.ts";
 import { ProjectionThreadLoopRepository } from "../../persistence/Services/ProjectionThreadLoops.ts";
+import { RepositoryIdentityResolverLive } from "../../project/Layers/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
@@ -30,8 +31,8 @@ import { ThreadLoopScheduler } from "../Services/ThreadLoopScheduler.ts";
 import { makeThreadLoopScheduler, ThreadLoopSchedulerLive } from "./ThreadLoopScheduler.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 
-const asThreadId = (value: string) => ThreadId.makeUnsafe(value);
-const asProjectId = (value: string) => ProjectId.makeUnsafe(value);
+const asThreadId = (value: string) => ThreadId.make(value);
+const asProjectId = (value: string) => ProjectId.make(value);
 const now = "2026-04-07T12:00:00.000Z";
 
 async function waitFor(
@@ -134,7 +135,7 @@ describe("ThreadLoopScheduler", () => {
               status: input.sessionStatus,
               providerName: "codex",
               runtimeMode: "full-access",
-              activeTurnId: input.activeTurnId ? TurnId.makeUnsafe(input.activeTurnId) : null,
+              activeTurnId: input.activeTurnId ? TurnId.make(input.activeTurnId) : null,
               lastError: null,
               updatedAt: now,
             },
@@ -368,13 +369,13 @@ describe("ThreadLoopScheduler", () => {
     await Effect.runPromise(
       PubSub.publish(harness.eventPubSub, {
         sequence: 1,
-        eventId: EventId.makeUnsafe("evt-thread-archived"),
+        eventId: EventId.make("evt-thread-archived"),
         aggregateKind: "thread",
         aggregateId: asThreadId("thread-1"),
         occurredAt: "2026-04-07T12:05:00.000Z",
-        commandId: CommandId.makeUnsafe("cmd-thread-archived"),
+        commandId: CommandId.make("cmd-thread-archived"),
         causationEventId: null,
-        correlationId: CommandId.makeUnsafe("cmd-thread-archived"),
+        correlationId: CommandId.make("cmd-thread-archived"),
         metadata: {},
         type: "thread.archived",
         payload: {
@@ -429,6 +430,7 @@ describe("ThreadLoopScheduler", () => {
         ThreadLoopSchedulerLive.pipe(
           Layer.provide(sqliteLayer),
           Layer.provideMerge(orchestrationLayer),
+          Layer.provideMerge(RepositoryIdentityResolverLive),
         ),
       );
     };

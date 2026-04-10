@@ -40,6 +40,7 @@ import { ProjectionThreadProposedPlan } from "../../persistence/Services/Project
 import { ProjectionThreadSession } from "../../persistence/Services/ProjectionThreadSessions.ts";
 import { ProjectionThreadLoop } from "../../persistence/Services/ProjectionThreadLoops.ts";
 import { ProjectionThread } from "../../persistence/Services/ProjectionThreads.ts";
+import { RepositoryIdentityResolver } from "../../project/Services/RepositoryIdentityResolver.ts";
 import { ORCHESTRATION_PROJECTOR_NAMES } from "./ProjectionPipeline.ts";
 import {
   ProjectionSnapshotQuery,
@@ -173,6 +174,8 @@ function toPersistenceSqlOrDecodeError(sqlOperation: string, decodeOperation: st
 const makeProjectionSnapshotQuery = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const processStartedAt = new Date().toISOString();
+  const repositoryIdentityResolver = yield* RepositoryIdentityResolver;
+  const repositoryIdentityResolutionConcurrency = 4;
 
   const listProjectRows = SqlSchema.findAll({
     Request: Schema.Void,
@@ -727,16 +730,31 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             });
           }
 
-          const projects: ReadonlyArray<OrchestrationProject> = projectRows.map((row) => ({
-            id: row.projectId,
-            title: row.title,
-            workspaceRoot: row.workspaceRoot,
-            defaultModelSelection: row.defaultModelSelection,
-            scripts: row.scripts,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-            deletedAt: row.deletedAt,
-          }));
+          const repositoryIdentitiesByProjectId = new Map(
+            yield* Effect.forEach(
+              projectRows,
+              (row) =>
+                repositoryIdentityResolver
+                  .resolve(row.workspaceRoot)
+                  .pipe(Effect.map((identity) => [row.projectId, identity] as const)),
+              { concurrency: repositoryIdentityResolutionConcurrency },
+            ),
+          );
+
+          const projects: ReadonlyArray<OrchestrationProject> = projectRows.map((row) => {
+            const repositoryIdentity = repositoryIdentitiesByProjectId.get(row.projectId) ?? null;
+            return {
+              id: row.projectId,
+              title: row.title,
+              workspaceRoot: row.workspaceRoot,
+              repositoryIdentity,
+              defaultModelSelection: row.defaultModelSelection,
+              scripts: row.scripts,
+              createdAt: row.createdAt,
+              updatedAt: row.updatedAt,
+              deletedAt: row.deletedAt,
+            };
+          });
 
           const threads: ReadonlyArray<OrchestrationThread> = threadRows.map((row) => ({
             id: row.threadId,
@@ -808,19 +826,24 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             "ProjectionSnapshotQuery.getActiveProjectByWorkspaceRoot:decodeRow",
           ),
         ),
-        Effect.map(
-          Option.map(
-            (row): OrchestrationProject => ({
-              id: row.projectId,
-              title: row.title,
-              workspaceRoot: row.workspaceRoot,
-              defaultModelSelection: row.defaultModelSelection,
-              scripts: row.scripts,
-              createdAt: row.createdAt,
-              updatedAt: row.updatedAt,
-              deletedAt: row.deletedAt,
-            }),
-          ),
+        Effect.flatMap((option) =>
+          Option.isNone(option)
+            ? Effect.succeed(Option.none<OrchestrationProject>())
+            : repositoryIdentityResolver.resolve(option.value.workspaceRoot).pipe(
+                Effect.map((repositoryIdentity) =>
+                  Option.some({
+                    id: option.value.projectId,
+                    title: option.value.title,
+                    workspaceRoot: option.value.workspaceRoot,
+                    repositoryIdentity,
+                    defaultModelSelection: option.value.defaultModelSelection,
+                    scripts: option.value.scripts,
+                    createdAt: option.value.createdAt,
+                    updatedAt: option.value.updatedAt,
+                    deletedAt: option.value.deletedAt,
+                  } satisfies OrchestrationProject),
+                ),
+              ),
         ),
       );
 

@@ -21,7 +21,7 @@ import { sessionStatusAllowsActiveTurn } from "../sessionState.ts";
 const THREAD_LOOP_SCHEDULER_INTERVAL_MS = 10_000;
 
 const serverCommandId = (tag: string) =>
-  CommandId.makeUnsafe(`server:${tag}:${crypto.randomUUID()}`);
+  CommandId.make(`server:${tag}:${crypto.randomUUID()}`);
 
 const isThreadLoopBusy = (thread: {
   readonly session: {
@@ -46,8 +46,8 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
       type: "thread.activity.append",
       commandId: serverCommandId("thread-loop-activity"),
       threadId: input.threadId,
-      activity: {
-        id: EventId.makeUnsafe(crypto.randomUUID()),
+        activity: {
+        id: EventId.make(crypto.randomUUID()),
         tone: input.tone ?? "info",
         kind: input.kind,
         summary: input.summary,
@@ -237,7 +237,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
           commandId: serverCommandId("thread-loop-turn-start"),
           threadId: loop.threadId,
           message: {
-            messageId: MessageId.makeUnsafe(`loop-msg:${crypto.randomUUID()}`),
+            messageId: MessageId.make(`loop-msg:${crypto.randomUUID()}`),
             role: "user",
             text: loop.prompt,
             attachments: [],

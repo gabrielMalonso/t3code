@@ -1,9 +1,9 @@
 import { ThreadId } from "@t3tools/contracts";
 import { useCallback } from "react";
 
+import { readEnvironmentApi } from "~/environmentApi";
 import { newCommandId, newMessageId } from "~/lib/utils";
-import { readNativeApi } from "~/nativeApi";
-import { useStore } from "~/store";
+import { selectThreadsAcrossEnvironments, useStore } from "~/store";
 
 export function useThreadLoopActions() {
   const upsertLoop = useCallback(
@@ -15,7 +15,11 @@ export function useThreadLoopActions() {
         intervalMinutes: number;
       },
     ) => {
-      const api = readNativeApi();
+      const thread = selectThreadsAcrossEnvironments(useStore.getState()).find(
+        (entry) => entry.id === threadId,
+      );
+      if (!thread) return;
+      const api = readEnvironmentApi(thread.environmentId);
       if (!api) return;
       await api.orchestration.dispatchCommand({
         type: "thread.loop.upsert",
@@ -31,7 +35,11 @@ export function useThreadLoopActions() {
   );
 
   const deleteLoop = useCallback(async (threadId: ThreadId) => {
-    const api = readNativeApi();
+    const thread = selectThreadsAcrossEnvironments(useStore.getState()).find(
+      (entry) => entry.id === threadId,
+    );
+    if (!thread) return;
+    const api = readEnvironmentApi(thread.environmentId);
     if (!api) return;
     await api.orchestration.dispatchCommand({
       type: "thread.loop.delete",
@@ -42,10 +50,15 @@ export function useThreadLoopActions() {
   }, []);
 
   const runLoopNow = useCallback(async (threadId: ThreadId) => {
-    const api = readNativeApi();
+    const thread = selectThreadsAcrossEnvironments(useStore.getState()).find(
+      (entry) => entry.id === threadId,
+    );
+    if (!thread) {
+      return;
+    }
+    const api = readEnvironmentApi(thread.environmentId);
     if (!api) return;
-    const thread = useStore.getState().threads.find((entry) => entry.id === threadId);
-    if (!thread?.loop) {
+    if (!thread.loop) {
       throw new Error("This thread does not have a configured loop.");
     }
     if (
