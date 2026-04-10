@@ -1,7 +1,9 @@
 import type {
+  EnvironmentId,
   ModelSelection,
   OrchestrationLatestTurn,
   OrchestrationProposedPlanId,
+  RepositoryIdentity,
   OrchestrationSessionStatus,
   OrchestrationThreadActivity,
   ThreadLoop as ContractThreadLoop,
@@ -82,8 +84,10 @@ export interface TurnDiffSummary {
 
 export interface Project {
   id: ProjectId;
+  environmentId: EnvironmentId;
   name: string;
   cwd: string;
+  repositoryIdentity?: RepositoryIdentity | null;
   defaultModelSelection: ModelSelection | null;
   createdAt?: string | undefined;
   updatedAt?: string | undefined;
@@ -92,6 +96,7 @@ export interface Project {
 
 export interface Thread {
   id: ThreadId;
+  environmentId: EnvironmentId;
   codexThreadId: string | null;
   projectId: ProjectId;
   title: string;
@@ -114,8 +119,31 @@ export interface Thread {
   loop?: ThreadLoop | null;
 }
 
+export interface ThreadShell {
+  id: ThreadId;
+  environmentId: EnvironmentId;
+  codexThreadId: string | null;
+  projectId: ProjectId;
+  title: string;
+  modelSelection: ModelSelection;
+  runtimeMode: RuntimeMode;
+  interactionMode: ProviderInteractionMode;
+  error: string | null;
+  createdAt: string;
+  archivedAt: string | null;
+  updatedAt?: string | undefined;
+  branch: string | null;
+  worktreePath: string | null;
+}
+
+export interface ThreadTurnState {
+  latestTurn: OrchestrationLatestTurn | null;
+  pendingSourceProposedPlan?: OrchestrationLatestTurn["sourceProposedPlan"];
+}
+
 export interface SidebarThreadSummary {
   id: ThreadId;
+  environmentId: EnvironmentId;
   projectId: ProjectId;
   title: string;
   interactionMode: ProviderInteractionMode;

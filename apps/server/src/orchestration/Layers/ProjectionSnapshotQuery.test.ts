@@ -4,18 +4,22 @@ import { Effect, Layer } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import { RepositoryIdentityResolverLive } from "../../project/Layers/RepositoryIdentityResolver.ts";
 import { ORCHESTRATION_PROJECTOR_NAMES } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 
-const asProjectId = (value: string): ProjectId => ProjectId.makeUnsafe(value);
-const asTurnId = (value: string): TurnId => TurnId.makeUnsafe(value);
-const asMessageId = (value: string): MessageId => MessageId.makeUnsafe(value);
-const asEventId = (value: string): EventId => EventId.makeUnsafe(value);
-const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.makeUnsafe(value);
+const asProjectId = (value: string): ProjectId => ProjectId.make(value);
+const asTurnId = (value: string): TurnId => TurnId.make(value);
+const asMessageId = (value: string): MessageId => MessageId.make(value);
+const asEventId = (value: string): EventId => EventId.make(value);
+const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.make(value);
 
 const projectionSnapshotLayer = it.layer(
-  OrchestrationProjectionSnapshotQueryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
+  OrchestrationProjectionSnapshotQueryLive.pipe(
+    Layer.provideMerge(RepositoryIdentityResolverLive),
+    Layer.provideMerge(SqlitePersistenceMemory),
+  ),
 );
 
 projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
@@ -259,6 +263,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           id: asProjectId("project-1"),
           title: "Project 1",
           workspaceRoot: "/tmp/project-1",
+          repositoryIdentity: null,
           defaultModelSelection: {
             provider: "codex",
             model: "gpt-5-codex",
@@ -279,7 +284,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       ]);
       assert.deepEqual(snapshot.threads, [
         {
-          id: ThreadId.makeUnsafe("thread-1"),
+          id: ThreadId.make("thread-1"),
           projectId: asProjectId("project-1"),
           title: "Thread 1",
           modelSelection: {
@@ -298,7 +303,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             completedAt: "2026-02-24T00:00:08.000Z",
             assistantMessageId: asMessageId("message-1"),
             sourceProposedPlan: {
-              threadId: ThreadId.makeUnsafe("thread-1"),
+              threadId: ThreadId.make("thread-1"),
               planId: "plan-1",
             },
           },
@@ -323,7 +328,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
               turnId: asTurnId("turn-1"),
               planMarkdown: "# Ship it",
               implementedAt: "2026-02-24T00:00:05.500Z",
-              implementationThreadId: ThreadId.makeUnsafe("thread-2"),
+              implementationThreadId: ThreadId.make("thread-2"),
               createdAt: "2026-02-24T00:00:05.000Z",
               updatedAt: "2026-02-24T00:00:05.500Z",
             },
@@ -351,8 +356,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             },
           ],
           session: {
-            threadId: ThreadId.makeUnsafe("thread-1"),
-            status: "interrupted",
+            threadId: ThreadId.make("thread-1"),
+            status: "running",
             providerName: "codex",
             runtimeMode: "approval-required",
             activeTurnId: null,
@@ -598,35 +603,35 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       const threadById = new Map(snapshot.threads.map((thread) => [thread.id, thread] as const));
 
       assert.equal(
-        threadById.get(ThreadId.makeUnsafe("thread-ready"))?.session?.activeTurnId,
+        threadById.get(ThreadId.make("thread-ready"))?.session?.activeTurnId,
         null,
       );
       assert.equal(
-        threadById.get(ThreadId.makeUnsafe("thread-stopped"))?.session?.activeTurnId,
+        threadById.get(ThreadId.make("thread-stopped"))?.session?.activeTurnId,
         null,
       );
       assert.equal(
-        threadById.get(ThreadId.makeUnsafe("thread-interrupted"))?.session?.activeTurnId,
+        threadById.get(ThreadId.make("thread-interrupted"))?.session?.activeTurnId,
         null,
       );
       assert.equal(
-        threadById.get(ThreadId.makeUnsafe("thread-error"))?.session?.activeTurnId,
+        threadById.get(ThreadId.make("thread-error"))?.session?.activeTurnId,
         null,
       );
       assert.equal(
-        threadById.get(ThreadId.makeUnsafe("thread-running"))?.session?.status,
+        threadById.get(ThreadId.make("thread-running"))?.session?.status,
         "interrupted",
       );
       assert.equal(
-        threadById.get(ThreadId.makeUnsafe("thread-running"))?.session?.activeTurnId,
+        threadById.get(ThreadId.make("thread-running"))?.session?.activeTurnId,
         null,
       );
       assert.equal(
-        threadById.get(ThreadId.makeUnsafe("thread-running"))?.latestTurn?.state,
+        threadById.get(ThreadId.make("thread-running"))?.latestTurn?.state,
         "interrupted",
       );
       assert.equal(
-        threadById.get(ThreadId.makeUnsafe("thread-running"))?.latestTurn?.completedAt,
+        threadById.get(ThreadId.make("thread-running"))?.latestTurn?.completedAt,
         "2026-03-01T00:01:04.000Z",
       );
     }),
@@ -761,7 +766,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         );
         assert.equal(firstThreadId._tag, "Some");
         if (firstThreadId._tag === "Some") {
-          assert.equal(firstThreadId.value, ThreadId.makeUnsafe("thread-first"));
+          assert.equal(firstThreadId.value, ThreadId.make("thread-first"));
         }
       }),
   );
@@ -884,12 +889,12 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       `;
 
       const context = yield* snapshotQuery.getThreadCheckpointContext(
-        ThreadId.makeUnsafe("thread-context"),
+        ThreadId.make("thread-context"),
       );
       assert.equal(context._tag, "Some");
       if (context._tag === "Some") {
         assert.deepEqual(context.value, {
-          threadId: ThreadId.makeUnsafe("thread-context"),
+          threadId: ThreadId.make("thread-context"),
           projectId: asProjectId("project-context"),
           workspaceRoot: "/tmp/context-workspace",
           worktreePath: "/tmp/context-worktree",

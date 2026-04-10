@@ -1,5 +1,5 @@
 import { randomUUID } from "~/lib/utils";
-import { readNativeApi } from "~/nativeApi";
+import { readLocalApi } from "~/localApi";
 
 import { fileReferenceCopy } from "./i18n";
 import { fileReferenceDedupKey, isSupportedFileReferenceCandidate } from "./paths";
@@ -16,7 +16,7 @@ export async function resolveComposerFileReferencesFromFiles(files: ReadonlyArra
     };
   }
 
-  const api = readNativeApi();
+  const api = readLocalApi();
   if (!api) {
     return {
       references: [],

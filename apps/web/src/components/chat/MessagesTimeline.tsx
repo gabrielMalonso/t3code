@@ -1,4 +1,4 @@
-import { type MessageId, type TurnId } from "@t3tools/contracts";
+import { type EnvironmentId, type MessageId, type TurnId } from "@t3tools/contracts";
 import {
   memo,
   useCallback,
@@ -84,6 +84,7 @@ interface MessagesTimelineProps {
   onRevertUserMessage: (messageId: MessageId) => void;
   isRevertingCheckpoint: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
+  activeThreadEnvironmentId: EnvironmentId;
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
   timestampFormat: TimestampFormat;
@@ -119,6 +120,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onRevertUserMessage,
   isRevertingCheckpoint,
   onImageExpand,
+  activeThreadEnvironmentId,
   markdownCwd,
   resolvedTheme,
   timestampFormat,
@@ -460,7 +462,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                       </Button>
                     )}
                   </div>
-                  <p className="text-right text-[10px] text-muted-foreground/30">
+                  <p className="text-right text-xs text-muted-foreground/50">
                     {formatTimestamp(row.message.createdAt, timestampFormat)}
                   </p>
                 </div>
@@ -547,7 +549,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                     </div>
                   );
                 })()}
-                <p className="mt-1.5 text-[10px] text-muted-foreground/30">
+                <p className="mt-1.5 text-xs text-muted-foreground/50">
                   {formatMessageMeta(
                     row.message.createdAt,
                     row.message.streaming
@@ -565,6 +567,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         <div className="min-w-0 px-1 py-0.5">
           <ProposedPlanCard
             planMarkdown={row.proposedPlan.planMarkdown}
+            environmentId={activeThreadEnvironmentId}
             cwd={markdownCwd}
             workspaceRoot={workspaceRoot}
           />
@@ -734,7 +737,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
         }
 
         return (
-          <div className="wrap-break-word whitespace-pre-wrap font-mono text-sm leading-relaxed text-foreground">
+          <div className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
             {inlineNodes}
           </div>
         );
@@ -762,7 +765,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
     }
 
     return (
-      <div className="wrap-break-word whitespace-pre-wrap font-mono text-sm leading-relaxed text-foreground">
+      <div className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
         {inlineNodes}
       </div>
     );
@@ -773,9 +776,9 @@ const UserMessageBody = memo(function UserMessageBody(props: {
   }
 
   return (
-    <pre className="whitespace-pre-wrap wrap-break-word font-mono text-sm leading-relaxed text-foreground">
+    <div className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
       {props.text}
-    </pre>
+    </div>
   );
 });
 
@@ -902,7 +905,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
           <div className="max-w-full">
             <p
               className={cn(
-                "truncate text-[11px] leading-5",
+                "truncate text-xs leading-5",
                 workToneClass(workEntry.tone),
                 preview ? "text-muted-foreground/70" : "",
               )}
