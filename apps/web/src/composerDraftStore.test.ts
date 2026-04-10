@@ -555,7 +555,11 @@ describe("composerDraftStore file references", () => {
       .getOptions()
       .merge(persistedState, useComposerDraftStore.getInitialState());
 
-    expect(mergedState.draftsByThreadKey[threadKeyFor(threadId)]?.fileReferences).toEqual([
+    // t3code-custom: file references are a local draft extension and stay
+    // scoped by environment after the multi-environment merge.
+    expect(
+      mergedState.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.fileReferences,
+    ).toEqual([
       {
         id: "ref-1",
         name: "report.pdf",

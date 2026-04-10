@@ -357,7 +357,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           ],
           session: {
             threadId: ThreadId.make("thread-1"),
-            status: "running",
+            // t3code-custom: local boot sanitization marks stale busy sessions as
+            // interrupted so zombie turns do not survive restarts.
+            status: "interrupted",
             providerName: "codex",
             runtimeMode: "approval-required",
             activeTurnId: null,

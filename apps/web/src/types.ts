@@ -134,6 +134,7 @@ export interface ThreadShell {
   updatedAt?: string | undefined;
   branch: string | null;
   worktreePath: string | null;
+  loop?: ThreadLoop | null;
 }
 
 export interface ThreadTurnState {
