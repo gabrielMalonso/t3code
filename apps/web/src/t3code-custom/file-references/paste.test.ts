@@ -150,9 +150,11 @@ describe("composer pasted text file references", () => {
   it("auto-restores only when the composer snapshot is unchanged", () => {
     expect(
       shouldAutoRestoreComposerPasteSnapshot({
+        initialThreadId: "thread-a",
         initialPrompt: "prefix ",
         initialSelectionStart: 7,
         initialSelectionEnd: 7,
+        currentThreadId: "thread-a",
         currentPrompt: "prefix ",
         currentSelectionStart: 7,
         currentSelectionEnd: 7,
@@ -160,12 +162,26 @@ describe("composer pasted text file references", () => {
     ).toBe(true);
     expect(
       shouldAutoRestoreComposerPasteSnapshot({
+        initialThreadId: "thread-a",
         initialPrompt: "prefix ",
         initialSelectionStart: 7,
         initialSelectionEnd: 12,
+        currentThreadId: "thread-a",
         currentPrompt: "prefix changed",
         currentSelectionStart: 14,
         currentSelectionEnd: 14,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAutoRestoreComposerPasteSnapshot({
+        initialThreadId: "thread-a",
+        initialPrompt: "",
+        initialSelectionStart: 0,
+        initialSelectionEnd: 0,
+        currentThreadId: "thread-b",
+        currentPrompt: "",
+        currentSelectionStart: 0,
+        currentSelectionEnd: 0,
       }),
     ).toBe(false);
   });

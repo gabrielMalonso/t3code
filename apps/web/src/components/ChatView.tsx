@@ -662,6 +662,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
     (store) => store.draftThreadsByThreadId[threadId] ?? null,
   );
   const promptRef = useRef(prompt);
+  const activeComposerThreadIdRef = useRef(threadId);
+  activeComposerThreadIdRef.current = threadId;
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [isDragOverComposer, setIsDragOverComposer] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
@@ -3793,11 +3795,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
   );
 
   const onComposerPasteFileReference = useComposerPasteFileReference({
+    threadId,
     workspaceRoot: activeWorkspaceRoot,
     pendingUserInputCount: pendingUserInputs.length,
     envMode,
     worktreePath: activeThreadWorktreePath,
+    readActiveThreadId: () => activeComposerThreadIdRef.current,
     readComposerSnapshot,
+    setComposerPromptForThread: setPrompt,
     applyComposerPromptSnapshot,
     addComposerFileReferencesToDraft,
     updatePendingComposerFileResolutionCount,

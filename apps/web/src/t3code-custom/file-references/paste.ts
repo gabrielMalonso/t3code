@@ -140,14 +140,17 @@ export async function saveComposerPastedTextAsFileReference(input: {
 }
 
 export function shouldAutoRestoreComposerPasteSnapshot(input: {
+  initialThreadId: string;
   initialPrompt: string;
   initialSelectionStart: number;
   initialSelectionEnd: number;
+  currentThreadId: string;
   currentPrompt: string;
   currentSelectionStart: number;
   currentSelectionEnd: number;
 }): boolean {
   return (
+    input.initialThreadId === input.currentThreadId &&
     input.initialPrompt === input.currentPrompt &&
     input.initialSelectionStart === input.currentSelectionStart &&
     input.initialSelectionEnd === input.currentSelectionEnd

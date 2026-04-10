@@ -26,21 +26,27 @@ type ComposerSnapshot = {
 };
 
 export function useComposerPasteFileReference(input: {
+  threadId: string;
   workspaceRoot: string | null | undefined;
   pendingUserInputCount: number;
   envMode: DraftThreadEnvMode;
   worktreePath: string | null | undefined;
+  readActiveThreadId: () => string;
   readComposerSnapshot: () => ComposerSnapshot;
+  setComposerPromptForThread: (nextPrompt: string) => void;
   applyComposerPromptSnapshot: (nextPrompt: string, nextExpandedCursor: number) => void;
   addComposerFileReferencesToDraft: (references: ComposerFileReference[]) => void;
   updatePendingComposerFileResolutionCount: (delta: number) => void;
 }) {
   const {
+    threadId,
     workspaceRoot,
     pendingUserInputCount,
     envMode,
     worktreePath,
+    readActiveThreadId,
     readComposerSnapshot,
+    setComposerPromptForThread,
     applyComposerPromptSnapshot,
     addComposerFileReferencesToDraft,
     updatePendingComposerFileResolutionCount,
@@ -104,16 +110,19 @@ export function useComposerPasteFileReference(input: {
       const queuedWrite = pasteWriteQueueRef.current
         .catch(() => undefined)
         .then(async () => {
+          const isOriginThreadActive = () => readActiveThreadId() === threadId;
           try {
             const { reference, relativePath } = await saveComposerPastedTextAsFileReference({
               workspaceRoot,
               contents: pastedText,
               writeFile: api.projects.writeFile,
             });
-            await removePastedTextFromComposerWithRetry({
-              pastedText,
-              initialExpandedSelectionStart: pasteSnapshot.expandedSelectionStart,
-            });
+            if (isOriginThreadActive()) {
+              await removePastedTextFromComposerWithRetry({
+                pastedText,
+                initialExpandedSelectionStart: pasteSnapshot.expandedSelectionStart,
+              });
+            }
             addComposerFileReferencesToDraft([reference]);
             toastManager.add({
               type: "success",
@@ -121,24 +130,44 @@ export function useComposerPasteFileReference(input: {
               description: fileReferenceCopy.paste.savedDescription(relativePath),
             });
           } catch (error) {
-            const currentSnapshot = readComposerSnapshot();
-            if (
-              shouldAutoRestoreComposerPasteSnapshot({
-                initialPrompt: pasteSnapshot.value,
-                initialSelectionStart: pasteSnapshot.selectionStart,
-                initialSelectionEnd: pasteSnapshot.selectionEnd,
-                currentPrompt: currentSnapshot.value,
-                currentSelectionStart: currentSnapshot.selectionStart,
-                currentSelectionEnd: currentSnapshot.selectionEnd,
-              })
-            ) {
+            const restoreOriginThreadPrompt = () => {
               const restored = restorePastedTextIntoComposer({
                 prompt: pasteSnapshot.value,
                 pastedText,
                 expandedSelectionStart: pasteSnapshot.expandedSelectionStart,
                 expandedSelectionEnd: pasteSnapshot.expandedSelectionEnd,
               });
-              applyComposerPromptSnapshot(restored.text, restored.expandedCursor);
+              if (isOriginThreadActive()) {
+                applyComposerPromptSnapshot(restored.text, restored.expandedCursor);
+              } else {
+                setComposerPromptForThread(restored.text);
+              }
+            };
+
+            if (!isOriginThreadActive()) {
+              restoreOriginThreadPrompt();
+              toastManager.add({
+                type: "warning",
+                title: fileReferenceCopy.paste.writeFailed,
+                description: fileReferenceCopy.paste.restoredText,
+              });
+              return;
+            }
+
+            const currentSnapshot = readComposerSnapshot();
+            if (
+              shouldAutoRestoreComposerPasteSnapshot({
+                initialThreadId: threadId,
+                initialPrompt: pasteSnapshot.value,
+                initialSelectionStart: pasteSnapshot.selectionStart,
+                initialSelectionEnd: pasteSnapshot.selectionEnd,
+                currentThreadId: readActiveThreadId(),
+                currentPrompt: currentSnapshot.value,
+                currentSelectionStart: currentSnapshot.selectionStart,
+                currentSelectionEnd: currentSnapshot.selectionEnd,
+              })
+            ) {
+              restoreOriginThreadPrompt();
               toastManager.add({
                 type: "warning",
                 title: fileReferenceCopy.paste.writeFailed,
@@ -162,7 +191,11 @@ export function useComposerPasteFileReference(input: {
                     expandedSelectionStart: latestSnapshot.expandedSelectionStart,
                     expandedSelectionEnd: latestSnapshot.expandedSelectionEnd,
                   });
-                  applyComposerPromptSnapshot(restored.text, restored.expandedCursor);
+                  if (isOriginThreadActive()) {
+                    applyComposerPromptSnapshot(restored.text, restored.expandedCursor);
+                    return;
+                  }
+                  setComposerPromptForThread(restored.text);
                 },
               },
             });
@@ -182,8 +215,11 @@ export function useComposerPasteFileReference(input: {
       applyComposerPromptSnapshot,
       envMode,
       pendingUserInputCount,
+      readActiveThreadId,
       readComposerSnapshot,
       removePastedTextFromComposerWithRetry,
+      setComposerPromptForThread,
+      threadId,
       updatePendingComposerFileResolutionCount,
       workspaceRoot,
       worktreePath,
