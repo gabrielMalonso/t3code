@@ -47,6 +47,7 @@ import { WorkspaceEntries } from "./workspace/Services/WorkspaceEntries";
 import { WorkspaceFileSystem } from "./workspace/Services/WorkspaceFileSystem";
 import { WorkspacePathOutsideRootError } from "./workspace/Services/WorkspacePaths";
 import { ProjectSetupScriptRunner } from "./project/Services/ProjectSetupScriptRunner";
+import { resolveRemoteAccess } from "./remoteAccess";
 
 const WsRpcLayer = WsRpcGroup.toLayer(
   Effect.gen(function* () {
@@ -345,6 +346,7 @@ const WsRpcLayer = WsRpcGroup.toLayer(
           ...(config.otlpMetricsUrl !== undefined ? { otlpMetricsUrl: config.otlpMetricsUrl } : {}),
           otlpMetricsEnabled: config.otlpMetricsUrl !== undefined,
         },
+        remoteAccess: resolveRemoteAccess(config),
         settings,
       };
     });

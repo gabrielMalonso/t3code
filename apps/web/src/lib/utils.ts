@@ -46,6 +46,43 @@ const firstNonEmptyString = (...values: unknown[]): string => {
   throw new Error("No non-empty string provided");
 };
 
+function readTokenFromUrl(value: unknown): string | null {
+  if (!isNonEmptyString(value)) {
+    return null;
+  }
+
+  try {
+    const parsedUrl = new URL(value);
+    const token = parsedUrl.searchParams.get("token");
+    return isNonEmptyString(token) ? token : null;
+  } catch {
+    return null;
+  }
+}
+
+export function resolveConnectionToken(explicitUrl?: string | undefined): string | null {
+  if (typeof window === "undefined") {
+    return readTokenFromUrl(explicitUrl) ?? null;
+  }
+
+  return (
+    readTokenFromUrl(explicitUrl) ??
+    readTokenFromUrl(window.desktopBridge?.getWsUrl?.()) ??
+    readTokenFromUrl(import.meta.env.VITE_WS_URL) ??
+    readTokenFromUrl(window.location.href)
+  );
+}
+
+export function withOptionalToken(url: string, token: string | null | undefined): string {
+  if (!isNonEmptyString(token)) {
+    return url;
+  }
+
+  const parsedUrl = new URL(url);
+  parsedUrl.searchParams.set("token", token);
+  return parsedUrl.toString();
+}
+
 export const resolveServerUrl = (options?: {
   url?: string | undefined;
   protocol?: "http" | "https" | "ws" | "wss" | undefined;
@@ -56,7 +93,7 @@ export const resolveServerUrl = (options?: {
     options?.url,
     window.desktopBridge?.getWsUrl(),
     import.meta.env.VITE_WS_URL,
-    window.location.origin,
+    window.location.href,
   );
 
   const parsedUrl = new URL(rawUrl);

@@ -25,6 +25,20 @@ function createBaseServerConfig(): ServerConfig {
       otlpTracesEnabled: true,
       otlpMetricsEnabled: false,
     },
+    remoteAccess: {
+      port: 3773,
+      host: "127.0.0.1",
+      authRequired: false,
+      loopbackOnly: true,
+      bindings: [
+        {
+          kind: "loopback",
+          label: "This device (127.0.0.1)",
+          host: "127.0.0.1",
+          origin: "http://127.0.0.1:3773",
+        },
+      ],
+    },
     settings: DEFAULT_SERVER_SETTINGS,
   };
 }

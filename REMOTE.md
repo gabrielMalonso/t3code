@@ -39,17 +39,18 @@ bun run --cwd apps/server start -- --host 0.0.0.0 --port 3773 --auth-token "$TOK
 
 Then open on your phone:
 
-`http://<your-machine-ip>:3773`
+`http://<your-machine-ip>:3773/?token=$TOKEN`
 
 Example:
 
-`http://192.168.1.42:3773`
+`http://192.168.1.42:3773/?token=0123abcd...`
 
 Notes:
 
 - `--host 0.0.0.0` listens on all IPv4 interfaces.
 - `--no-browser` prevents local auto-open, which is usually better for headless/remote sessions.
 - Ensure your OS firewall allows inbound TCP on the selected port.
+- The web app forwards the `?token=...` query param to the WebSocket handshake automatically.
 
 ## 2) Tailnet / Tailscale access
 
@@ -63,6 +64,6 @@ bun run --cwd apps/server start -- --host "$(tailscale ip -4)" --port 3773 --aut
 
 Open from any device in your tailnet:
 
-`http://<tailnet-ip>:3773`
+`http://<tailnet-ip>:3773/?token=$TOKEN`
 
 You can also bind `--host 0.0.0.0` and connect through the Tailnet IP, but binding directly to the Tailnet IP limits exposure.

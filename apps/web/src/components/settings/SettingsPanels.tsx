@@ -14,8 +14,10 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import {
   PROVIDER_DISPLAY_NAMES,
   type ProviderKind,
+  type ServerConfig,
   type ServerProvider,
   type ServerProviderModel,
+  type ServerRemoteAccessBinding,
   ThreadId,
 } from "@t3tools/contracts";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
@@ -60,10 +62,13 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ProjectFavicon } from "../ProjectFavicon";
 import {
   useServerAvailableEditors,
+  useServerConfig,
   useServerKeybindingsConfigPath,
   useServerObservability,
   useServerProviders,
 } from "../../rpc/serverState";
+import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+import { resolveConnectionToken, withOptionalToken } from "../../lib/utils";
 
 const THEME_OPTIONS = [
   {
@@ -241,6 +246,185 @@ function SettingsSection({
         {children}
       </div>
     </section>
+  );
+}
+
+const REMOTE_ACCESS_KIND_LABELS: Record<ServerRemoteAccessBinding["kind"], string> = {
+  loopback: "Este dispositivo",
+  lan: "LAN",
+  tailnet: "Tailnet",
+  custom: "Host configurado",
+};
+
+const REMOTE_ACCESS_KIND_DESCRIPTIONS: Record<ServerRemoteAccessBinding["kind"], string> = {
+  loopback: "Serve para abrir no mesmo computador. No celular, esquece.",
+  lan: "Funciona em dispositivos na mesma rede local ou Wi-Fi.",
+  tailnet: "Funciona em qualquer dispositivo dentro da mesma Tailnet.",
+  custom: "Usa o host configurado diretamente pelo servidor.",
+};
+
+type RemoteAccessLink = {
+  kind: ServerRemoteAccessBinding["kind"];
+  label: string;
+  url: string;
+};
+
+function resolveRemoteAccessLinks(
+  config: ServerConfig | null,
+  token: string | null,
+): RemoteAccessLink[] {
+  if (!config) {
+    return [];
+  }
+
+  const links: RemoteAccessLink[] = [];
+  const seen = new Set<string>();
+  const push = (link: RemoteAccessLink) => {
+    if (seen.has(link.url)) {
+      return;
+    }
+    seen.add(link.url);
+    links.push(link);
+  };
+
+  if (
+    typeof window !== "undefined" &&
+    window.location.protocol !== "file:" &&
+    window.location.origin !== "null"
+  ) {
+    push({
+      kind: "custom",
+      label: "Navegador atual",
+      url: withOptionalToken(window.location.origin, token),
+    });
+  }
+
+  for (const binding of config.remoteAccess.bindings) {
+    push({
+      kind: binding.kind,
+      label: binding.label,
+      url: withOptionalToken(binding.origin, token),
+    });
+  }
+
+  return links;
+}
+
+function RemoteAccessSection() {
+  const serverConfig = useServerConfig();
+  const token = resolveConnectionToken();
+  const links = useMemo(() => resolveRemoteAccessLinks(serverConfig, token), [serverConfig, token]);
+  const remoteAccess = serverConfig?.remoteAccess ?? null;
+  const copyLabel = remoteAccess?.authRequired ? "Copiar link com token" : "Copiar link";
+  const accessSummary = !remoteAccess
+    ? "Carregando dados do servidor."
+    : remoteAccess.loopbackOnly
+      ? "O servidor está preso a loopback. Isso abre no próprio computador, não no celular."
+      : remoteAccess.authRequired
+        ? "O servidor aceita acesso remoto e exige token no link. Certo. Senha por telepatia ainda não foi padronizada."
+        : "O servidor aceita acesso remoto sem token. Prático? Sim. Prudente? Nem um pouco.";
+
+  const { copyToClipboard } = useCopyToClipboard<{ label: string }>({
+    onCopy: (ctx) => {
+      toastManager.add({
+        type: "success",
+        title: "Link copiado",
+        description: `${ctx.label} foi para a área de transferência.`,
+      });
+    },
+    onError: (error, ctx) => {
+      toastManager.add({
+        type: "error",
+        title: "Falha ao copiar link",
+        description: error.message || `Não consegui copiar ${ctx.label}.`,
+      });
+    },
+  });
+
+  const openRemoteLink = useCallback(async (url: string) => {
+    try {
+      await ensureNativeApi().shell.openExternal(url);
+    } catch (error) {
+      toastManager.add({
+        type: "error",
+        title: "Falha ao abrir link",
+        description: error instanceof Error ? error.message : "Não consegui abrir o link.",
+      });
+    }
+  }, []);
+
+  return (
+    <SettingsSection title="Remote access">
+      <SettingsRow
+        title="Status"
+        description={accessSummary}
+        status={
+          remoteAccess ? (
+            <>
+              <span className="block font-mono text-[11px] text-foreground">
+                host {remoteAccess.host ?? "0.0.0.0 / automático"} · porta {remoteAccess.port}
+              </span>
+              <span className="mt-1 block">
+                {remoteAccess.authRequired
+                  ? token
+                    ? "Este cliente já conhece o token e consegue gerar links prontos."
+                    : "O servidor exige token, mas este cliente não conseguiu descobri-lo."
+                  : "Nenhum token exigido para a conexão WebSocket."}
+              </span>
+            </>
+          ) : (
+            "Esperando o snapshot do servidor."
+          )
+        }
+      />
+
+      <SettingsRow
+        title="Links de acesso"
+        description="Abra no telefone para usar a UI web atual do T3 Code. A versão mobile dedicada pode vir depois, sem refazer a fundação."
+      >
+        <div className="space-y-3 px-4 py-4 sm:px-5">
+          {links.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Nenhum link remoto detectado ainda.</p>
+          ) : (
+            links.map((link) => (
+              <div
+                key={link.url}
+                className="rounded-xl border border-border/70 bg-background/60 p-3"
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-medium text-foreground">{link.label}</span>
+                      <span className="rounded-full border border-border/80 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                        {REMOTE_ACCESS_KIND_LABELS[link.kind]}
+                      </span>
+                    </div>
+                    <code className="mt-2 block break-all text-[11px] text-foreground/90">
+                      {link.url}
+                    </code>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {REMOTE_ACCESS_KIND_DESCRIPTIONS[link.kind]}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() => copyToClipboard(link.url, { label: link.label })}
+                    >
+                      {copyLabel}
+                    </Button>
+                    <Button size="xs" variant="ghost" onClick={() => void openRemoteLink(link.url)}>
+                      Abrir
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </SettingsRow>
+    </SettingsSection>
   );
 }
 
@@ -1410,6 +1594,8 @@ export function GeneralSettingsPanel() {
           );
         })}
       </SettingsSection>
+
+      <RemoteAccessSection />
 
       <SettingsSection title="Advanced">
         <SettingsRow

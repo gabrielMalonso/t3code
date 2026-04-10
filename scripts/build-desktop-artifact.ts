@@ -182,6 +182,7 @@ interface StagePackageJson {
   readonly devDependencies: {
     readonly electron: string;
   };
+  readonly overrides?: Record<string, unknown>;
 }
 
 const AzureTrustedSigningOptionsConfig = Config.all({
@@ -595,6 +596,10 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         cause,
       }),
   });
+  const stageOverrides = {
+    ...rootPackageJson.workspaces.catalog,
+    ...rootPackageJson.overrides,
+  };
 
   const appVersion = options.version ?? serverPackageJson.version;
   const commitHash = resolveGitCommitHash(repoRoot);
@@ -677,6 +682,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     devDependencies: {
       electron: electronVersion,
     },
+    overrides: stageOverrides,
   };
 
   const stagePackageJsonString = yield* encodeJsonString(stagePackageJson);

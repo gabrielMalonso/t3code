@@ -1012,6 +1012,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.equal(first.config.observability.otlpTracesEnabled, true);
         assert.equal(first.config.observability.otlpMetricsUrl, "http://localhost:4318/v1/metrics");
         assert.equal(first.config.observability.otlpMetricsEnabled, true);
+        assert.equal(first.config.remoteAccess.authRequired, false);
+        assert.equal(typeof first.config.remoteAccess.loopbackOnly, "boolean");
+        assert.isAtLeast(first.config.remoteAccess.bindings.length, 1);
         assert.deepEqual(first.config.settings, DEFAULT_SERVER_SETTINGS);
       }
       assert.deepEqual(second, {

@@ -3,7 +3,7 @@ import { Duration, Effect, Layer, Schedule } from "effect";
 import { RpcClient, RpcSerialization } from "effect/unstable/rpc";
 import * as Socket from "effect/unstable/socket/Socket";
 
-import { resolveServerUrl } from "../lib/utils";
+import { resolveConnectionToken, resolveServerUrl } from "../lib/utils";
 import {
   acknowledgeRpcRequest,
   clearAllTrackedRpcRequests,
@@ -25,10 +25,12 @@ export type WsRpcProtocolClient =
   RpcClientFactory extends Effect.Effect<infer Client, any, any> ? Client : never;
 
 export function createWsRpcProtocolLayer(url?: string) {
+  const token = resolveConnectionToken(url);
   const resolvedUrl = resolveServerUrl({
     url,
     protocol: window.location.protocol === "https:" ? "wss" : "ws",
     pathname: "/ws",
+    ...(token ? { searchParams: { token } } : {}),
   });
   const trackingWebSocketConstructorLayer = Layer.succeed(
     Socket.WebSocketConstructor,

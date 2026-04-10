@@ -82,6 +82,33 @@ export const ServerObservability = Schema.Struct({
 });
 export type ServerObservability = typeof ServerObservability.Type;
 
+export const ServerRemoteAccessBindingKind = Schema.Literals([
+  "loopback",
+  "lan",
+  "tailnet",
+  "custom",
+]);
+export type ServerRemoteAccessBindingKind = typeof ServerRemoteAccessBindingKind.Type;
+
+export const ServerRemoteAccessBinding = Schema.Struct({
+  kind: ServerRemoteAccessBindingKind,
+  label: TrimmedNonEmptyString,
+  host: TrimmedNonEmptyString,
+  origin: TrimmedNonEmptyString,
+});
+export type ServerRemoteAccessBinding = typeof ServerRemoteAccessBinding.Type;
+
+const ServerRemoteAccessPort = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 65535 }));
+
+export const ServerRemoteAccess = Schema.Struct({
+  port: ServerRemoteAccessPort,
+  host: Schema.NullOr(TrimmedNonEmptyString),
+  authRequired: Schema.Boolean,
+  loopbackOnly: Schema.Boolean,
+  bindings: Schema.Array(ServerRemoteAccessBinding),
+});
+export type ServerRemoteAccess = typeof ServerRemoteAccess.Type;
+
 export const ServerConfig = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   keybindingsConfigPath: TrimmedNonEmptyString,
@@ -90,6 +117,7 @@ export const ServerConfig = Schema.Struct({
   providers: ServerProviders,
   availableEditors: Schema.Array(EditorId),
   observability: ServerObservability,
+  remoteAccess: ServerRemoteAccess,
   settings: ServerSettings,
 });
 export type ServerConfig = typeof ServerConfig.Type;

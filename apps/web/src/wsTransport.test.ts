@@ -116,10 +116,12 @@ beforeEach(() => {
     configurable: true,
     value: {
       location: {
+        href: "http://localhost:3020/",
         origin: "http://localhost:3020",
         hostname: "localhost",
         port: "3020",
         protocol: "http:",
+        search: "",
       },
       desktopBridge: undefined,
     },
@@ -155,10 +157,12 @@ describe("WsTransport", () => {
 
   it("uses wss when falling back to an https page origin", async () => {
     Object.assign(window.location, {
+      href: "https://app.example.com/",
       origin: "https://app.example.com",
       hostname: "app.example.com",
       port: "",
       protocol: "https:",
+      search: "",
     });
 
     const transport = new WsTransport();
@@ -168,6 +172,26 @@ describe("WsTransport", () => {
     });
 
     expect(getSocket().url).toBe("wss://app.example.com/ws");
+    await transport.dispose();
+  });
+
+  it("forwards the current page token to the websocket handshake", async () => {
+    Object.assign(window.location, {
+      href: "http://192.168.0.15:3773/?token=page-token",
+      origin: "http://192.168.0.15:3773",
+      hostname: "192.168.0.15",
+      port: "3773",
+      protocol: "http:",
+      search: "?token=page-token",
+    });
+
+    const transport = new WsTransport();
+
+    await waitFor(() => {
+      expect(sockets).toHaveLength(1);
+    });
+
+    expect(getSocket().url).toBe("ws://192.168.0.15:3773/ws?token=page-token");
     await transport.dispose();
   });
 
