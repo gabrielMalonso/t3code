@@ -87,6 +87,12 @@ describe("detectComposerTrigger", () => {
     });
   });
 
+  it("does not collapse shell variables into inline tokens without a known skill catalog", () => {
+    expect(collapseExpandedComposerCursor("echo $HOME ", "echo $HOME ".length)).toBe(
+      "echo $HOME ".length,
+    );
+  });
+
   it("detects @path trigger in the middle of existing text", () => {
     // User typed @ between "inspect " and "in this sentence"
     const text = "Please inspect @in this sentence";

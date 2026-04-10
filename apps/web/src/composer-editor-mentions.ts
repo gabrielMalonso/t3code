@@ -3,6 +3,10 @@ import {
   type TerminalContextDraft,
 } from "./lib/terminalContext";
 
+export interface ComposerPromptSkillOptions {
+  skillNames?: readonly string[];
+}
+
 export type ComposerPromptSegment =
   | {
       type: "text";
@@ -23,6 +27,13 @@ export type ComposerPromptSegment =
 
 const MENTION_TOKEN_REGEX = /(^|\s)@([^\s@]+)(?=\s)/g;
 const SKILL_TOKEN_REGEX = /(^|\s)\$([a-zA-Z][a-zA-Z0-9_:-]*)(?=\s)/g;
+
+function toSkillNameSet(skillNames?: readonly string[]): ReadonlySet<string> | null {
+  if (!skillNames || skillNames.length === 0) {
+    return null;
+  }
+  return new Set(skillNames);
+}
 
 function rangeIncludesIndex(start: number, end: number, index: number): boolean {
   return start <= index && index < end;
@@ -118,10 +129,18 @@ function forEachMentionMatch(
 
 function forEachSkillMatch(
   prompt: string,
+  skillNames: ReadonlySet<string> | null,
   visitor: (match: RegExpMatchArray, promptOffset: number) => boolean | void,
 ): boolean {
+  if (skillNames === null) {
+    return false;
+  }
   return forEachPromptTextSlice(prompt, (text, promptOffset) => {
     for (const match of text.matchAll(SKILL_TOKEN_REGEX)) {
+      const skillName = match[2] ?? "";
+      if (!skillNames.has(skillName)) {
+        continue;
+      }
       if (visitor(match, promptOffset) === true) {
         return true;
       }
@@ -130,7 +149,10 @@ function forEachSkillMatch(
   });
 }
 
-function splitPromptTextIntoComposerSegments(text: string): ComposerPromptSegment[] {
+function splitPromptTextIntoComposerSegments(
+  text: string,
+  skillNames: ReadonlySet<string> | null,
+): ComposerPromptSegment[] {
   const segments: ComposerPromptSegment[] = [];
   if (!text) {
     return segments;
@@ -150,12 +172,20 @@ function splitPromptTextIntoComposerSegments(text: string): ComposerPromptSegmen
       const fullMatch = match[0];
       const prefix = match[1] ?? "";
       const name = match[2] ?? "";
+      if (skillNames === null || !skillNames.has(name)) {
+        return null;
+      }
       const matchIndex = match.index ?? 0;
       const start = matchIndex + prefix.length;
       const end = start + fullMatch.length - prefix.length;
       return { type: "skill" as const, value: name, start, end };
     }),
-  ].toSorted((left, right) => left.start - right.start);
+  ]
+    .filter(
+      (match): match is { type: "mention" | "skill"; value: string; start: number; end: number } =>
+        match !== null,
+    )
+    .toSorted((left, right) => left.start - right.start);
 
   let cursor = 0;
   for (const match of matches) {
@@ -190,10 +220,12 @@ export function selectionTouchesMentionBoundary(
   prompt: string,
   start: number,
   end: number,
+  options?: ComposerPromptSkillOptions,
 ): boolean {
   if (!prompt || start >= end) {
     return false;
   }
+  const skillNames = toSkillNameSet(options?.skillNames);
 
   const touchesBoundary = (
     match: RegExpMatchArray,
@@ -228,13 +260,16 @@ export function selectionTouchesMentionBoundary(
 
   return (
     forEachMentionMatch(prompt, (match, promptOffset) => touchesBoundary(match, promptOffset, 1)) ||
-    forEachSkillMatch(prompt, (match, promptOffset) => touchesBoundary(match, promptOffset, 1))
+    forEachSkillMatch(prompt, skillNames, (match, promptOffset) =>
+      touchesBoundary(match, promptOffset, 1),
+    )
   );
 }
 
 export function splitPromptIntoComposerSegments(
   prompt: string,
   terminalContexts: ReadonlyArray<TerminalContextDraft> = [],
+  options?: ComposerPromptSkillOptions,
 ): ComposerPromptSegment[] {
   if (!prompt) {
     return [];
@@ -242,9 +277,10 @@ export function splitPromptIntoComposerSegments(
 
   const segments: ComposerPromptSegment[] = [];
   let terminalContextIndex = 0;
+  const skillNames = toSkillNameSet(options?.skillNames);
   forEachPromptSegmentSlice(prompt, (slice) => {
     if (slice.type === "text") {
-      segments.push(...splitPromptTextIntoComposerSegments(slice.text));
+      segments.push(...splitPromptTextIntoComposerSegments(slice.text, skillNames));
       return false;
     }
 

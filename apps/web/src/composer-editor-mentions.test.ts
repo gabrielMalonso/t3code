@@ -30,7 +30,9 @@ describe("splitPromptIntoComposerSegments", () => {
   });
 
   it("splits codex skill tokens followed by whitespace into skill segments", () => {
-    expect(splitPromptIntoComposerSegments("Use $review please")).toEqual([
+    expect(
+      splitPromptIntoComposerSegments("Use $review please", [], { skillNames: ["review"] }),
+    ).toEqual([
       { type: "text", text: "Use " },
       { type: "skill", name: "review" },
       { type: "text", text: " please" },
@@ -38,9 +40,15 @@ describe("splitPromptIntoComposerSegments", () => {
   });
 
   it("does not convert an incomplete trailing skill token", () => {
-    expect(splitPromptIntoComposerSegments("Use $review")).toEqual([
+    expect(splitPromptIntoComposerSegments("Use $review", [], { skillNames: ["review"] })).toEqual([
       { type: "text", text: "Use $review" },
     ]);
+  });
+
+  it("keeps unknown shell-style variables as text", () => {
+    expect(
+      splitPromptIntoComposerSegments("echo $HOME please", [], { skillNames: ["review"] }),
+    ).toEqual([{ type: "text", text: "echo $HOME please" }]);
   });
 
   it("keeps inline terminal context placeholders at their prompt positions", () => {
@@ -117,6 +125,7 @@ describe("selectionTouchesMentionBoundary", () => {
         "use $review now",
         "use $review".length,
         "use $review now".length,
+        { skillNames: ["review"] },
       ),
     ).toBe(true);
   });

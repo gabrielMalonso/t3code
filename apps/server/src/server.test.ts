@@ -1962,6 +1962,63 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("routes websocket rpc projects.listProviderCommands", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "t3-ws-project-provider-commands-",
+      });
+      yield* fs.makeDirectory(path.join(workspaceDir, ".codex", "skills", "review"), {
+        recursive: true,
+      });
+      yield* fs.writeFileString(
+        path.join(workspaceDir, ".codex", "skills", "review", "SKILL.md"),
+        "---\ndescription: Review staged changes\n---\n",
+      );
+
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const response = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.projectsListProviderCommands]({
+            cwd: workspaceDir,
+            provider: "codex",
+          }),
+        ),
+      );
+
+      assert.equal(response.provider, "codex");
+      assert.isTrue(response.skills.some((entry) => entry.name === "review"));
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect(
+    "routes websocket rpc projects.listProviderCommands errors for invalid workspaces",
+    () =>
+      Effect.gen(function* () {
+        yield* buildAppUnderTest();
+
+        const wsUrl = yield* getWsServerUrl("/ws");
+        const result = yield* Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            client[WS_METHODS.projectsListProviderCommands]({
+              cwd: "/definitely/not/a/real/workspace/path",
+              provider: "codex",
+            }),
+          ).pipe(Effect.result),
+        );
+
+        assertTrue(result._tag === "Failure");
+        assertTrue(result.failure._tag === "ProviderCommandsListError");
+        assertInclude(
+          result.failure.message,
+          "Workspace root does not exist: /definitely/not/a/real/workspace/path",
+        );
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("routes websocket rpc projects.writeFile", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

@@ -48,7 +48,7 @@ import { ServerSettingsService } from "./serverSettings";
 import { TerminalManager } from "./terminal/Services/Manager";
 import { WorkspaceEntries } from "./workspace/Services/WorkspaceEntries";
 import { WorkspaceFileSystem } from "./workspace/Services/WorkspaceFileSystem";
-import { WorkspacePathOutsideRootError } from "./workspace/Services/WorkspacePaths";
+import { WorkspacePathOutsideRootError, WorkspacePaths } from "./workspace/Services/WorkspacePaths";
 import { listProviderCommands } from "./workspace/providerCommandsDiscovery";
 import { ProjectSetupScriptRunner } from "./project/Services/ProjectSetupScriptRunner";
 import { RepositoryIdentityResolver } from "./project/Services/RepositoryIdentityResolver";
@@ -123,6 +123,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const startup = yield* ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem;
+      const workspacePaths = yield* WorkspacePaths;
       const projectSetupScriptRunner = yield* ProjectSetupScriptRunner;
       const repositoryIdentityResolver = yield* RepositoryIdentityResolver;
       const serverEnvironment = yield* ServerEnvironment;
@@ -673,7 +674,15 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         [WS_METHODS.projectsListProviderCommands]: (input) =>
           observeRpcEffect(
             WS_METHODS.projectsListProviderCommands,
-            listProviderCommands(input).pipe(
+            Effect.gen(function* () {
+              const normalizedCwd = input.cwd
+                ? yield* workspacePaths.normalizeWorkspaceRoot(input.cwd)
+                : undefined;
+              return yield* listProviderCommands({
+                provider: input.provider,
+                ...(normalizedCwd ? { cwd: normalizedCwd } : {}),
+              });
+            }).pipe(
               Effect.mapError(
                 (cause) =>
                   new ProviderCommandsListError({
