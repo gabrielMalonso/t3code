@@ -25,9 +25,9 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@t3tools/client-runtime";
+import { buildPromptThreadTitleFallback } from "@t3tools/shared/chatThreads";
 import { applyClaudePromptEffortPrefix } from "@t3tools/shared/model";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
-import { truncate } from "@t3tools/shared/String";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useShallow } from "zustand/react/shallow";
@@ -2626,7 +2626,7 @@ export default function ChatView(props: ChatViewProps) {
             ? formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!)
             : null,
       });
-      const title = truncate(titleSeed);
+      const title = buildPromptThreadTitleFallback(titleSeed);
       const threadCreateModelSelection: ModelSelection = {
         provider: ctxSelectedProvider,
         model:
@@ -3090,7 +3090,9 @@ export default function ChatView(props: ChatViewProps) {
       effort: ctxSelectedPromptEffort,
       text: implementationPrompt,
     });
-    const nextThreadTitle = truncate(buildPlanImplementationThreadTitle(planMarkdown));
+    const nextThreadTitle = buildPromptThreadTitleFallback(
+      buildPlanImplementationThreadTitle(planMarkdown),
+    );
     const nextThreadModelSelection: ModelSelection = ctxSelectedModelSelection;
 
     sendInFlightRef.current = true;

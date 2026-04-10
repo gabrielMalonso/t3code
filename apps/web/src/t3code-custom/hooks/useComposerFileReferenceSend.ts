@@ -1,4 +1,5 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
+import { GENERIC_CHAT_THREAD_TITLE } from "@t3tools/shared/chatThreads";
 import { useCallback, type MutableRefObject } from "react";
 
 import { collapseExpandedComposerCursor } from "~/composer-logic";
@@ -77,7 +78,7 @@ export function useComposerFileReferenceSend(input: {
       if (input.terminalContexts.length > 0) {
         return input.terminalContextLabel ?? "Terminal context";
       }
-      return "New thread";
+      return GENERIC_CHAT_THREAD_TITLE;
     },
     [],
   );

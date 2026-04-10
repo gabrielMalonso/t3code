@@ -112,6 +112,8 @@ describe("buildThreadTitlePrompt", () => {
 
     expect(result.prompt).toContain("User message:");
     expect(result.prompt).toContain("Investigate reconnect regressions after session restore");
+    expect(result.prompt).toContain("Keep it short and specific (2-4 words).");
+    expect(result.prompt).toContain("Do not exceed 4 words.");
     expect(result.prompt).not.toContain("Attachment metadata:");
   });
 
@@ -137,12 +139,12 @@ describe("buildThreadTitlePrompt", () => {
 });
 
 describe("sanitizeThreadTitle", () => {
-  it("truncates long titles with the shared sidebar-safe limit", () => {
+  it("compresses long titles down to a four-word label", () => {
     expect(
       sanitizeThreadTitle(
         '  "Reconnect failures after restart because the session state does not recover"  ',
       ),
-    ).toBe("Reconnect failures after restart because the se...");
+    ).toBe("Reconnect failures after restart");
   });
 });
 

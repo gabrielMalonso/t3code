@@ -258,7 +258,7 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGenerationLive", (it) => {
               '  "Reconnect failures after restart because the session state does not recover"  ',
           },
         }),
-        stdinMustContain: "You write concise thread titles for coding conversations.",
+        stdinMustContain: "Do not exceed 4 words.",
       },
       Effect.gen(function* () {
         const textGeneration = yield* TextGeneration;
