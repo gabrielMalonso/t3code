@@ -7,7 +7,7 @@ import {
 import { BotIcon } from "lucide-react";
 import { memo, useLayoutEffect, useMemo, useRef } from "react";
 
-import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
+import { type ComposerTriggerKind } from "../../composer-logic";
 import { formatProviderSkillInstallSource } from "~/providerSkillPresentation";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
@@ -33,7 +33,7 @@ export type ComposerCommandItem =
   | {
       id: string;
       type: "slash-command";
-      command: ComposerSlashCommand;
+      command: string;
       label: string;
       description: string;
     }
