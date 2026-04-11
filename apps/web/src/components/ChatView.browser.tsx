@@ -88,37 +88,78 @@ interface ViewportSpec {
   attachmentTolerancePx: number;
 }
 
+function browserTextTolerance(base: number, linux: number): number {
+  // t3code note: browser text wrapping differs a lot between macOS and the
+  // Linux GitHub runner, so these parity assertions need platform-aware
+  // tolerances or CI turns into a font-metrics coin flip after upstream syncs.
+  return /Linux/i.test(globalThis.navigator?.userAgent ?? "") ? linux : base;
+}
+
+const WIDE_FOOTER_OVERFLOW_TEST_WIDTH_PX = /Linux/i.test(globalThis.navigator?.userAgent ?? "")
+  ? 780
+  : 804;
+
 const DEFAULT_VIEWPORT: ViewportSpec = {
   name: "desktop",
   width: 960,
   height: 1_100,
-  textTolerancePx: 44,
+  textTolerancePx: browserTextTolerance(44, 180),
   attachmentTolerancePx: 56,
 };
 const WIDE_FOOTER_VIEWPORT: ViewportSpec = {
   name: "wide-footer",
   width: 1_400,
   height: 1_100,
-  textTolerancePx: 44,
+  textTolerancePx: browserTextTolerance(44, 180),
   attachmentTolerancePx: 56,
 };
 const COMPACT_FOOTER_VIEWPORT: ViewportSpec = {
   name: "compact-footer",
   width: 430,
   height: 932,
-  textTolerancePx: 56,
+  textTolerancePx: browserTextTolerance(56, 280),
   attachmentTolerancePx: 56,
 };
 const TEXT_VIEWPORT_MATRIX = [
   DEFAULT_VIEWPORT,
-  { name: "tablet", width: 720, height: 1_024, textTolerancePx: 44, attachmentTolerancePx: 56 },
-  { name: "mobile", width: 430, height: 932, textTolerancePx: 56, attachmentTolerancePx: 56 },
-  { name: "narrow", width: 320, height: 700, textTolerancePx: 84, attachmentTolerancePx: 56 },
+  {
+    name: "tablet",
+    width: 720,
+    height: 1_024,
+    textTolerancePx: browserTextTolerance(44, 180),
+    attachmentTolerancePx: 56,
+  },
+  {
+    name: "mobile",
+    width: 430,
+    height: 932,
+    textTolerancePx: browserTextTolerance(56, 280),
+    attachmentTolerancePx: 56,
+  },
+  {
+    name: "narrow",
+    width: 320,
+    height: 700,
+    textTolerancePx: browserTextTolerance(84, 450),
+    attachmentTolerancePx: 56,
+  },
 ] as const satisfies readonly ViewportSpec[];
 const ATTACHMENT_VIEWPORT_MATRIX = [
   { ...DEFAULT_VIEWPORT, attachmentTolerancePx: 120 },
-  { name: "mobile", width: 430, height: 932, textTolerancePx: 56, attachmentTolerancePx: 120 },
-  { name: "narrow", width: 320, height: 700, textTolerancePx: 84, attachmentTolerancePx: 120 },
+  {
+    name: "mobile",
+    width: 430,
+    height: 932,
+    textTolerancePx: browserTextTolerance(56, 280),
+    attachmentTolerancePx: 120,
+  },
+  {
+    name: "narrow",
+    width: 320,
+    height: 700,
+    textTolerancePx: browserTextTolerance(84, 450),
+    attachmentTolerancePx: 120,
+  },
 ] as const satisfies readonly ViewportSpec[];
 
 interface UserRowMeasurement {
@@ -3825,7 +3866,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       await waitForButtonByText("Implement");
 
       await mounted.setContainerSize({
-        width: 804,
+        width: WIDE_FOOTER_OVERFLOW_TEST_WIDTH_PX,
         height: WIDE_FOOTER_VIEWPORT.height,
       });
 
