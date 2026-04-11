@@ -95,9 +95,7 @@ function browserTextTolerance(base: number, linux: number): number {
   return /Linux/i.test(globalThis.navigator?.userAgent ?? "") ? linux : base;
 }
 
-const WIDE_FOOTER_OVERFLOW_TEST_WIDTH_PX = /Linux/i.test(globalThis.navigator?.userAgent ?? "")
-  ? 720
-  : 804;
+const WIDE_FOOTER_OVERFLOW_TEST_WIDTH_PX = 720;
 
 const DEFAULT_VIEWPORT: ViewportSpec = {
   name: "desktop",
