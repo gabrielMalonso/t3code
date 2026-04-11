@@ -98,7 +98,11 @@ import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
 import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow";
 import type { ComposerFileReference } from "../../t3code-custom/file-references";
-import { useComposerCustomExtension, useComposerSkillExtension } from "../../t3code-custom/chat";
+import {
+  resolveComposerPlaceholder,
+  useComposerCustomExtension,
+  useComposerSkillExtension,
+} from "../../t3code-custom/chat";
 import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
 import { searchProviderSkills } from "../../providerSkillSearch";
 
@@ -128,17 +132,6 @@ const runtimeModeConfig: Record<
 const runtimeModeOptions = Object.keys(runtimeModeConfig) as RuntimeMode[];
 const COMPOSER_PATH_QUERY_DEBOUNCE_MS = 120;
 const EMPTY_PROJECT_ENTRIES: ProjectEntry[] = [];
-
-function buildDefaultComposerPlaceholder(provider: ProviderKind, phase: SessionPhase): string {
-  if (phase === "disconnected") {
-    return provider === "codex"
-      ? "Ask for follow-up changes, type $ to mention skills, or attach images"
-      : "Ask for follow-up changes or attach images";
-  }
-  return provider === "codex"
-    ? "Ask anything, @tag files/folders, type $ to mention skills, or use / to show available commands"
-    : "Ask anything, @tag files/folders, or use / to show available commands";
-}
 
 const extendReplacementRangeForTrailingSpace = (
   text: string,
@@ -1926,7 +1919,7 @@ export const ChatComposer = memo(
                       ? "Type your own answer, or leave this blank to use the selected option"
                       : showPlanFollowUpPrompt && activeProposedPlan
                         ? "Add feedback to refine the plan, or leave this blank to implement it"
-                        : buildDefaultComposerPlaceholder(selectedProvider, phase)
+                        : resolveComposerPlaceholder(selectedProvider, phase)
                 }
                 disabled={isConnecting || isComposerApprovalState}
               />

@@ -21,6 +21,9 @@
 - A logica custom de skill ficou reduzida ao que realmente e local: derivar `selectedSkills` para o envio do Codex
 - `ChatComposer.tsx` voltou a depender de `selectedProviderStatus.skills` e `selectedProviderStatus.slashCommands`, em vez de puxar catalogo paralelo so para UI
 - `ComposerPromptEditor.tsx` manteve o snapshot ampliado necessario para o paste custom de file references sem reabrir um fork inteiro do editor
+- A placeholder custom do composer saiu de `ChatComposer.tsx` e voltou para `t3code-custom/chat/composerPlaceholder.ts`
+- A orquestracao custom de envio do composer foi empurrada para `t3code-custom/hooks/useComposerSendExtension.ts`, reduzindo regra local espalhada em `ChatView.tsx`
+- `ComposerPromptEditor.tsx` parou de persistir estado extra de selecao no snapshot interno; a leitura ampliada agora acontece so quando precisa
 
 ## Hotspots que continuam sensiveis
 
@@ -29,7 +32,7 @@
 - `apps/web/src/components/ComposerPromptEditor.tsx`
   Qualquer mudanca de snapshot, cursor ou selection mexe direto com paste custom e chips inline
 - `apps/web/src/components/ChatView.tsx`
-  Ainda concentra ligacao entre envio, timeline e hooks custom
+  Ainda concentra ligacao entre envio, timeline e hooks custom, mas menos regra local ficou espalhada ali
 - `apps/web/src/composerDraftStore.ts`
   Permanece hotspot compartilhado para draft, imagens, terminal context e file references
 - `apps/web/src/components/chat/MessagesTimeline.tsx`
