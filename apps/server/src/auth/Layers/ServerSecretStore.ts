@@ -1,6 +1,6 @@
 import * as Crypto from "node:crypto";
 
-import { Effect, FileSystem, Layer, Path } from "effect";
+import { Effect, FileSystem, Layer, Path, Predicate } from "effect";
 import * as PlatformError from "effect/PlatformError";
 
 import { ServerConfig } from "../../config.ts";
@@ -28,17 +28,23 @@ export const makeServerSecretStore = Effect.gen(function* () {
 
   const resolveSecretPath = (name: string) => path.join(serverConfig.secretsDir, `${name}.bin`);
 
-  const isMissingSecretFileError = (cause: unknown): cause is PlatformError.PlatformError =>
-    cause instanceof PlatformError.PlatformError && cause.reason._tag === "NotFound";
+  const isPlatformError = (u: unknown): u is PlatformError.PlatformError =>
+    Predicate.isTagged(u, "PlatformError");
 
-  const isAlreadyExistsSecretFileError = (cause: unknown): cause is PlatformError.PlatformError =>
-    cause instanceof PlatformError.PlatformError && cause.reason._tag === "AlreadyExists";
+  // t3code note: we added this guard after an upstream sync regression where
+  // the error handler read `cause.reason._tag` directly. Keep this helper when
+  // updating ServerSecretStore from upstream or non-Platform errors will throw
+  // inside the fallback path and bypass SecretStoreError wrapping.
+  const hasPlatformReasonTag = (
+    cause: unknown,
+    tag: PlatformError.PlatformError["reason"]["_tag"],
+  ): cause is PlatformError.PlatformError => isPlatformError(cause) && cause.reason._tag === tag;
 
   const get: ServerSecretStoreShape["get"] = (name) =>
     fileSystem.readFile(resolveSecretPath(name)).pipe(
       Effect.map((bytes) => Uint8Array.from(bytes)),
       Effect.catch((cause) =>
-        isMissingSecretFileError(cause)
+        hasPlatformReasonTag(cause, "NotFound")
           ? Effect.succeed(null)
           : Effect.fail(
               new SecretStoreError({
@@ -108,7 +114,7 @@ export const makeServerSecretStore = Effect.gen(function* () {
         return create(name, generated).pipe(
           Effect.as(Uint8Array.from(generated)),
           Effect.catchTag("SecretStoreError", (error) =>
-            isAlreadyExistsSecretFileError(error.cause)
+            isPlatformError(error.cause) && error.cause.reason._tag === "AlreadyExists"
               ? get(name).pipe(
                   Effect.flatMap((created) =>
                     created !== null
@@ -129,7 +135,7 @@ export const makeServerSecretStore = Effect.gen(function* () {
   const remove: ServerSecretStoreShape["remove"] = (name) =>
     fileSystem.remove(resolveSecretPath(name)).pipe(
       Effect.catch((cause) =>
-        isMissingSecretFileError(cause)
+        hasPlatformReasonTag(cause, "NotFound")
           ? Effect.void
           : Effect.fail(
               new SecretStoreError({
