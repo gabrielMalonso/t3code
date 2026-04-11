@@ -51,6 +51,13 @@ interface VirtualizerSnapshot {
   }>;
 }
 
+function browserEstimateTolerance(base: number, linux: number): number {
+  // t3code note: the Linux GitHub runner wraps timeline text more aggressively
+  // than the local macOS browser harness, so this keeps CI checking the same
+  // behavior without pretending both platforms share identical font metrics.
+  return /Linux/i.test(globalThis.navigator?.userAgent ?? "") ? linux : base;
+}
+
 function MessagesTimelineBrowserHarness(
   props: Omit<
     ComponentProps<typeof MessagesTimeline>,
@@ -61,6 +68,9 @@ function MessagesTimelineBrowserHarness(
   const [expandedWorkGroups, setExpandedWorkGroups] = useState<Record<string, boolean>>(
     () => props.expandedWorkGroups,
   );
+  const [changedFilesExpandedByTurnId, setChangedFilesExpandedByTurnId] = useState<
+    Record<string, boolean>
+  >(() => props.changedFilesExpandedByTurnId);
   const handleToggleWorkGroup = useCallback(
     (groupId: string) => {
       setExpandedWorkGroups((current) => ({
@@ -68,6 +78,16 @@ function MessagesTimelineBrowserHarness(
         [groupId]: !(current[groupId] ?? false),
       }));
       props.onToggleWorkGroup(groupId);
+    },
+    [props],
+  );
+  const handleSetChangedFilesExpanded = useCallback(
+    (turnId: TurnId, expanded: boolean) => {
+      setChangedFilesExpandedByTurnId((current) => ({
+        ...current,
+        [turnId]: expanded,
+      }));
+      props.onSetChangedFilesExpanded(turnId, expanded);
     },
     [props],
   );
@@ -84,6 +104,8 @@ function MessagesTimelineBrowserHarness(
         scrollContainer={scrollContainer}
         expandedWorkGroups={expandedWorkGroups}
         onToggleWorkGroup={handleToggleWorkGroup}
+        changedFilesExpandedByTurnId={changedFilesExpandedByTurnId}
+        onSetChangedFilesExpanded={handleSetChangedFilesExpanded}
       />
     </div>
   );
@@ -168,6 +190,8 @@ function createBaseTimelineProps(input: {
     nowIso: isoAt(10_000),
     expandedWorkGroups: input.expandedWorkGroups ?? {},
     onToggleWorkGroup: () => {},
+    changedFilesExpandedByTurnId: {},
+    onSetChangedFilesExpanded: () => {},
     onOpenTurnDiff: () => {},
     revertTurnCountByUserMessageId: new Map(),
     onRevertUserMessage: () => {},
@@ -341,7 +365,7 @@ function buildStaticScenarios(): VirtualizationScenario[] {
       props: createBaseTimelineProps({
         messages: [...beforeMessages, longUserMessage, ...afterMessages],
       }),
-      maxEstimateDeltaPx: 56,
+      maxEstimateDeltaPx: browserEstimateTolerance(56, 140),
     },
     {
       name: "grouped work log row",

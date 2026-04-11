@@ -1695,6 +1695,14 @@ function createWindow(): BrowserWindow {
       );
     }
 
+    if (params.mediaType === "image") {
+      menuTemplate.push({
+        label: "Copy Image",
+        click: () => window.webContents.copyImageAt(params.x, params.y),
+      });
+      menuTemplate.push({ type: "separator" });
+    }
+
     menuTemplate.push(
       { role: "cut", enabled: params.editFlags.canCut },
       { role: "copy", enabled: params.editFlags.canCopy },
@@ -1773,6 +1781,7 @@ async function bootstrap(): Promise<void> {
     (await resolveDesktopBackendPort({
       host: DESKTOP_LOOPBACK_HOST,
       startPort: DEFAULT_DESKTOP_BACKEND_PORT,
+      requiredHosts: desktopSettings.serverExposureMode === "network-accessible" ? ["0.0.0.0"] : [],
     }));
   writeDesktopLogHeader(
     configuredBackendPort === undefined

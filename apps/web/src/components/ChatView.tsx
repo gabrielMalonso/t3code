@@ -118,7 +118,6 @@ import {
   type DraftId,
 } from "../composerDraftStore";
 import {
-  appendTerminalContextsToPrompt,
   formatTerminalContextLabel,
   type TerminalContextDraft,
   type TerminalContextSelection,
@@ -156,7 +155,7 @@ import {
   waitForStartedServerThread,
 } from "./ChatView.logic";
 import type { ComposerFileReference } from "../t3code-custom/file-references";
-import { useComposerFileReferenceSend } from "../t3code-custom/hooks";
+import { useComposerSendExtension } from "../t3code-custom/hooks";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import {
   useServerAvailableEditors,
@@ -170,6 +169,7 @@ const IMAGE_ONLY_BOOTSTRAP_PROMPT =
 const EMPTY_ACTIVITIES: OrchestrationThreadActivity[] = [];
 const EMPTY_PROPOSED_PLANS: Thread["proposedPlans"] = [];
 const EMPTY_PROVIDERS: ServerProvider[] = [];
+const EMPTY_CHANGED_FILES_EXPANDED_BY_TURN_ID: Record<string, boolean> = {};
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
 
 type ThreadPlanCatalogEntry = Pick<Thread, "id" | "proposedPlans">;
@@ -572,6 +572,7 @@ export default function ChatView(props: ChatViewProps) {
     () => scopeThreadRef(environmentId, threadId),
     [environmentId, threadId],
   );
+  const routeThreadKey = useMemo(() => scopedThreadKey(routeThreadRef), [routeThreadRef]);
   const composerDraftTarget: ScopedThreadRef | DraftId =
     routeKind === "server" ? routeThreadRef : props.draftId;
   const serverThread = useStore(
@@ -582,10 +583,17 @@ export default function ChatView(props: ChatViewProps) {
   );
   const setStoreThreadError = useStore((store) => store.setError);
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
+  const setThreadChangedFilesExpanded = useUiStateStore(
+    (store) => store.setThreadChangedFilesExpanded,
+  );
   const activeThreadLastVisitedAt = useUiStateStore((store) =>
+    routeKind === "server" ? store.threadLastVisitedAtById[routeThreadKey] : undefined,
+  );
+  const changedFilesExpandedByTurnId = useUiStateStore((store) =>
     routeKind === "server"
-      ? store.threadLastVisitedAtById[scopedThreadKey(scopeThreadRef(environmentId, threadId))]
-      : undefined,
+      ? (store.threadChangedFilesExpandedById[routeThreadKey] ??
+        EMPTY_CHANGED_FILES_EXPANDED_BY_TURN_ID)
+      : EMPTY_CHANGED_FILES_EXPANDED_BY_TURN_ID,
   );
   const settings = useSettings();
   const setStickyComposerModelSelection = useComposerDraftStore(
@@ -979,6 +987,16 @@ export default function ChatView(props: ChatViewProps) {
       });
     },
     [openOrReuseProjectDraftThread],
+  );
+
+  const handleSetChangedFilesExpanded = useCallback(
+    (turnId: TurnId, expanded: boolean) => {
+      if (routeKind !== "server") {
+        return;
+      }
+      setThreadChangedFilesExpanded(routeThreadKey, turnId, expanded);
+    },
+    [routeKind, routeThreadKey, setThreadChangedFilesExpanded],
   );
 
   useEffect(() => {
@@ -1403,7 +1421,7 @@ export default function ChatView(props: ChatViewProps) {
   const activeProjectCwd = activeProject?.cwd ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
   const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
-  const composerFileReferenceSend = useComposerFileReferenceSend({
+  const composerSendExtension = useComposerSendExtension({
     composerDraftTarget,
     workspaceRoot: activeWorkspaceRoot,
     promptRef,
@@ -2459,8 +2477,9 @@ export default function ChatView(props: ChatViewProps) {
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
-    if (isResolvingFileReferences) {
-      setThreadError(activeThread.id, "Espere as referências de arquivo terminarem de resolver.");
+    const blockedSendError = composerSendExtension.getBlockedSendError(isResolvingFileReferences);
+    if (blockedSendError) {
+      setThreadError(activeThread.id, blockedSendError);
       return;
     }
     const promptForSend = promptRef.current;
@@ -2475,7 +2494,7 @@ export default function ChatView(props: ChatViewProps) {
       fileReferenceCount: composerFileReferences.length,
       terminalContexts: composerTerminalContexts,
     });
-    const trimmedWithFileReferences = composerFileReferenceSend.appendPromptWithFileReferences(
+    const trimmedWithFileReferences = composerSendExtension.buildPlanFollowUpText(
       trimmed,
       composerFileReferences,
     );
@@ -2543,14 +2562,11 @@ export default function ChatView(props: ChatViewProps) {
     const composerImagesSnapshot = [...composerImages];
     const composerFileReferencesSnapshot = [...composerFileReferences];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
-    const promptWithFileReferences = composerFileReferenceSend.appendPromptWithFileReferences(
-      promptForSend,
-      composerFileReferencesSnapshot,
-    );
-    const messageTextForSend = appendTerminalContextsToPrompt(
-      promptWithFileReferences,
-      composerTerminalContextsSnapshot,
-    );
+    const messageTextForSend = composerSendExtension.buildMessageTextForSend({
+      prompt: promptForSend,
+      fileReferences: composerFileReferencesSnapshot,
+      terminalContexts: composerTerminalContextsSnapshot,
+    });
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
     const outgoingMessageText = formatOutgoingPrompt({
@@ -2617,7 +2633,7 @@ export default function ChatView(props: ChatViewProps) {
           firstComposerImageName = firstComposerImage.name;
         }
       }
-      const titleSeed = composerFileReferenceSend.deriveTitleSeed({
+      const titleSeed = composerSendExtension.deriveTitleSeed({
         trimmedPrompt: trimmed,
         firstImageName: firstComposerImageName,
         fileReferences: composerFileReferencesSnapshot,
@@ -2712,7 +2728,7 @@ export default function ChatView(props: ChatViewProps) {
     })().catch(async (err: unknown) => {
       if (
         !turnStartSucceeded &&
-        composerFileReferenceSend.restoreDraftAfterSendFailure({
+        composerSendExtension.restoreDraftAfterSendFailure({
           promptForSend,
           composerImagesSnapshot,
           composerFileReferencesSnapshot,
@@ -3294,6 +3310,7 @@ export default function ChatView(props: ChatViewProps) {
         <ChatHeader
           activeThreadEnvironmentId={activeThread.environmentId}
           activeThreadId={activeThread.id}
+          {...(routeKind === "draft" && draftId ? { draftId } : {})}
           activeThreadTitle={activeThread.title}
           activeProjectName={activeProject?.name}
           isGitRepo={isGitRepo}
@@ -3361,6 +3378,8 @@ export default function ChatView(props: ChatViewProps) {
                 activeThreadEnvironmentId={activeThread.environmentId}
                 expandedWorkGroups={expandedWorkGroups}
                 onToggleWorkGroup={onToggleWorkGroup}
+                changedFilesExpandedByTurnId={changedFilesExpandedByTurnId}
+                onSetChangedFilesExpanded={handleSetChangedFilesExpanded}
                 onOpenTurnDiff={onOpenTurnDiff}
                 revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
                 onRevertUserMessage={onRevertUserMessage}
