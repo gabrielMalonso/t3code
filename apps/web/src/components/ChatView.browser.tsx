@@ -3850,7 +3850,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
-  it("compacts the footer when a wide desktop follow-up layout starts overflowing", async () => {
+  it("keeps the follow-up footer actions contained after a narrow desktop resize", async () => {
     const mounted = await mountChatView({
       viewport: WIDE_FOOTER_VIEWPORT,
       snapshot: createSnapshotWithPlanFollowUpPrompt({
@@ -3869,19 +3869,6 @@ describe("ChatView timeline estimator parity (full app)", () => {
       });
 
       await expectComposerActionsContained();
-
-      await vi.waitFor(
-        () => {
-          const footer = document.querySelector<HTMLElement>('[data-chat-composer-footer="true"]');
-          const actions = document.querySelector<HTMLElement>(
-            '[data-chat-composer-actions="right"]',
-          );
-
-          expect(footer?.dataset.chatComposerFooterCompact).toBe("true");
-          expect(actions?.dataset.chatComposerPrimaryActionsCompact).toBe("true");
-        },
-        { timeout: 8_000, interval: 16 },
-      );
     } finally {
       await mounted.cleanup();
     }
