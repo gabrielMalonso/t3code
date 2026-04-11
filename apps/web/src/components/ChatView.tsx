@@ -2472,6 +2472,7 @@ export default function ChatView(props: ChatViewProps) {
     if (!sendCtx) return;
     const {
       images: composerImages,
+      selectedSkills: composerSelectedSkills,
       fileReferences: composerFileReferences,
       terminalContexts: composerTerminalContexts,
       isResolvingFileReferences,
@@ -2721,6 +2722,7 @@ export default function ChatView(props: ChatViewProps) {
           attachments: turnAttachments,
         },
         modelSelection: ctxSelectedModelSelection,
+        ...(composerSelectedSkills.length > 0 ? { skills: composerSelectedSkills } : {}),
         titleSeed: title,
         runtimeMode,
         interactionMode,

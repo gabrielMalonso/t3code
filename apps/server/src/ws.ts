@@ -1,4 +1,4 @@
-import { Cause, Effect, Layer, Queue, Ref, Schema, Stream } from "effect";
+import { Cause, Data, Effect, Layer, Queue, Ref, Schema, Stream } from "effect";
 import {
   type AuthAccessStreamEvent,
   AuthSessionId,
@@ -16,6 +16,7 @@ import {
   ProjectSearchEntriesError,
   ProjectWriteFileError,
   OrchestrationReplayEventsError,
+  type ServerProviderSkill,
   ThreadId,
   type TerminalEvent,
   WS_METHODS,
@@ -41,6 +42,7 @@ import {
   observeRpcStreamEffect,
 } from "./observability/RpcInstrumentation";
 import { ProviderRegistry } from "./provider/Services/ProviderRegistry";
+import { probeCodexDiscovery } from "./provider/codexAppServer";
 import { ServerLifecycleEvents } from "./serverLifecycleEvents";
 import { ServerRuntimeStartup } from "./serverRuntimeStartup";
 import { ServerSettingsService } from "./serverSettings";
@@ -101,6 +103,11 @@ function toAuthAccessStreamEvent(
       };
   }
 }
+
+class ProviderSkillsProbeError extends Data.TaggedError("ProviderSkillsProbeError")<{
+  readonly message: string;
+  readonly cause: unknown;
+}> {}
 
 const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
   WsRpcGroup.toLayer(
@@ -466,6 +473,55 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           .refreshStatus(cwd)
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
+      const listProviderSkills = (input: {
+        readonly provider: "codex" | "claudeAgent";
+        readonly cwd: string;
+      }) =>
+        Effect.gen(function* () {
+          if (input.provider !== "codex") {
+            return [] as ReadonlyArray<ServerProviderSkill>;
+          }
+
+          const settings = yield* serverSettings.getSettings;
+          const codexSettings = settings.providers.codex;
+          if (!codexSettings.enabled) {
+            return [] as ReadonlyArray<ServerProviderSkill>;
+          }
+
+          const discoveredSkills = yield* Effect.tryPromise({
+            try: () =>
+              probeCodexDiscovery({
+                binaryPath: codexSettings.binaryPath,
+                ...(codexSettings.homePath ? { homePath: codexSettings.homePath } : {}),
+                cwd: input.cwd,
+              }),
+            catch: (cause) =>
+              new ProviderSkillsProbeError({
+                message: `Failed to probe skills: ${String(cause)}`,
+                cause,
+              }),
+          }).pipe(
+            Effect.map((discovery) => discovery.skills),
+            Effect.catch((error) =>
+              Effect.logWarning("failed to list provider skills for workspace", {
+                provider: input.provider,
+                cwd: input.cwd,
+                error: error.message,
+              }).pipe(Effect.as([] as ReadonlyArray<ServerProviderSkill>)),
+            ),
+          );
+
+          return discoveredSkills;
+        }).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("failed to load provider skills", {
+              provider: input.provider,
+              cwd: input.cwd,
+              error: error instanceof Error ? error.message : String(error),
+            }).pipe(Effect.as([] as ReadonlyArray<ServerProviderSkill>)),
+          ),
+        );
+
       return WsRpcGroup.of({
         [ORCHESTRATION_WS_METHODS.getSnapshot]: (_input) =>
           observeRpcEffect(
@@ -560,6 +616,14 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               ),
             ),
             { "rpc.aggregate": "orchestration" },
+          ),
+        [WS_METHODS.serverListProviderSkills]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverListProviderSkills,
+            listProviderSkills(input).pipe(
+              Effect.map((skills) => ({ skills: Array.from(skills) })),
+            ),
+            { "rpc.aggregate": "server" },
           ),
         [WS_METHODS.subscribeOrchestrationDomainEvents]: (_input) =>
           observeRpcStreamEffect(

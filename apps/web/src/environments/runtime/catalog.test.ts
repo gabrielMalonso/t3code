@@ -95,9 +95,9 @@ describe("environment runtime catalog stores", () => {
   });
 
   it("does not let stale hydration overwrite records added while hydration is in flight", async () => {
-    let resolveRegistryRead: () => void = () => {
-      throw new Error("Registry read resolver was not initialized.");
-    };
+    let resolveRegistryRead:
+      | ((value: readonly PersistedSavedEnvironmentRecord[]) => void)
+      | undefined;
 
     vi.stubGlobal("window", {
       nativeApi: {
@@ -106,7 +106,7 @@ describe("environment runtime catalog stores", () => {
           setClientSettings: async () => undefined,
           getSavedEnvironmentRegistry: () =>
             new Promise<readonly PersistedSavedEnvironmentRecord[]>((resolve) => {
-              resolveRegistryRead = () => resolve([]);
+              resolveRegistryRead = resolve;
             }),
           setSavedEnvironmentRegistry: async () => undefined,
           getSavedEnvironmentSecret: async () => null,
@@ -133,7 +133,8 @@ describe("environment runtime catalog stores", () => {
 
     useSavedEnvironmentRegistryStore.getState().upsert(record);
 
-    resolveRegistryRead();
+    expect(resolveRegistryRead).toBeTypeOf("function");
+    resolveRegistryRead?.([]);
     await hydrationPromise;
 
     expect(useSavedEnvironmentRegistryStore.getState().byId[environmentId]).toEqual(record);

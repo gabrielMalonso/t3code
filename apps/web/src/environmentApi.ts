@@ -5,6 +5,9 @@ import { readEnvironmentConnection } from "./environments/runtime";
 
 export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
   return {
+    server: {
+      listProviderSkills: rpcClient.server.listProviderSkills,
+    },
     terminal: {
       open: (input) => rpcClient.terminal.open(input as never),
       write: (input) => rpcClient.terminal.write(input as never),

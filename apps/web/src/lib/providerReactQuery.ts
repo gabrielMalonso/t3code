@@ -2,6 +2,8 @@ import {
   type EnvironmentId,
   OrchestrationGetFullThreadDiffInput,
   OrchestrationGetTurnDiffInput,
+  type ProviderKind,
+  type ServerListProviderSkillsResult,
   ThreadId,
 } from "@t3tools/contracts";
 import { queryOptions } from "@tanstack/react-query";
@@ -19,6 +21,11 @@ interface CheckpointDiffQueryInput {
 
 export const providerQueryKeys = {
   all: ["providers"] as const,
+  workspaceSkills: (
+    environmentId: EnvironmentId | null,
+    provider: ProviderKind,
+    cwd: string | null,
+  ) => ["providers", "workspaceSkills", environmentId ?? null, provider, cwd] as const,
   checkpointDiff: (input: CheckpointDiffQueryInput) =>
     [
       "providers",
@@ -29,6 +36,10 @@ export const providerQueryKeys = {
       input.toTurnCount,
       input.cacheScope ?? null,
     ] as const,
+};
+
+const EMPTY_WORKSPACE_SKILLS_RESULT: ServerListProviderSkillsResult = {
+  skills: [],
 };
 
 function decodeCheckpointDiffRequest(input: CheckpointDiffQueryInput) {
@@ -127,5 +138,30 @@ export function checkpointDiffQueryOptions(input: CheckpointDiffQueryInput) {
       isCheckpointTemporarilyUnavailable(error)
         ? Math.min(5_000, 250 * 2 ** (attempt - 1))
         : Math.min(1_000, 100 * 2 ** (attempt - 1)),
+  });
+}
+
+export function workspaceProviderSkillsQueryOptions(input: {
+  environmentId: EnvironmentId | null;
+  provider: ProviderKind;
+  cwd: string | null;
+  enabled?: boolean;
+  staleTime?: number;
+}) {
+  return queryOptions({
+    queryKey: providerQueryKeys.workspaceSkills(input.environmentId, input.provider, input.cwd),
+    queryFn: async () => {
+      if (!input.environmentId || !input.cwd) {
+        throw new Error("Workspace skill discovery is unavailable.");
+      }
+      const api = ensureEnvironmentApi(input.environmentId);
+      return api.server.listProviderSkills({
+        provider: input.provider,
+        cwd: input.cwd,
+      });
+    },
+    enabled: (input.enabled ?? true) && !!input.environmentId && !!input.cwd,
+    staleTime: input.staleTime ?? 15_000,
+    placeholderData: (previous) => previous ?? EMPTY_WORKSPACE_SKILLS_RESULT,
   });
 }
