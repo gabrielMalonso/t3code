@@ -2023,7 +2023,6 @@ export const ChatComposer = memo(
 
                   {isComposerFooterCompact ? (
                     <>
-                      {customExtension.compactControls}
                       <CompactComposerControlsMenu
                         activePlan={showPlanSidebarToggle}
                         interactionMode={interactionMode}
@@ -2034,6 +2033,7 @@ export const ChatComposer = memo(
                         onTogglePlanSidebar={togglePlanSidebar}
                         onRuntimeModeChange={handleRuntimeModeChange}
                       />
+                      {customExtension.compactControls}
                     </>
                   ) : (
                     <>
@@ -2046,7 +2046,6 @@ export const ChatComposer = memo(
                           {providerTraitsPicker}
                         </>
                       ) : null}
-                      {customExtension.controls}
                       <ComposerFooterModeControls
                         interactionMode={interactionMode}
                         runtimeMode={runtimeMode}
@@ -2056,6 +2055,15 @@ export const ChatComposer = memo(
                         onRuntimeModeChange={handleRuntimeModeChange}
                         onTogglePlanSidebar={togglePlanSidebar}
                       />
+                      {customExtension.controls ? (
+                        <>
+                          <Separator
+                            orientation="vertical"
+                            className="mx-0.5 hidden h-4 sm:block"
+                          />
+                          {customExtension.controls}
+                        </>
+                      ) : null}
                     </>
                   )}
                 </div>
