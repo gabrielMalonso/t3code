@@ -31,11 +31,20 @@ export const makeServerSecretStore = Effect.gen(function* () {
   const isPlatformError = (u: unknown): u is PlatformError.PlatformError =>
     Predicate.isTagged(u, "PlatformError");
 
+  // t3code note: we added this guard after an upstream sync regression where
+  // the error handler read `cause.reason._tag` directly. Keep this helper when
+  // updating ServerSecretStore from upstream or non-Platform errors will throw
+  // inside the fallback path and bypass SecretStoreError wrapping.
+  const hasPlatformReasonTag = (
+    cause: unknown,
+    tag: PlatformError.PlatformError["reason"]["_tag"],
+  ): cause is PlatformError.PlatformError => isPlatformError(cause) && cause.reason._tag === tag;
+
   const get: ServerSecretStoreShape["get"] = (name) =>
     fileSystem.readFile(resolveSecretPath(name)).pipe(
       Effect.map((bytes) => Uint8Array.from(bytes)),
       Effect.catch((cause) =>
-        cause.reason._tag === "NotFound"
+        hasPlatformReasonTag(cause, "NotFound")
           ? Effect.succeed(null)
           : Effect.fail(
               new SecretStoreError({
@@ -126,7 +135,7 @@ export const makeServerSecretStore = Effect.gen(function* () {
   const remove: ServerSecretStoreShape["remove"] = (name) =>
     fileSystem.remove(resolveSecretPath(name)).pipe(
       Effect.catch((cause) =>
-        cause.reason._tag === "NotFound"
+        hasPlatformReasonTag(cause, "NotFound")
           ? Effect.void
           : Effect.fail(
               new SecretStoreError({
