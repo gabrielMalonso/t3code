@@ -4,9 +4,11 @@ import type {
   ModelSelection,
   ProjectEntry,
   ProviderApprovalDecision,
+  ProviderCommandEntry,
   ProviderInteractionMode,
   ProviderKind,
   RuntimeMode,
+  ServerProviderSkill,
   ScopedThreadRef,
   ServerProvider,
   ThreadId,
@@ -28,6 +30,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useDebouncedValue } from "@tanstack/react-pacer";
 import { projectSearchEntriesQueryOptions } from "~/lib/projectReactQuery";
+import { providerCommandsQueryOptions } from "~/lib/providerCommandsReactQuery";
 import {
   clampCollapsedComposerCursor,
   type ComposerTrigger,
@@ -132,6 +135,8 @@ const runtimeModeConfig: Record<
 const runtimeModeOptions = Object.keys(runtimeModeConfig) as RuntimeMode[];
 const COMPOSER_PATH_QUERY_DEBOUNCE_MS = 120;
 const EMPTY_PROJECT_ENTRIES: ProjectEntry[] = [];
+const EMPTY_PROVIDER_COMMAND_ENTRIES: ReadonlyArray<ProviderCommandEntry> = Object.freeze([]);
+const EMPTY_PROVIDER_SKILLS: ReadonlyArray<ServerProviderSkill> = Object.freeze([]);
 
 const extendReplacementRangeForTrailingSpace = (
   text: string,
@@ -651,10 +656,46 @@ export const ChatComposer = memo(
       [activeThreadActivities],
     );
 
+    const codexDiscoveryQuery = useQuery(
+      providerCommandsQueryOptions({
+        environmentId,
+        provider: selectedProvider,
+        cwd: gitCwd,
+        enabled: selectedProvider === "codex",
+      }),
+    );
+    const codexDiscoveredCommands =
+      codexDiscoveryQuery.data?.commands ?? EMPTY_PROVIDER_COMMAND_ENTRIES;
+    const codexDiscoveredSkills = useMemo<ReadonlyArray<ServerProviderSkill>>(
+      () =>
+        selectedProvider === "codex"
+          ? (codexDiscoveryQuery.data?.skills.flatMap((entry) =>
+              typeof entry.path === "string"
+                ? [
+                    {
+                      name: entry.name,
+                      path: entry.path,
+                      enabled: true,
+                      ...(entry.description ? { description: entry.description } : {}),
+                      scope: entry.source,
+                    } satisfies ServerProviderSkill,
+                  ]
+                : [],
+            ) ?? EMPTY_PROVIDER_SKILLS)
+          : EMPTY_PROVIDER_SKILLS,
+      [codexDiscoveryQuery.data?.skills, selectedProvider],
+    );
+    const availableComposerSkills = useMemo(
+      () =>
+        selectedProvider === "codex"
+          ? codexDiscoveredSkills
+          : (selectedProviderStatus?.skills ?? EMPTY_PROVIDER_SKILLS),
+      [codexDiscoveredSkills, selectedProvider, selectedProviderStatus],
+    );
     const composerSkillExtension = useComposerSkillExtension({
       selectedProvider,
       prompt,
-      availableSkills: selectedProviderStatus?.skills ?? [],
+      availableSkills: availableComposerSkills,
     });
     const collapseComposerCursor = useCallback(
       (text: string, cursorInput: number) => collapseExpandedComposerCursor(text, cursorInput),
@@ -781,28 +822,43 @@ export const ChatComposer = memo(
             description: command.description ?? command.input?.hint ?? "Run provider command",
           }),
         );
+        const codexDiscoveredCommandItems =
+          selectedProvider === "codex"
+            ? codexDiscoveredCommands.map((entry) => ({
+                id: `slash:${selectedProvider}:${entry.source}:${entry.name}`,
+                type: "slash-command" as const,
+                command: entry.name,
+                label: `/${entry.name}`,
+                description:
+                  entry.description ||
+                  (entry.source === "project" ? "Project command" : "User command"),
+              }))
+            : [];
         const query = composerTrigger.query.trim().toLowerCase();
-        const slashCommandItems = [...builtInSlashCommandItems, ...providerSlashCommandItems];
+        const slashCommandItems = [
+          ...builtInSlashCommandItems,
+          ...providerSlashCommandItems,
+          ...codexDiscoveredCommandItems,
+        ];
         if (!query) {
           return slashCommandItems;
         }
         return searchSlashCommandItems(slashCommandItems, query);
       }
       if (composerTrigger.kind === "skill") {
-        return searchProviderSkills(
-          selectedProviderStatus?.skills ?? [],
-          composerTrigger.query,
-        ).map((skill) => ({
-          id: `skill:${selectedProvider}:${skill.name}`,
-          type: "skill" as const,
-          provider: selectedProvider,
-          skill,
-          label: formatProviderSkillDisplayName(skill),
-          description:
-            skill.shortDescription ??
-            skill.description ??
-            (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
-        }));
+        return searchProviderSkills(availableComposerSkills, composerTrigger.query).map(
+          (skill) => ({
+            id: `skill:${selectedProvider}:${skill.name}`,
+            type: "skill" as const,
+            provider: selectedProvider,
+            skill,
+            label: formatProviderSkillDisplayName(skill),
+            description:
+              skill.shortDescription ??
+              skill.description ??
+              (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
+          }),
+        );
       }
       return searchableModelOptions
         .filter(({ searchSlug, searchName, searchProvider }) => {
@@ -823,6 +879,8 @@ export const ChatComposer = memo(
           description: `${providerLabel} · ${slug}`,
         }));
     }, [
+      availableComposerSkills,
+      codexDiscoveredCommands,
       composerTrigger,
       searchableModelOptions,
       selectedProvider,
@@ -891,10 +949,13 @@ export const ChatComposer = memo(
     ]);
 
     const isComposerMenuLoading =
-      composerTriggerKind === "path" &&
-      ((pathTriggerQuery.length > 0 && composerPathQueryDebouncer.state.isPending) ||
-        workspaceEntriesQuery.isLoading ||
-        workspaceEntriesQuery.isFetching);
+      (composerTriggerKind === "path" &&
+        ((pathTriggerQuery.length > 0 && composerPathQueryDebouncer.state.isPending) ||
+          workspaceEntriesQuery.isLoading ||
+          workspaceEntriesQuery.isFetching)) ||
+      ((composerTriggerKind === "skill" || composerTriggerKind === "slash-command") &&
+        selectedProvider === "codex" &&
+        (codexDiscoveryQuery.isLoading || codexDiscoveryQuery.isFetching));
     const composerMenuEmptyState = useMemo(() => {
       if (composerTriggerKind === "skill") {
         return "No skills found. Try / to browse provider commands.";
