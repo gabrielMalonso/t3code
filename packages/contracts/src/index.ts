@@ -4,7 +4,6 @@ export * from "./environment";
 export * from "./ipc";
 export * from "./terminal";
 export * from "./provider";
-export * from "./providerCommands";
 export * from "./providerRuntime";
 export * from "./model";
 export * from "./keybindings";

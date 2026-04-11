@@ -8,7 +8,6 @@ import {
   EventId,
   ProviderItemId,
   ProviderRequestKind,
-  type ProviderSkillReference,
   type ProviderUserInputAnswers,
   ThreadId,
   TurnId,
@@ -110,7 +109,6 @@ export interface CodexAppServerSendTurnInput {
   readonly threadId: ThreadId;
   readonly input?: string;
   readonly attachments?: ReadonlyArray<{ type: "image"; url: string }>;
-  readonly skills?: ReadonlyArray<ProviderSkillReference>;
   readonly model?: string;
   readonly serviceTier?: string | null;
   readonly effort?: string;
@@ -660,9 +658,7 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
     context.collabReceiverTurns.clear();
 
     const turnInput: Array<
-      | { type: "text"; text: string; text_elements: [] }
-      | { type: "image"; url: string }
-      | { type: "skill"; name: string; path: string }
+      { type: "text"; text: string; text_elements: [] } | { type: "image"; url: string }
     > = [];
     if (input.input) {
       turnInput.push({
@@ -679,15 +675,8 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
         });
       }
     }
-    for (const skill of input.skills ?? []) {
-      turnInput.push({
-        type: "skill",
-        name: skill.name,
-        path: skill.path,
-      });
-    }
     if (turnInput.length === 0) {
-      throw new Error("Turn input must include text, attachments, or skills.");
+      throw new Error("Turn input must include text or attachments.");
     }
 
     const providerThreadId = readResumeThreadId({
@@ -701,9 +690,7 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
     const turnStartParams: {
       threadId: string;
       input: Array<
-        | { type: "text"; text: string; text_elements: [] }
-        | { type: "image"; url: string }
-        | { type: "skill"; name: string; path: string }
+        { type: "text"; text: string; text_elements: [] } | { type: "image"; url: string }
       >;
       model?: string;
       serviceTier?: string | null;

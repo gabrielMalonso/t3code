@@ -12,13 +12,11 @@
 - `t3code-custom/file-references`: referencia de arquivos por path, colagem e envio
 - `t3code-custom/chat/ThreadLoop*`: controles e comportamento de thread loop
 - `t3code-custom/hooks/useComposerFileReferenceSend.ts`: serializacao custom no envio
-- `t3code-custom/chat/useComposerSkillExtension.ts`: mapeia skills do Codex selecionadas no prompt para `{ name, path }` no send
 
 ## Refatoracoes feitas para sair da frente do upstream
 
 - O composer agora usa o fluxo nativo do upstream para chips e busca de skills/slash commands
 - Removido `apps/web/src/components/composerInlineTextNodes.ts`, que virou duplicacao da infraestrutura nova do upstream
-- A logica custom de skill ficou reduzida ao que realmente e local: derivar `selectedSkills` para o envio do Codex
 - `ChatComposer.tsx` voltou a depender de `selectedProviderStatus.skills` e `selectedProviderStatus.slashCommands`, em vez de puxar catalogo paralelo so para UI
 - `ComposerPromptEditor.tsx` manteve o snapshot ampliado necessario para o paste custom de file references sem reabrir um fork inteiro do editor
 - A placeholder custom do composer saiu de `ChatComposer.tsx` e voltou para `t3code-custom/chat/composerPlaceholder.ts`
