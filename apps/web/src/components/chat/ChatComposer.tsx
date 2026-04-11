@@ -110,6 +110,11 @@ import { formatProviderSkillDisplayName } from "../../providerSkillPresentation"
 import { searchProviderSkills } from "../../providerSkillSearch";
 
 const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB`;
+// t3code note: the trailing Loop control is local custom UI, so the upstream
+// footer budget needs this tiny allowance during plan follow-up layouts.
+// Recheck this when syncing ChatComposer from upstream so the 804px overflow
+// case keeps compacting without collapsing the wider layouts too early.
+const PLAN_FOLLOW_UP_CUSTOM_FOOTER_ALLOWANCE_PX = 8;
 
 const runtimeModeConfig: Record<
   RuntimeMode,
@@ -1209,12 +1214,19 @@ export const ChatComposer = memo(
       const measureComposerFormWidth = () => composerForm.clientWidth;
       const measureFooterCompactness = () => {
         const composerFormWidth = measureComposerFormWidth();
-        const footerCompact = shouldUseCompactComposerFooter(composerFormWidth, {
+        // Sync reminder: this budget tweak exists only because Loop is appended
+        // after the upstream controls in the non-custom composer footer.
+        const composerFooterBudgetWidth = Math.max(
+          0,
+          composerFormWidth -
+            (showPlanFollowUpPrompt ? PLAN_FOLLOW_UP_CUSTOM_FOOTER_ALLOWANCE_PX : 0),
+        );
+        const footerCompact = shouldUseCompactComposerFooter(composerFooterBudgetWidth, {
           hasWideActions: composerFooterHasWideActions,
         });
         const primaryActionsCompact =
           footerCompact &&
-          shouldUseCompactComposerPrimaryActions(composerFormWidth, {
+          shouldUseCompactComposerPrimaryActions(composerFooterBudgetWidth, {
             hasWideActions: composerFooterHasWideActions,
           });
         return {
@@ -1258,6 +1270,7 @@ export const ChatComposer = memo(
       composerFooterActionLayoutKey,
       composerFooterHasWideActions,
       scheduleStickToBottom,
+      showPlanFollowUpPrompt,
       shouldAutoScrollRef,
     ]);
 
@@ -1491,7 +1504,6 @@ export const ChatComposer = memo(
       setThreadError,
       focusComposer,
     });
-
     const resolveActiveComposerTrigger = useCallback((): {
       snapshot: { value: string; cursor: number; expandedCursor: number };
       trigger: ComposerTrigger | null;
