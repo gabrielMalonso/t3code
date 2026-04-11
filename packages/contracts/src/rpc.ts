@@ -54,11 +54,6 @@ import {
   ProjectWriteFileResult,
 } from "./project";
 import {
-  ProviderCommandsListError,
-  ProviderCommandsListInput,
-  ProviderCommandsListResult,
-} from "./providerCommands";
-import {
   TerminalClearInput,
   TerminalCloseInput,
   TerminalError,
@@ -85,7 +80,6 @@ export const WS_METHODS = {
   projectsAdd: "projects.add",
   projectsRemove: "projects.remove",
   projectsSearchEntries: "projects.searchEntries",
-  projectsListProviderCommands: "projects.listProviderCommands",
   projectsWriteFile: "projects.writeFile",
 
   // Shell methods
@@ -161,12 +155,6 @@ export const WsProjectsSearchEntriesRpc = Rpc.make(WS_METHODS.projectsSearchEntr
   payload: ProjectSearchEntriesInput,
   success: ProjectSearchEntriesResult,
   error: ProjectSearchEntriesError,
-});
-
-export const WsProjectsListProviderCommandsRpc = Rpc.make(WS_METHODS.projectsListProviderCommands, {
-  payload: ProviderCommandsListInput,
-  success: ProviderCommandsListResult,
-  error: ProviderCommandsListError,
 });
 
 export const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {
@@ -361,7 +349,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
   WsProjectsSearchEntriesRpc,
-  WsProjectsListProviderCommandsRpc,
   WsProjectsWriteFileRpc,
   WsShellOpenInEditorRpc,
   WsSubscribeGitStatusRpc,

@@ -13,7 +13,6 @@ import {
   OrchestrationGetSnapshotError,
   OrchestrationGetTurnDiffError,
   ORCHESTRATION_WS_METHODS,
-  ProviderCommandsListError,
   ProjectSearchEntriesError,
   ProjectWriteFileError,
   OrchestrationReplayEventsError,
@@ -48,8 +47,7 @@ import { ServerSettingsService } from "./serverSettings";
 import { TerminalManager } from "./terminal/Services/Manager";
 import { WorkspaceEntries } from "./workspace/Services/WorkspaceEntries";
 import { WorkspaceFileSystem } from "./workspace/Services/WorkspaceFileSystem";
-import { WorkspacePathOutsideRootError, WorkspacePaths } from "./workspace/Services/WorkspacePaths";
-import { listProviderCommands } from "./workspace/providerCommandsDiscovery";
+import { WorkspacePathOutsideRootError } from "./workspace/Services/WorkspacePaths";
 import { ProjectSetupScriptRunner } from "./project/Services/ProjectSetupScriptRunner";
 import { RepositoryIdentityResolver } from "./project/Services/RepositoryIdentityResolver";
 import { ServerEnvironment } from "./environment/Services/ServerEnvironment";
@@ -123,7 +121,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const startup = yield* ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem;
-      const workspacePaths = yield* WorkspacePaths;
       const projectSetupScriptRunner = yield* ProjectSetupScriptRunner;
       const repositoryIdentityResolver = yield* RepositoryIdentityResolver;
       const serverEnvironment = yield* ServerEnvironment;
@@ -662,28 +659,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 (cause) =>
                   new ProjectSearchEntriesError({
                     message: `Failed to search workspace entries: ${cause.detail}`,
-                    cause,
-                  }),
-              ),
-            ),
-            { "rpc.aggregate": "workspace" },
-          ),
-        [WS_METHODS.projectsListProviderCommands]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.projectsListProviderCommands,
-            Effect.gen(function* () {
-              const normalizedCwd = input.cwd
-                ? yield* workspacePaths.normalizeWorkspaceRoot(input.cwd)
-                : undefined;
-              return yield* listProviderCommands({
-                provider: input.provider,
-                ...(normalizedCwd ? { cwd: normalizedCwd } : {}),
-              });
-            }).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new ProviderCommandsListError({
-                    message: `Failed to discover provider commands: ${cause.message}`,
                     cause,
                   }),
               ),

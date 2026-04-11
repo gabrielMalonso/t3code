@@ -1,6 +1,5 @@
 import { Schema } from "effect";
 import { TrimmedNonEmptyString } from "./baseSchemas";
-import { ProviderSkillReference } from "./providerCommands";
 import {
   ApprovalRequestId,
   EventId,
@@ -67,7 +66,6 @@ export const ProviderSendTurnInput = Schema.Struct({
   attachments: Schema.optional(
     Schema.Array(ChatAttachment).check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS)),
   ),
-  skills: Schema.optional(Schema.Array(ProviderSkillReference)),
   modelSelection: Schema.optional(ModelSelection),
   interactionMode: Schema.optional(ProviderInteractionMode),
 });

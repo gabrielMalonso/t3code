@@ -236,28 +236,6 @@ it.effect("accepts bootstrap metadata in thread.turn.start", () =>
   }),
 );
 
-it.effect("accepts structured skills in thread.turn.start", () =>
-  Effect.gen(function* () {
-    const parsed = yield* decodeThreadTurnStartCommand({
-      type: "thread.turn.start",
-      commandId: "cmd-turn-skills",
-      threadId: "thread-1",
-      message: {
-        messageId: "msg-skills",
-        role: "user",
-        text: "Use the review skill",
-        attachments: [],
-      },
-      skills: [{ name: "review", path: "/Users/example/.codex/skills/review" }],
-      createdAt: "2026-01-01T00:00:00.000Z",
-    });
-
-    assert.deepStrictEqual(parsed.skills, [
-      { name: "review", path: "/Users/example/.codex/skills/review" },
-    ]);
-  }),
-);
-
 it.effect("decodes thread.created runtime mode for historical events", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeThreadCreatedPayload({

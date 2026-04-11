@@ -24,7 +24,6 @@ import type {
   ProjectWriteFileInput,
   ProjectWriteFileResult,
 } from "./project";
-import type { ProviderCommandsListInput, ProviderCommandsListResult } from "./providerCommands";
 import type {
   ServerConfig,
   ServerProviderUpdatedPayload,
@@ -231,7 +230,6 @@ export interface EnvironmentApi {
   };
   projects: {
     searchEntries: (input: ProjectSearchEntriesInput) => Promise<ProjectSearchEntriesResult>;
-    listProviderCommands: (input: ProviderCommandsListInput) => Promise<ProviderCommandsListResult>;
     writeFile: (input: ProjectWriteFileInput) => Promise<ProjectWriteFileResult>;
   };
   git: {
