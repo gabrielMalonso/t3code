@@ -1972,6 +1972,7 @@ export const ChatComposer = memo(
                 onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
                 onChange={onPromptChange}
                 onCommandKeyDown={onComposerCommandKey}
+                onPasteCapture={customExtension.onComposerPaste}
                 onPaste={customExtension.onComposerPaste}
                 placeholder={
                   isComposerApprovalState
