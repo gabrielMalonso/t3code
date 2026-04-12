@@ -644,7 +644,7 @@ describe("sendTurn", () => {
       manager.sendTurn({
         threadId: asThreadId("thread_1"),
       }),
-    ).rejects.toThrow("Turn input must include text or attachments.");
+    ).rejects.toThrow("Turn input must include text, attachments, or skills.");
   });
 });
 
