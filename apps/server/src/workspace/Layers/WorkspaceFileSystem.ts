@@ -37,8 +37,12 @@ export const makeWorkspaceFileSystem = Effect.gen(function* () {
 
   const ensureWorkspaceInternalGitIgnore = Effect.fn(
     "WorkspaceFileSystem.ensureWorkspaceInternalGitIgnore",
-  )(function* (input: { cwd: string; relativePath: string }) {
-    if (!isInsideWorkspaceInternalDirectory(input.relativePath)) {
+  )(function* (input: {
+    cwd: string;
+    normalizedRelativePath: string;
+    originalRelativePath: string;
+  }) {
+    if (!isInsideWorkspaceInternalDirectory(input.normalizedRelativePath)) {
       return;
     }
 
@@ -57,14 +61,20 @@ export const makeWorkspaceFileSystem = Effect.gen(function* () {
       .makeDirectory(path.dirname(gitIgnoreTarget.absolutePath), { recursive: true })
       .pipe(
         Effect.mapError(
-          toWorkspaceFileSystemError(input, "workspaceFileSystem.makeDirectory.gitignore"),
+          toWorkspaceFileSystemError(
+            { cwd: input.cwd, relativePath: input.originalRelativePath },
+            "workspaceFileSystem.makeDirectory.gitignore",
+          ),
         ),
       );
     yield* fileSystem
       .writeFileString(gitIgnoreTarget.absolutePath, WORKSPACE_INTERNAL_GITIGNORE_CONTENTS)
       .pipe(
         Effect.mapError(
-          toWorkspaceFileSystemError(input, "workspaceFileSystem.writeFile.gitignore"),
+          toWorkspaceFileSystemError(
+            { cwd: input.cwd, relativePath: input.originalRelativePath },
+            "workspaceFileSystem.writeFile.gitignore",
+          ),
         ),
       );
   });
@@ -77,7 +87,11 @@ export const makeWorkspaceFileSystem = Effect.gen(function* () {
       relativePath: input.relativePath,
     });
 
-    yield* ensureWorkspaceInternalGitIgnore(input);
+    yield* ensureWorkspaceInternalGitIgnore({
+      cwd: input.cwd,
+      normalizedRelativePath: target.relativePath,
+      originalRelativePath: input.relativePath,
+    });
     yield* fileSystem
       .makeDirectory(path.dirname(target.absolutePath), { recursive: true })
       .pipe(
