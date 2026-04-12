@@ -19,6 +19,7 @@ import {
 } from "react";
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { type TerminalContextSelection } from "~/lib/terminalContext";
+import { readT3codeTerminalFontFamily } from "../t3code-custom/terminal";
 import { openInPreferredEditor } from "../editorPreferences";
 import {
   collectWrappedTerminalLinkLine,
@@ -90,20 +91,6 @@ function normalizeComputedColor(value: string | null | undefined, fallback: stri
     return fallback;
   }
   return value ?? fallback;
-}
-
-function readTerminalFontFamily(): string {
-  if (typeof window === "undefined") {
-    return '"JetBrainsMono Nerd Font", "JetBrains Mono", "SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace';
-  }
-
-  const configuredFontFamily = getComputedStyle(document.documentElement)
-    .getPropertyValue("--terminal-font-family")
-    .trim();
-
-  return configuredFontFamily.length > 0
-    ? configuredFontFamily
-    : '"JetBrainsMono Nerd Font", "JetBrains Mono", "SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace';
 }
 
 function terminalThemeFromApp(mountElement?: HTMLElement | null): ITheme {
@@ -317,7 +304,7 @@ export function TerminalViewport({
       lineHeight: 1.2,
       fontSize: 12,
       scrollback: 5_000,
-      fontFamily: readTerminalFontFamily(),
+      fontFamily: readT3codeTerminalFontFamily(),
       theme: terminalThemeFromApp(mount),
     });
     terminal.loadAddon(fitAddon);

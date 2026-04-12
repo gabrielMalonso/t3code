@@ -69,6 +69,7 @@
 :root {
   color-scheme: light;
   --radius: 0.625rem;
+  /* t3code-custom typography boundary: terminal and code blocks share the fork mono stack. */
   --terminal-font-family:
     "JetBrainsMono Nerd Font", "JetBrains Mono", "SF Mono", "SFMono-Regular", Consolas,
     "Liberation Mono", Menlo, monospace;

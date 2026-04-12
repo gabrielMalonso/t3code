@@ -6,12 +6,15 @@
 - Branch de trabalho: `main`
 - Upstream integrado nesta wave: `5467d11980e2b41e4cf5c8d1c5fe972532da3a74` (`upstream/main`)
 - Estado: merge aplicado e validado localmente com `thread loop` e `file references` preservados
+- Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
 ## Features locais vivas
 
 - `t3code-custom/file-references`: referencia de arquivos por path, colagem e envio
 - `t3code-custom/chat/ThreadLoop*`: controles e comportamento de thread loop
 - `t3code-custom/hooks/useComposerFileReferenceSend.ts`: serializacao custom no envio
+- `apps/server/src/t3code-custom/workspace/internalArtifacts.ts`: artefatos internos de workspace, como `.t3code/.gitignore`
+- `apps/web/src/t3code-custom/terminal/fontFamily.ts`: policy local da fonte monoespacada no terminal e blocos de codigo
 
 ## Refatoracoes feitas para sair da frente do upstream
 
@@ -38,6 +41,7 @@
 
 ## Regra pratica para o proximo sync
 
+- Ler `.context/customizations.md` antes de abrir diff sensivel do fork
 - Se a mudanca for UX de skill/slash command, tentar absorver do upstream primeiro
 - Se a mudanca for regra de negocio local, empurrar para `t3code-custom/*`
 - Se precisar tocar `ChatComposer` ou `ComposerPromptEditor`, fazer o minimo e deixar a adaptacao visivel

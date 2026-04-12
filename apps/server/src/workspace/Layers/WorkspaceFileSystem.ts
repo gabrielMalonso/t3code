@@ -1,5 +1,6 @@
 import { Effect, FileSystem, Layer, Path } from "effect";
 
+import { ensureT3codeWorkspaceInternalArtifacts } from "../../t3code-custom/workspace/internalArtifacts.ts";
 import {
   WorkspaceFileSystem,
   WorkspaceFileSystemError,
@@ -7,17 +8,6 @@ import {
 } from "../Services/WorkspaceFileSystem.ts";
 import { WorkspaceEntries } from "../Services/WorkspaceEntries.ts";
 import { WorkspacePaths } from "../Services/WorkspacePaths.ts";
-
-const WORKSPACE_INTERNAL_DIRECTORY = ".t3code";
-const WORKSPACE_INTERNAL_GITIGNORE_RELATIVE_PATH = `${WORKSPACE_INTERNAL_DIRECTORY}/.gitignore`;
-const WORKSPACE_INTERNAL_GITIGNORE_CONTENTS = "*\n";
-
-function isInsideWorkspaceInternalDirectory(relativePath: string): boolean {
-  return (
-    relativePath === WORKSPACE_INTERNAL_DIRECTORY ||
-    relativePath.startsWith(`${WORKSPACE_INTERNAL_DIRECTORY}/`)
-  );
-}
 
 export const makeWorkspaceFileSystem = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
@@ -35,50 +25,6 @@ export const makeWorkspaceFileSystem = Effect.gen(function* () {
         cause,
       });
 
-  const ensureWorkspaceInternalGitIgnore = Effect.fn(
-    "WorkspaceFileSystem.ensureWorkspaceInternalGitIgnore",
-  )(function* (input: {
-    cwd: string;
-    normalizedRelativePath: string;
-    originalRelativePath: string;
-  }) {
-    if (!isInsideWorkspaceInternalDirectory(input.normalizedRelativePath)) {
-      return;
-    }
-
-    const gitIgnoreTarget = yield* workspacePaths.resolveRelativePathWithinRoot({
-      workspaceRoot: input.cwd,
-      relativePath: WORKSPACE_INTERNAL_GITIGNORE_RELATIVE_PATH,
-    });
-    const existingGitIgnore = yield* fileSystem
-      .stat(gitIgnoreTarget.absolutePath)
-      .pipe(Effect.catch(() => Effect.succeed(null)));
-    if (existingGitIgnore) {
-      return;
-    }
-
-    yield* fileSystem
-      .makeDirectory(path.dirname(gitIgnoreTarget.absolutePath), { recursive: true })
-      .pipe(
-        Effect.mapError(
-          toWorkspaceFileSystemError(
-            { cwd: input.cwd, relativePath: input.originalRelativePath },
-            "workspaceFileSystem.makeDirectory.gitignore",
-          ),
-        ),
-      );
-    yield* fileSystem
-      .writeFileString(gitIgnoreTarget.absolutePath, WORKSPACE_INTERNAL_GITIGNORE_CONTENTS)
-      .pipe(
-        Effect.mapError(
-          toWorkspaceFileSystemError(
-            { cwd: input.cwd, relativePath: input.originalRelativePath },
-            "workspaceFileSystem.writeFile.gitignore",
-          ),
-        ),
-      );
-  });
-
   const writeFile: WorkspaceFileSystemShape["writeFile"] = Effect.fn(
     "WorkspaceFileSystem.writeFile",
   )(function* (input) {
@@ -87,10 +33,34 @@ export const makeWorkspaceFileSystem = Effect.gen(function* () {
       relativePath: input.relativePath,
     });
 
-    yield* ensureWorkspaceInternalGitIgnore({
+    // t3code-custom workspace boundary: keep fork-specific internal artifacts
+    // behind a helper so upstream syncs only touch this call site.
+    yield* ensureT3codeWorkspaceInternalArtifacts({
       cwd: input.cwd,
       normalizedRelativePath: target.relativePath,
-      originalRelativePath: input.relativePath,
+      resolveRelativePathWithinRoot: workspacePaths.resolveRelativePathWithinRoot,
+      doesPathExist: (absolutePath) =>
+        fileSystem.stat(absolutePath).pipe(
+          Effect.map(() => true),
+          Effect.catch(() => Effect.succeed(false)),
+        ),
+      makeDirectory: (absoluteDirectoryPath) =>
+        fileSystem
+          .makeDirectory(absoluteDirectoryPath, { recursive: true })
+          .pipe(
+            Effect.mapError(
+              toWorkspaceFileSystemError(input, "workspaceFileSystem.makeDirectory.gitignore"),
+            ),
+          ),
+      writeFileString: (absolutePath, contents) =>
+        fileSystem
+          .writeFileString(absolutePath, contents)
+          .pipe(
+            Effect.mapError(
+              toWorkspaceFileSystemError(input, "workspaceFileSystem.writeFile.gitignore"),
+            ),
+          ),
+      dirname: path.dirname,
     });
     yield* fileSystem
       .makeDirectory(path.dirname(target.absolutePath), { recursive: true })
