@@ -86,10 +86,61 @@ it.layer(TestLayer)("WorkspaceFileSystemLive", (it) => {
         const saved = yield* fileSystem
           .readFileString(path.join(cwd, ".t3code/pastes/paste-20260409-132455-abcd1234.txt"))
           .pipe(Effect.orDie);
+        const gitIgnore = yield* fileSystem
+          .readFileString(path.join(cwd, ".t3code/.gitignore"))
+          .pipe(Effect.orDie);
 
         expect(result).toEqual({
           relativePath: ".t3code/pastes/paste-20260409-132455-abcd1234.txt",
         });
+        expect(saved).toBe("logs\n");
+        expect(gitIgnore).toBe("*\n");
+      }),
+    );
+
+    it.effect("preserves an existing .t3code/.gitignore when saving paste references", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+
+        yield* writeTextFile(cwd, ".t3code/.gitignore", "*.cache\n");
+        yield* workspaceFileSystem.writeFile({
+          cwd,
+          relativePath: ".t3code/pastes/paste-20260409-132455-abcd1234.txt",
+          contents: "logs\n",
+        });
+
+        const gitIgnore = yield* fileSystem
+          .readFileString(path.join(cwd, ".t3code/.gitignore"))
+          .pipe(Effect.orDie);
+
+        expect(gitIgnore).toBe("*.cache\n");
+      }),
+    );
+
+    it.effect("creates .t3code/.gitignore for dot-prefixed internal paths", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+
+        yield* workspaceFileSystem.writeFile({
+          cwd,
+          relativePath: "./.t3code/pastes/paste-20260409-132455-abcd1234.txt",
+          contents: "logs\n",
+        });
+
+        const gitIgnore = yield* fileSystem
+          .readFileString(path.join(cwd, ".t3code/.gitignore"))
+          .pipe(Effect.orDie);
+        const saved = yield* fileSystem
+          .readFileString(path.join(cwd, ".t3code/pastes/paste-20260409-132455-abcd1234.txt"))
+          .pipe(Effect.orDie);
+
+        expect(gitIgnore).toBe("*\n");
         expect(saved).toBe("logs\n");
       }),
     );

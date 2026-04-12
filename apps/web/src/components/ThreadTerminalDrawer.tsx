@@ -92,6 +92,20 @@ function normalizeComputedColor(value: string | null | undefined, fallback: stri
   return value ?? fallback;
 }
 
+function readTerminalFontFamily(): string {
+  if (typeof window === "undefined") {
+    return '"JetBrainsMono Nerd Font", "JetBrains Mono", "SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace';
+  }
+
+  const configuredFontFamily = getComputedStyle(document.documentElement)
+    .getPropertyValue("--terminal-font-family")
+    .trim();
+
+  return configuredFontFamily.length > 0
+    ? configuredFontFamily
+    : '"JetBrainsMono Nerd Font", "JetBrains Mono", "SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace';
+}
+
 function terminalThemeFromApp(mountElement?: HTMLElement | null): ITheme {
   const isDark = document.documentElement.classList.contains("dark");
   const fallbackBackground = isDark ? "rgb(14, 18, 24)" : "rgb(255, 255, 255)";
@@ -303,7 +317,7 @@ export function TerminalViewport({
       lineHeight: 1.2,
       fontSize: 12,
       scrollback: 5_000,
-      fontFamily: '"SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
+      fontFamily: readTerminalFontFamily(),
       theme: terminalThemeFromApp(mount),
     });
     terminal.loadAddon(fitAddon);
