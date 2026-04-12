@@ -2,6 +2,9 @@
 
 Tudo que diferencia este app da upstream deve morar aqui.
 
+Antes de qualquer sync com `upstream/main`, consulte `.context/customizations.md`.
+Esse inventario registra o que continua custom vivo, onde cada feature encosta no core e qual regra usar para resolver conflito sem cimentar vazamento.
+
 Regras:
 
 - Evite editar componentes core para lógica custom.
@@ -14,6 +17,7 @@ Estrutura:
 - `chat/`: slots e componentes visuais de customização do chat.
 - `file-references/`: parser, serialização, copy e regras da feature de referência por path.
 - `hooks/`: hooks específicos do fork, incluindo orquestração de comportamento custom do composer.
+- `terminal/`: policy visual local do terminal quando o core só precisa consumir um helper pequeno.
 
 Convenções:
 
