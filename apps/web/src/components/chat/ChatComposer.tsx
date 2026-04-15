@@ -99,9 +99,7 @@ import type { PendingApproval, PendingUserInput } from "../../session-logic";
 import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow";
 import type { ComposerFileReference } from "../../t3code-custom/file-references";
 import { resolveComposerPlaceholder, useComposerCustomExtension } from "../../t3code-custom/chat";
-import { useComposerProviderSkills } from "../../t3code-custom/hooks";
-import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
-import { searchProviderSkills } from "../../providerSkillSearch";
+import { buildComposerSkillMenuItems, useComposerProviderSkills } from "../../t3code-custom/hooks";
 
 const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB`;
 // t3code note: the trailing Loop control is local custom UI, so the upstream
@@ -797,19 +795,11 @@ export const ChatComposer = memo(
         return searchSlashCommandItems(slashCommandItems, query);
       }
       if (composerTrigger.kind === "skill") {
-        return searchProviderSkills(availableProviderSkills, composerTrigger.query).map(
-          (skill) => ({
-            id: `skill:${selectedProvider}:${skill.name}`,
-            type: "skill" as const,
-            provider: selectedProvider,
-            skill,
-            label: formatProviderSkillDisplayName(skill),
-            description:
-              skill.shortDescription ??
-              skill.description ??
-              (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
-          }),
-        );
+        return buildComposerSkillMenuItems({
+          provider: selectedProvider,
+          skills: availableProviderSkills,
+          query: composerTrigger.query,
+        });
       }
       return searchableModelOptions
         .filter(({ searchSlug, searchName, searchProvider }) => {

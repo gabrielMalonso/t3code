@@ -20,7 +20,6 @@ import {
   CheckIcon,
   CircleAlertIcon,
   EyeIcon,
-  FileTextIcon,
   GlobeIcon,
   HammerIcon,
   type LucideIcon,
@@ -59,10 +58,8 @@ import {
   textContainsInlineTerminalContextLabels,
 } from "./userMessageTerminalContexts";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
-import {
-  deriveDisplayedUserMessageStateWithCustomContent,
-  fileReferenceCopy,
-} from "../../t3code-custom/file-references";
+import { deriveDisplayedUserMessageStateWithCustomContent } from "../../t3code-custom/file-references";
+import { UserMessageFileReferencesSlot } from "../../t3code-custom/chat";
 
 // ---------------------------------------------------------------------------
 // Context — shared state consumed by every row component via useContext.
@@ -349,33 +346,7 @@ function TimelineRowContent({ row }: { row: TimelineRow }) {
                     )}
                   </div>
                 )}
-                {fileReferences.length > 0 && (
-                  <div className="mb-2 flex flex-wrap gap-2">
-                    {fileReferences.map((reference) => (
-                      <div
-                        key={`${reference.scope}:${reference.path}`}
-                        className="flex max-w-[420px] min-w-0 items-center gap-2 rounded-lg border border-border/80 bg-background/70 px-2.5 py-2"
-                      >
-                        <FileTextIcon className="size-4 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="truncate text-xs font-medium text-foreground">
-                              {reference.label}
-                            </span>
-                            <span className="rounded bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                              {reference.scope === "workspace"
-                                ? fileReferenceCopy.chip.workspaceBadge
-                                : fileReferenceCopy.chip.externalBadge}
-                            </span>
-                          </div>
-                          <p className="truncate text-[11px] text-muted-foreground/80">
-                            {reference.path}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <UserMessageFileReferencesSlot references={fileReferences} />
                 {(displayedUserMessage.visibleText.trim().length > 0 ||
                   terminalContexts.length > 0) && (
                   <UserMessageBody
