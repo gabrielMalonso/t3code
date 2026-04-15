@@ -394,6 +394,7 @@ export interface ChatComposerProps {
   activeProposedPlan: Thread["proposedPlans"][number] | null;
   activePlan: { turnId?: TurnId } | null;
   sidebarProposedPlan: { turnId?: TurnId } | null;
+  planSidebarLabel: string;
   planSidebarOpen: boolean;
 
   // Mode
@@ -491,6 +492,7 @@ export const ChatComposer = memo(
       activeProposedPlan,
       activePlan,
       sidebarProposedPlan,
+      planSidebarLabel,
       planSidebarOpen,
       runtimeMode,
       interactionMode,
@@ -1980,6 +1982,7 @@ export const ChatComposer = memo(
                       <CompactComposerControlsMenu
                         activePlan={showPlanSidebarToggle}
                         interactionMode={interactionMode}
+                        planSidebarLabel={planSidebarLabel}
                         planSidebarOpen={planSidebarOpen}
                         runtimeMode={runtimeMode}
                         traitsMenuContent={providerTraitsMenuContent}
