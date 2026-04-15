@@ -56,3 +56,25 @@
 - `MessagesTimeline.tsx` continuou respeitando o parser custom de `file references`; a mudanca do upstream entrou por cima sem derrubar o boundary local de sentinelas
 - `thread loop` continuou intacto no estado da thread: os campos `loop` no shell/store seguem vivos e os eventos `thread.loop-upserted` e `thread.loop-deleted` foram preservados
 - A principal reducao de atrito desta wave foi aceitar o `threadDerivation.ts` do upstream em vez de manter derivacao duplicada dentro de `store.ts`
+
+## 2026-04-15 — Sync ate `5e1dd56d`
+
+- Branch de sync: `sync/upstream-2026-04-15`
+- Upstream integrado: `5e1dd56d` (`upstream/main`)
+- Regra dominante nesta wave: aceitar o fluxo novo do upstream e reaplicar so o diferencial local pequeno, principalmente no composer e na timeline
+- `ChatComposer.tsx` ficou mais perto do upstream: a descoberta de skills do workspace e a serializacao de `$skill` continuam vivas, mas atras de `t3code-custom/hooks/useComposerProviderSkills.ts`
+- `ChatView.tsx` continuou usando o send extension local para `file references` e skills do workspace, sem reabrir um fork maior do fluxo de envio
+- `MessagesTimeline.tsx` preservou o parser custom de `file references`, mas o resto do comportamento continuou colado na estrutura atual do upstream
+- `apps/desktop/src/preload.ts`, `packages/contracts/src/ipc.ts` e `apps/server/src/ws.ts` absorveram as novas capacidades do upstream sem perder o helper local `getPathForFile`
+- `apps/server/src/persistence/Migrations.ts` preservou a migracao local `023_ProjectionThreadLoops`; as migracoes novas do upstream para shell summary/backfill foram empurradas para frente para nao corromper bancos do fork que ja conhecem o `023`
+- O que foi absorvido do upstream:
+  - filesystem browse API
+  - shell/thread snapshot streaming
+  - updates do desktop/nightly branding e titlebar
+  - command palette, sidebar, markdown e runtime plumbing
+- O que continuou como diferencial local:
+  - `thread loop`
+  - `file references` por path
+  - skill discovery por workspace para turnos do Codex
+  - artefatos internos `.t3code`
+  - policy local da fonte mono

@@ -3,6 +3,8 @@ import type { EnvironmentId, EnvironmentApi } from "@t3tools/contracts";
 import type { WsRpcClient } from "./rpc/wsRpcClient";
 import { readEnvironmentConnection } from "./environments/runtime";
 
+const environmentApiOverridesForTests = new Map<EnvironmentId, EnvironmentApi>();
+
 export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
   return {
     server: {
@@ -21,6 +23,9 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       searchEntries: rpcClient.projects.searchEntries,
       writeFile: rpcClient.projects.writeFile,
     },
+    filesystem: {
+      browse: rpcClient.filesystem.browse,
+    },
     git: {
       pull: rpcClient.git.pull,
       refreshStatus: rpcClient.git.refreshStatus,
@@ -35,16 +40,13 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       preparePullRequestThread: rpcClient.git.preparePullRequestThread,
     },
     orchestration: {
-      getSnapshot: rpcClient.orchestration.getSnapshot,
       dispatchCommand: rpcClient.orchestration.dispatchCommand,
       getTurnDiff: rpcClient.orchestration.getTurnDiff,
       getFullThreadDiff: rpcClient.orchestration.getFullThreadDiff,
-      replayEvents: (fromSequenceExclusive) =>
-        rpcClient.orchestration
-          .replayEvents({ fromSequenceExclusive })
-          .then((events) => [...events]),
-      onDomainEvent: (callback, options) =>
-        rpcClient.orchestration.onDomainEvent(callback, options),
+      subscribeShell: (callback, options) =>
+        rpcClient.orchestration.subscribeShell(callback, options),
+      subscribeThread: (input, callback, options) =>
+        rpcClient.orchestration.subscribeThread(input, callback, options),
     },
   };
 }
@@ -58,6 +60,11 @@ export function readEnvironmentApi(environmentId: EnvironmentId): EnvironmentApi
     return undefined;
   }
 
+  const overriddenApi = environmentApiOverridesForTests.get(environmentId);
+  if (overriddenApi) {
+    return overriddenApi;
+  }
+
   const connection = readEnvironmentConnection(environmentId);
   return connection ? createEnvironmentApi(connection.client) : undefined;
 }
@@ -68,4 +75,15 @@ export function ensureEnvironmentApi(environmentId: EnvironmentId): EnvironmentA
     throw new Error(`Environment API not found for environment ${environmentId}`);
   }
   return api;
+}
+
+export function __setEnvironmentApiOverrideForTests(
+  environmentId: EnvironmentId,
+  api: EnvironmentApi,
+): void {
+  environmentApiOverridesForTests.set(environmentId, api);
+}
+
+export function __resetEnvironmentApiOverridesForTests(): void {
+  environmentApiOverridesForTests.clear();
 }
