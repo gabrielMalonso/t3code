@@ -2722,7 +2722,7 @@ export default function ChatView(props: ChatViewProps) {
           attachments: turnAttachments,
         },
         modelSelection: ctxSelectedModelSelection,
-        ...(composerSelectedSkills.length > 0 ? { skills: composerSelectedSkills } : {}),
+        ...composerSendExtension.buildTurnStartOverrides(composerSelectedSkills),
         titleSeed: title,
         runtimeMode,
         interactionMode,

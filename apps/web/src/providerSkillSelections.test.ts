@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveComposerSkillSelections,
   toProviderSkillReferencesForSend,
-} from "./providerSkillSelections";
+} from "./t3code-custom/hooks/useComposerProviderSkills";
 
 describe("providerSkillSelections", () => {
   it("maps prompt skill tokens to enabled available skills", () => {

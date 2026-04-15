@@ -7,7 +7,6 @@ import type {
   ProviderInteractionMode,
   ProviderKind,
   RuntimeMode,
-  ServerProviderSkill,
   ScopedThreadRef,
   ServerProvider,
   ThreadId,
@@ -29,7 +28,6 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useDebouncedValue } from "@tanstack/react-pacer";
 import { projectSearchEntriesQueryOptions } from "~/lib/projectReactQuery";
-import { workspaceProviderSkillsQueryOptions } from "~/lib/providerReactQuery";
 import {
   clampCollapsedComposerCursor,
   type ComposerTrigger,
@@ -101,12 +99,9 @@ import type { PendingApproval, PendingUserInput } from "../../session-logic";
 import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow";
 import type { ComposerFileReference } from "../../t3code-custom/file-references";
 import { resolveComposerPlaceholder, useComposerCustomExtension } from "../../t3code-custom/chat";
+import { useComposerProviderSkills } from "../../t3code-custom/hooks";
 import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
 import { searchProviderSkills } from "../../providerSkillSearch";
-import {
-  deriveComposerSkillSelections,
-  toProviderSkillReferencesForSend,
-} from "../../providerSkillSelections";
 
 const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB`;
 // t3code note: the trailing Loop control is local custom UI, so the upstream
@@ -139,24 +134,6 @@ const runtimeModeConfig: Record<
 const runtimeModeOptions = Object.keys(runtimeModeConfig) as RuntimeMode[];
 const COMPOSER_PATH_QUERY_DEBOUNCE_MS = 120;
 const EMPTY_PROJECT_ENTRIES: ProjectEntry[] = [];
-const EMPTY_PROVIDER_SKILLS: ReadonlyArray<ServerProviderSkill> = Object.freeze([]);
-
-function mergeProviderSkills(
-  preferredSkills: ReadonlyArray<ServerProviderSkill>,
-  fallbackSkills: ReadonlyArray<ServerProviderSkill>,
-): ReadonlyArray<ServerProviderSkill> {
-  const merged = new Map<string, ServerProviderSkill>();
-  for (const skill of preferredSkills) {
-    merged.set(`${skill.name}:${skill.path}`, skill);
-  }
-  for (const skill of fallbackSkills) {
-    const key = `${skill.name}:${skill.path}`;
-    if (!merged.has(key)) {
-      merged.set(key, skill);
-    }
-  }
-  return [...merged.values()];
-}
 
 const extendReplacementRangeForTrailingSpace = (
   text: string,
@@ -755,24 +732,14 @@ export const ChatComposer = memo(
     );
     const workspaceEntries = workspaceEntriesQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
     const skillDiscoveryCwd = activeWorkspaceRoot ?? gitCwd ?? null;
-    const workspaceProviderSkillsQuery = useQuery(
-      workspaceProviderSkillsQueryOptions({
+    const { availableProviderSkills, selectedSkillReferences, isLoadingWorkspaceSkills } =
+      useComposerProviderSkills({
         environmentId,
         provider: selectedProvider,
-        cwd: skillDiscoveryCwd,
-        enabled: selectedProvider === "codex",
-      }),
-    );
-    const availableProviderSkills = useMemo(
-      () =>
-        selectedProvider === "codex"
-          ? mergeProviderSkills(
-              workspaceProviderSkillsQuery.data?.skills ?? EMPTY_PROVIDER_SKILLS,
-              selectedProviderStatus?.skills ?? EMPTY_PROVIDER_SKILLS,
-            )
-          : (selectedProviderStatus?.skills ?? EMPTY_PROVIDER_SKILLS),
-      [selectedProvider, selectedProviderStatus?.skills, workspaceProviderSkillsQuery.data?.skills],
-    );
+        prompt,
+        discoveryCwd: skillDiscoveryCwd,
+        providerSkills: selectedProviderStatus?.skills,
+      });
 
     const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
       if (!composerTrigger) return [];
@@ -934,9 +901,7 @@ export const ChatComposer = memo(
         ((pathTriggerQuery.length > 0 && composerPathQueryDebouncer.state.isPending) ||
           workspaceEntriesQuery.isLoading ||
           workspaceEntriesQuery.isFetching)) ||
-      (composerTriggerKind === "skill" &&
-        selectedProvider === "codex" &&
-        (workspaceProviderSkillsQuery.isLoading || workspaceProviderSkillsQuery.isFetching));
+      (composerTriggerKind === "skill" && isLoadingWorkspaceSkills);
     const composerMenuEmptyState = useMemo(() => {
       if (composerTriggerKind === "skill") {
         return "No skills found. Try / to browse provider commands.";
@@ -1752,12 +1717,7 @@ export const ChatComposer = memo(
         getSendContext: () => ({
           prompt: promptRef.current,
           images: composerImagesRef.current,
-          selectedSkills: toProviderSkillReferencesForSend(
-            deriveComposerSkillSelections({
-              prompt: promptRef.current,
-              availableSkills: availableProviderSkills,
-            }),
-          ),
+          selectedSkills: selectedSkillReferences,
           fileReferences: composerFileReferencesRef.current,
           terminalContexts: composerTerminalContextsRef.current,
           isResolvingFileReferences: customExtension.isResolvingFileReferences,
@@ -1784,7 +1744,6 @@ export const ChatComposer = memo(
         detectComposerTriggerForContext,
         customExtension.isResolvingFileReferences,
         expandComposerCursor,
-        availableProviderSkills,
         readComposerSnapshot,
         selectedModel,
         selectedModelOptionsForDispatch,
@@ -1792,6 +1751,7 @@ export const ChatComposer = memo(
         selectedPromptEffort,
         selectedProvider,
         selectedProviderModels,
+        selectedSkillReferences,
       ],
     );
 
