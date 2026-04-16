@@ -24,6 +24,8 @@ interface NightlyVersion {
   readonly runNumber: number;
 }
 
+const isStableGaVersion = (version: StableVersion): boolean => version.prerelease.length === 0;
+
 const parseNumericIdentifier = (identifier: string): number | undefined =>
   /^\d+$/.test(identifier) ? Number(identifier) : undefined;
 
@@ -107,7 +109,7 @@ const parseNightlyTag = (tag: string): NightlyVersion | undefined => {
   };
 };
 
-const resolvePreviousReleaseTag = (
+export const resolvePreviousReleaseTag = (
   channel: ReleaseChannel,
   currentTag: string,
   tags: ReadonlyArray<string>,
@@ -123,6 +125,7 @@ const resolvePreviousReleaseTag = (
       .filter(
         (entry): entry is { tag: string; parsed: StableVersion } => entry.parsed !== undefined,
       )
+      .filter((entry) => isStableGaVersion(entry.parsed))
       .filter((entry) => compareStableVersions(entry.parsed, current) < 0)
       .toSorted((left, right) => compareStableVersions(right.parsed, left.parsed));
 
@@ -196,8 +199,10 @@ const command = Command.make(
     ),
 ).pipe(Command.withDescription("Resolve the previous release tag for a stable or nightly series."));
 
-Command.run(command, { version: "0.0.0" }).pipe(
-  Effect.scoped,
-  Effect.provide(NodeServices.layer),
-  NodeRuntime.runMain,
-);
+if (import.meta.main) {
+  Command.run(command, { version: "0.0.0" }).pipe(
+    Effect.scoped,
+    Effect.provide(NodeServices.layer),
+    NodeRuntime.runMain,
+  );
+}
