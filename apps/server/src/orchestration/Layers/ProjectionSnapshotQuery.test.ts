@@ -1296,7 +1296,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       assert.equal(threadDetail._tag, "Some");
       if (threadDetail._tag === "Some") {
         assert.equal(threadDetail.value.latestTurn?.turnId, asTurnId("turn-running"));
-        assert.equal(threadDetail.value.latestTurn?.state, "running");
+        assert.equal(threadDetail.value.latestTurn?.state, "interrupted");
         assert.equal(threadDetail.value.latestTurn?.startedAt, "2026-04-02T00:00:30.000Z");
       }
     }),

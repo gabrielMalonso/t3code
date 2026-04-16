@@ -211,6 +211,21 @@ function mapSessionRow(
   };
 }
 
+function mapThreadLoopRow(
+  row: Schema.Schema.Type<typeof ProjectionThreadLoopDbRowSchema>,
+): ThreadLoop {
+  return {
+    enabled: row.enabled === 1,
+    prompt: row.prompt,
+    intervalMinutes: row.intervalMinutes,
+    nextRunAt: row.nextRunAt,
+    lastRunAt: row.lastRunAt,
+    lastError: row.lastError,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
 function mapProjectShellRow(
   row: Schema.Schema.Type<typeof ProjectionProjectDbRowSchema>,
   repositoryIdentity: OrchestrationProject["repositoryIdentity"],
@@ -304,6 +319,26 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           updated_at AS "updatedAt"
         FROM projection_thread_loops
         ORDER BY created_at ASC, thread_id ASC
+      `,
+  });
+
+  const getThreadLoopRowByThread = SqlSchema.findOneOption({
+    Request: ThreadIdLookupInput,
+    Result: ProjectionThreadLoopDbRowSchema,
+    execute: ({ threadId }) =>
+      sql`
+        SELECT
+          thread_id AS "threadId",
+          enabled,
+          prompt,
+          interval_minutes AS "intervalMinutes",
+          next_run_at AS "nextRunAt",
+          last_run_at AS "lastRunAt",
+          last_error AS "lastError",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"
+        FROM projection_thread_loops
+        WHERE thread_id = ${threadId}
       `,
   });
 
@@ -1355,6 +1390,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         checkpointRows,
         latestTurnRow,
         sessionRow,
+        threadLoopRow,
       ] = yield* Effect.all([
         getActiveThreadRowById({ threadId }).pipe(
           Effect.mapError(
@@ -1412,11 +1448,26 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             ),
           ),
         ),
+        getThreadLoopRowByThread({ threadId }).pipe(
+          Effect.mapError(
+            toPersistenceSqlOrDecodeError(
+              "ProjectionSnapshotQuery.getThreadDetailById:getThreadLoop:query",
+              "ProjectionSnapshotQuery.getThreadDetailById:getThreadLoop:decodeRow",
+            ),
+          ),
+        ),
       ]);
 
       if (Option.isNone(threadRow)) {
         return Option.none<OrchestrationThread>();
       }
+
+      const session = Option.isSome(sessionRow)
+        ? sanitizeBootSessionState(mapSessionRow(sessionRow.value), processStartedAt)
+        : null;
+      const latestTurn = Option.isSome(latestTurnRow)
+        ? sanitizeBootLatestTurnState(mapLatestTurn(latestTurnRow.value), session, processStartedAt)
+        : null;
 
       const thread = {
         id: threadRow.value.threadId,
@@ -1427,7 +1478,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         interactionMode: threadRow.value.interactionMode,
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
-        latestTurn: Option.isSome(latestTurnRow) ? mapLatestTurn(latestTurnRow.value) : null,
+        latestTurn,
         createdAt: threadRow.value.createdAt,
         updatedAt: threadRow.value.updatedAt,
         archivedAt: threadRow.value.archivedAt,
@@ -1480,7 +1531,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           assistantMessageId: row.assistantMessageId,
           completedAt: row.completedAt,
         })),
-        session: Option.isSome(sessionRow) ? mapSessionRow(sessionRow.value) : null,
+        session,
+        loop: Option.isSome(threadLoopRow) ? mapThreadLoopRow(threadLoopRow.value) : null,
       };
 
       return Option.some(
