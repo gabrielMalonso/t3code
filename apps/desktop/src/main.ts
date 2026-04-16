@@ -38,8 +38,8 @@ import { RotatingFileSink } from "@t3tools/shared/logging";
 import { parsePersistedServerObservabilitySettings } from "@t3tools/shared/serverSettings";
 import { DEFAULT_DESKTOP_BACKEND_PORT, resolveDesktopBackendPort } from "./backendPort";
 import {
-  DEFAULT_DESKTOP_SETTINGS,
   readDesktopSettings,
+  resolveDefaultDesktopSettings,
   setDesktopServerExposurePreference,
   setDesktopUpdateChannelPreference,
   writeDesktopSettings,
@@ -111,6 +111,7 @@ const desktopAppBranding: DesktopAppBranding = resolveDesktopAppBranding({
   isDevelopment,
   appVersion: app.getVersion(),
 });
+const defaultDesktopSettings = resolveDefaultDesktopSettings(app.getVersion());
 const APP_DISPLAY_NAME = desktopAppBranding.displayName;
 const APP_USER_MODEL_ID = isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code";
 const LINUX_DESKTOP_ENTRY_NAME = isDevelopment ? "t3code-dev.desktop" : "t3code.desktop";
@@ -190,7 +191,7 @@ let desktopLogSink: RotatingFileSink | null = null;
 let backendLogSink: RotatingFileSink | null = null;
 let restoreStdIoCapture: (() => void) | null = null;
 let backendObservabilitySettings = readPersistedBackendObservabilitySettings();
-let desktopSettings = readDesktopSettings(DESKTOP_SETTINGS_PATH);
+let desktopSettings = readDesktopSettings(DESKTOP_SETTINGS_PATH, defaultDesktopSettings);
 let desktopServerExposureMode: DesktopServerExposureMode = desktopSettings.serverExposureMode;
 
 let destructiveMenuIconCache: Electron.NativeImage | null | undefined;
@@ -500,6 +501,31 @@ function ensureInitialBackendWindowOpen(): void {
         `bootstrap backend readiness warning message=${formatErrorMessage(error)}`,
       );
       console.warn("[desktop] backend readiness check timed out during packaged bootstrap", error);
+      const fallbackWindow = mainWindow ?? BrowserWindow.getAllWindows()[0] ?? createWindow();
+      if (mainWindow === null) {
+        mainWindow = fallbackWindow;
+      }
+      writeDesktopLogHeader("bootstrap main window created after readiness timeout");
+      void waitForBackendHttpReady(backendHttpUrl)
+        .then(() => {
+          if (fallbackWindow.isDestroyed()) {
+            return;
+          }
+          writeDesktopLogHeader("bootstrap backend ready after timeout; reloading fallback window");
+          void fallbackWindow.loadURL(backendHttpUrl);
+        })
+        .catch((retryError) => {
+          if (isBackendReadinessAborted(retryError)) {
+            return;
+          }
+          writeDesktopLogHeader(
+            `bootstrap backend readiness retry warning message=${formatErrorMessage(retryError)}`,
+          );
+          console.warn(
+            "[desktop] backend readiness retry failed after packaged bootstrap timeout",
+            retryError,
+          );
+        });
     })
     .finally(() => {
       if (backendInitialWindowOpenInFlight === nextOpen) {
@@ -2047,7 +2073,7 @@ async function bootstrap(): Promise<void> {
       : `using configured backend port port=${backendPort}`,
   );
   backendBootstrapToken = Crypto.randomBytes(24).toString("hex");
-  if (desktopSettings.serverExposureMode !== DEFAULT_DESKTOP_SETTINGS.serverExposureMode) {
+  if (desktopSettings.serverExposureMode !== defaultDesktopSettings.serverExposureMode) {
     writeDesktopLogHeader(
       `bootstrap restoring persisted server exposure mode mode=${desktopSettings.serverExposureMode}`,
     );
@@ -2055,7 +2081,7 @@ async function bootstrap(): Promise<void> {
   const serverExposureState = await applyDesktopServerExposureMode(
     desktopSettings.serverExposureMode,
     {
-      persist: desktopSettings.serverExposureMode !== DEFAULT_DESKTOP_SETTINGS.serverExposureMode,
+      persist: desktopSettings.serverExposureMode !== defaultDesktopSettings.serverExposureMode,
     },
   );
   writeDesktopLogHeader(`bootstrap resolved backend endpoint baseUrl=${backendHttpUrl}`);
