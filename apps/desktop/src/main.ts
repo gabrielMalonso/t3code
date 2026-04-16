@@ -58,6 +58,7 @@ import { showDesktopConfirmDialog } from "./confirmDialog";
 import { resolveDesktopServerExposure } from "./serverExposure";
 import { syncShellEnvironment } from "./syncShellEnvironment";
 import { getAutoUpdateDisabledReason, shouldBroadcastDownloadProgress } from "./updateState";
+import { doesVersionMatchDesktopUpdateChannel } from "./updateChannels";
 import { ServerListeningDetector } from "./serverListeningDetector";
 import {
   createInitialDesktopUpdateState,
@@ -154,7 +155,6 @@ function resolvePickFolderDefaultPath(rawOptions: unknown): string | undefined {
   return Path.resolve(trimmedPath);
 }
 const DESKTOP_LOOPBACK_HOST = "127.0.0.1";
-const DESKTOP_REQUIRED_PORT_PROBE_HOSTS = ["0.0.0.0", "::"] as const;
 const TITLEBAR_HEIGHT = 40;
 const TITLEBAR_COLOR = "#01000000"; // #00000000 does not work correctly on Linux
 const TITLEBAR_LIGHT_SYMBOL_COLOR = "#1f2937";
@@ -191,7 +191,7 @@ let desktopLogSink: RotatingFileSink | null = null;
 let backendLogSink: RotatingFileSink | null = null;
 let restoreStdIoCapture: (() => void) | null = null;
 let backendObservabilitySettings = readPersistedBackendObservabilitySettings();
-let desktopSettings = readDesktopSettings(DESKTOP_SETTINGS_PATH, defaultDesktopSettings);
+let desktopSettings = readDesktopSettings(DESKTOP_SETTINGS_PATH, app.getVersion());
 let desktopServerExposureMode: DesktopServerExposureMode = desktopSettings.serverExposureMode;
 
 let destructiveMenuIconCache: Electron.NativeImage | null | undefined;
@@ -1166,7 +1166,7 @@ function applyAutoUpdaterChannel(channel: DesktopUpdateChannel): void {
   autoUpdater.allowPrerelease = channel === "nightly";
   autoUpdater.allowDowngrade = channel === "nightly";
   console.info(
-    `[desktop-updater] Using update channel '${channel}' (allowPrerelease=${channel === "nightly"}).`,
+    `[desktop-updater] Using update channel '${channel}' (allowPrerelease=${channel === "nightly"}, allowDowngrade=${channel === "nightly"}).`,
   );
 }
 
@@ -1311,6 +1311,15 @@ function configureAutoUpdater(): void {
     console.info("[desktop-updater] Looking for updates...");
   });
   autoUpdater.on("update-available", (info) => {
+    if (!doesVersionMatchDesktopUpdateChannel(info.version, updateState.channel)) {
+      console.info(
+        `[desktop-updater] Ignoring ${info.version} because it does not match the selected '${updateState.channel}' channel.`,
+      );
+      setUpdateState(reduceDesktopUpdateStateOnNoUpdate(updateState, new Date().toISOString()));
+      lastLoggedDownloadMilestone = -1;
+      return;
+    }
+
     setUpdateState(
       reduceDesktopUpdateStateOnUpdateAvailable(
         updateState,
@@ -1818,12 +1827,13 @@ function registerIpcHandlers(): void {
     }
 
     const nextChannel = rawChannel as DesktopUpdateChannel;
-    if (nextChannel === desktopSettings.updateChannel) {
-      return updateState;
-    }
 
     desktopSettings = setDesktopUpdateChannelPreference(desktopSettings, nextChannel);
     writeDesktopSettings(DESKTOP_SETTINGS_PATH, desktopSettings);
+
+    if (nextChannel === updateState.channel) {
+      return updateState;
+    }
 
     const enabled = shouldEnableAutoUpdates();
     setUpdateState(createBaseUpdateState(nextChannel, enabled));

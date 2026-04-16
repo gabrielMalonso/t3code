@@ -18,7 +18,6 @@ import {
   type SettingSource,
   type SDKUserMessage,
   ModelUsage,
-  NonNullableUsage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { parseCliArgs } from "@t3tools/shared/cliArgs";
 import {
@@ -41,7 +40,7 @@ import {
   ThreadId,
   TurnId,
   type UserInputQuestion,
-  ClaudeCodeEffort,
+  ClaudeAgentEffort,
 } from "@t3tools/contracts";
 import {
   applyClaudePromptEffortPrefix,
@@ -85,6 +84,10 @@ type ClaudeToolResultStreamKind = Extract<
   RuntimeContentStreamKind,
   "command_output" | "file_change_output"
 >;
+type ClaudeSessionEffort = Exclude<ClaudeAgentEffort, "ultrathink">;
+type ClaudeQueryOptionsWithExtendedEffort = Omit<ClaudeQueryOptions, "effort"> & {
+  readonly effort?: ClaudeSessionEffort;
+};
 
 type PromptQueueItem =
   | {
@@ -216,9 +219,9 @@ function normalizeClaudeStreamMessages(cause: Cause.Cause<Error>): ReadonlyArray
   return squashed.length > 0 ? [squashed] : [];
 }
 
-function getEffectiveClaudeCodeEffort(
-  effort: ClaudeCodeEffort | null | undefined,
-): Exclude<ClaudeCodeEffort, "ultrathink"> | null {
+function getEffectiveClaudeAgentEffort(
+  effort: ClaudeAgentEffort | null | undefined,
+): ClaudeSessionEffort | null {
   if (!effort) {
     return null;
   }
@@ -290,7 +293,7 @@ function maxClaudeContextWindowFromModelUsage(
 }
 
 function normalizeClaudeTokenUsage(
-  value: NonNullableUsage | undefined,
+  value: unknown,
   contextWindow?: number,
 ): ThreadTokenUsageSnapshot | undefined {
   if (!value || typeof value !== "object") {
@@ -2749,13 +2752,13 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const caps = getClaudeModelCapabilities(modelSelection?.model);
       const apiModelId = modelSelection ? resolveApiModelId(modelSelection) : undefined;
       const effort = (resolveEffort(caps, modelSelection?.options?.effort) ??
-        null) as ClaudeCodeEffort | null;
+        null) as ClaudeAgentEffort | null;
       const fastMode = modelSelection?.options?.fastMode === true && caps.supportsFastMode;
       const thinking =
         typeof modelSelection?.options?.thinking === "boolean" && caps.supportsThinkingToggle
           ? modelSelection.options.thinking
           : undefined;
-      const effectiveEffort = getEffectiveClaudeCodeEffort(effort);
+      const effectiveEffort = getEffectiveClaudeAgentEffort(effort);
       const runtimeModeToPermission: Record<string, PermissionMode> = {
         "auto-accept-edits": "acceptEdits",
         "full-access": "bypassPermissions",
@@ -2766,7 +2769,7 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(fastMode ? { fastMode: true } : {}),
       };
 
-      const queryOptions: ClaudeQueryOptions = {
+      const queryOptions: ClaudeQueryOptionsWithExtendedEffort = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
         pathToClaudeCodeExecutable: claudeBinaryPath,
@@ -2790,7 +2793,9 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         try: () =>
           createQuery({
             prompt,
-            options: queryOptions,
+            // The Claude SDK runtime accepts `xhigh`, but the published type still
+            // lags behind and only allows up to `max`.
+            options: queryOptions as ClaudeQueryOptions,
           }),
         catch: (cause) =>
           new ProviderAdapterProcessError({

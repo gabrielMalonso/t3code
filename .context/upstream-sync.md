@@ -79,3 +79,40 @@
   - skill discovery por workspace para turnos do Codex
   - artefatos internos `.t3code`
   - policy local da fonte mono
+
+## 2026-04-16 — Sync ate `19d47408`
+
+- Branch de sync: `sync/upstream-2026-04-15`
+- Upstream integrado: `19d47408` (`upstream/main`)
+- Regra dominante nesta wave: aceitar o fluxo novo do upstream no desktop e no layout do chat, reaplicando so o diferencial local pequeno quando ele ainda era real
+- Zona de atrito prevista antes do merge:
+  - `apps/desktop/src/desktopSettings.test.ts` — `adaptador-core`
+  - `apps/desktop/src/desktopSettings.ts` — `adaptador-core`
+  - `apps/desktop/src/main.ts` — `adaptador-core`
+  - `apps/server/src/orchestration/Layers/ProjectionPipeline.ts` — `hotspot-compartilhado`
+  - `apps/web/src/components/ChatView.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/composerDraftStore.ts` — `hotspot-compartilhado`
+  - `docs/release.md` — `core-puro`
+- Conflitos reais do merge:
+  - so houve conflito textual no desktop: `desktopSettings.test.ts`, `desktopSettings.ts` e `main.ts`
+  - `ProjectionPipeline.ts`, `ChatView.tsx` e `composerDraftStore.ts` entraram limpos, o que reduziu bastante o risco desta wave
+- O que foi absorvido do upstream:
+  - nightly desktop agora usa o canal nightly por default com persistencia explicita da escolha do usuario
+  - `Claude Opus 4.7` entrou como modelo built-in com effort `xhigh`
+  - o layout do chat absorveu os ajustes do upstream para evitar sobreposicao dos controles do composer em larguras estreitas
+  - a projection passou a ignorar atividades de user input no pending approvals sem reabrir o nosso scheduler
+  - `CLAUDE.md` e a documentacao de release seguiram a versao do upstream
+- O que continuou como diferencial local:
+  - `thread loop`
+  - `file references` por path
+  - skill discovery por workspace para turnos do Codex
+  - artefatos internos `.t3code`
+  - policy local da fonte mono
+- Ajuste local adicional necessario para fechar a integracao:
+  - `apps/server/src/provider/Layers/ClaudeAdapter.ts` ganhou um cast documentado para aceitar `xhigh` em `createQuery`, porque o runtime novo suporta esse effort mas a tipagem publicada do SDK ainda esta atrasada
+- Validacao final:
+  - `bun fmt`
+  - `bun lint` passou com warnings antigos no `ChatView.tsx` e `session-logic.ts`, sem erro novo bloqueante
+  - `bun typecheck`
+  - `bun run test src/desktopSettings.test.ts` em `apps/desktop`
+  - `bun run test src/provider/Layers/ClaudeAdapter.test.ts` em `apps/server`
