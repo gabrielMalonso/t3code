@@ -1413,6 +1413,7 @@ export const ChatComposer = memo(
       environmentId,
       activeThreadId,
       activeThread,
+      isServerThread: _isServerThread,
       workspaceRoot: activeWorkspaceRoot,
       pendingUserInputCount: pendingUserInputs.length,
       envMode,
