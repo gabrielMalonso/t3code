@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_DESKTOP_SETTINGS,
   readDesktopSettings,
+  resolveDefaultDesktopSettings,
+  resolveDefaultDesktopUpdateChannel,
   setDesktopServerExposurePreference,
   setDesktopUpdateChannelPreference,
   writeDesktopSettings,
@@ -29,6 +31,14 @@ function makeSettingsPath() {
 describe("desktopSettings", () => {
   it("returns defaults when no settings file exists", () => {
     expect(readDesktopSettings(makeSettingsPath())).toEqual(DEFAULT_DESKTOP_SETTINGS);
+  });
+
+  it("derives nightly defaults from nightly app versions", () => {
+    expect(resolveDefaultDesktopUpdateChannel("0.0.17-nightly.20260415.45")).toBe("nightly");
+    expect(resolveDefaultDesktopSettings("0.0.17-nightly.20260415.45")).toEqual({
+      serverExposureMode: "local-only",
+      updateChannel: "nightly",
+    });
   });
 
   it("persists and reloads the configured server exposure mode", () => {
@@ -80,5 +90,17 @@ describe("desktopSettings", () => {
     fs.writeFileSync(settingsPath, "{not-json", "utf8");
 
     expect(readDesktopSettings(settingsPath)).toEqual(DEFAULT_DESKTOP_SETTINGS);
+  });
+
+  it("uses the provided build defaults when no settings file exists", () => {
+    expect(
+      readDesktopSettings(
+        makeSettingsPath(),
+        resolveDefaultDesktopSettings("0.0.17-nightly.20260415.45"),
+      ),
+    ).toEqual({
+      serverExposureMode: "local-only",
+      updateChannel: "nightly",
+    });
   });
 });

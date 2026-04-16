@@ -7,10 +7,23 @@ export interface DesktopSettings {
   readonly updateChannel: DesktopUpdateChannel;
 }
 
+const NIGHTLY_VERSION_PATTERN = /-nightly\.\d{8}\.\d+$/;
+
 export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   serverExposureMode: "local-only",
   updateChannel: "latest",
 };
+
+export function resolveDefaultDesktopUpdateChannel(appVersion: string): DesktopUpdateChannel {
+  return NIGHTLY_VERSION_PATTERN.test(appVersion) ? "nightly" : "latest";
+}
+
+export function resolveDefaultDesktopSettings(appVersion: string): DesktopSettings {
+  return {
+    ...DEFAULT_DESKTOP_SETTINGS,
+    updateChannel: resolveDefaultDesktopUpdateChannel(appVersion),
+  };
+}
 
 export function setDesktopServerExposurePreference(
   settings: DesktopSettings,
@@ -36,10 +49,13 @@ export function setDesktopUpdateChannelPreference(
       };
 }
 
-export function readDesktopSettings(settingsPath: string): DesktopSettings {
+export function readDesktopSettings(
+  settingsPath: string,
+  defaultSettings: DesktopSettings = DEFAULT_DESKTOP_SETTINGS,
+): DesktopSettings {
   try {
     if (!FS.existsSync(settingsPath)) {
-      return DEFAULT_DESKTOP_SETTINGS;
+      return defaultSettings;
     }
 
     const raw = FS.readFileSync(settingsPath, "utf8");
@@ -51,10 +67,10 @@ export function readDesktopSettings(settingsPath: string): DesktopSettings {
     return {
       serverExposureMode:
         parsed.serverExposureMode === "network-accessible" ? "network-accessible" : "local-only",
-      updateChannel: parsed.updateChannel === "nightly" ? "nightly" : "latest",
+      updateChannel: parsed.updateChannel === "nightly" ? "nightly" : defaultSettings.updateChannel,
     };
   } catch {
-    return DEFAULT_DESKTOP_SETTINGS;
+    return defaultSettings;
   }
 }
 
