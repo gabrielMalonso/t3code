@@ -2945,6 +2945,100 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("streams thread loop events through subscribeThread", () =>
+    Effect.gen(function* () {
+      const now = "2026-04-16T16:58:22.562Z";
+      const nextRunAt = "2026-04-16T17:13:05.698Z";
+      const baseThread = makeDefaultOrchestrationReadModel().threads[0];
+      if (!baseThread) {
+        throw new Error("Expected default read model to include a thread.");
+      }
+      const threadDetail = {
+        ...baseThread,
+        loop: null,
+      };
+
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getThreadDetailById: () => Effect.succeed(Option.some(threadDetail)),
+          },
+          orchestrationEngine: {
+            getReadModel: () =>
+              Effect.succeed({
+                ...makeDefaultOrchestrationReadModel(),
+                snapshotSequence: 18,
+              }),
+            streamDomainEvents: Stream.make({
+              sequence: 18,
+              eventId: EventId.make("event-thread-loop-upserted"),
+              aggregateKind: "thread" as const,
+              aggregateId: defaultThreadId,
+              occurredAt: now,
+              commandId: CommandId.make("cmd-thread-loop-upsert"),
+              causationEventId: null,
+              correlationId: null,
+              metadata: {},
+              type: "thread.loop-upserted" as const,
+              payload: {
+                threadId: defaultThreadId,
+                loop: {
+                  enabled: true,
+                  prompt: "Loop prompt",
+                  intervalMinutes: 15,
+                  nextRunAt,
+                  lastRunAt: null,
+                  lastError: null,
+                  createdAt: now,
+                  updatedAt: now,
+                },
+              },
+            }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const items = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeThread]({
+            threadId: defaultThreadId,
+          }).pipe(Stream.take(2), Stream.runCollect),
+        ),
+      );
+
+      const [, streamedEvent] = items;
+      assert.deepEqual(streamedEvent, {
+        kind: "event",
+        event: {
+          sequence: 18,
+          eventId: EventId.make("event-thread-loop-upserted"),
+          aggregateKind: "thread",
+          aggregateId: defaultThreadId,
+          occurredAt: now,
+          commandId: CommandId.make("cmd-thread-loop-upsert"),
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          type: "thread.loop-upserted",
+          payload: {
+            threadId: defaultThreadId,
+            loop: {
+              enabled: true,
+              prompt: "Loop prompt",
+              intervalMinutes: 15,
+              nextRunAt,
+              lastRunAt: null,
+              lastError: null,
+              createdAt: now,
+              updatedAt: now,
+            },
+          },
+        },
+      });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("closes thread terminals after a successful archive command", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("thread-archive");

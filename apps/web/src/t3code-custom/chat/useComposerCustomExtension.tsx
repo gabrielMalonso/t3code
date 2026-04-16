@@ -35,6 +35,7 @@ export function useComposerCustomExtension(input: {
   environmentId: EnvironmentId;
   activeThreadId: ThreadId | null;
   activeThread: Thread | undefined;
+  isServerThread: boolean;
   workspaceRoot: string | null | undefined;
   pendingUserInputCount: number;
   envMode: DraftThreadEnvMode;
@@ -55,6 +56,7 @@ export function useComposerCustomExtension(input: {
     environmentId,
     activeThreadId,
     activeThread,
+    isServerThread,
     workspaceRoot,
     pendingUserInputCount,
     envMode,
@@ -261,13 +263,17 @@ export function useComposerCustomExtension(input: {
   );
 
   const compactControls = useMemo<ReactNode>(
-    () => (activeThread ? <ComposerCustomControlsSlot compact thread={activeThread} /> : null),
-    [activeThread],
+    () =>
+      activeThread && isServerThread ? (
+        <ComposerCustomControlsSlot compact thread={activeThread} />
+      ) : null,
+    [activeThread, isServerThread],
   );
 
   const controls = useMemo<ReactNode>(
-    () => (activeThread ? <ComposerCustomControlsSlot thread={activeThread} /> : null),
-    [activeThread],
+    () =>
+      activeThread && isServerThread ? <ComposerCustomControlsSlot thread={activeThread} /> : null,
+    [activeThread, isServerThread],
   );
 
   return {
