@@ -2,21 +2,19 @@ import * as FS from "node:fs";
 import * as Path from "node:path";
 import type { DesktopServerExposureMode, DesktopUpdateChannel } from "@t3tools/contracts";
 
+import { resolveDefaultDesktopUpdateChannel } from "./updateChannels";
+
 export interface DesktopSettings {
   readonly serverExposureMode: DesktopServerExposureMode;
   readonly updateChannel: DesktopUpdateChannel;
+  readonly updateChannelConfiguredByUser: boolean;
 }
-
-const NIGHTLY_VERSION_PATTERN = /-nightly\.\d{8}\.\d+$/;
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   serverExposureMode: "local-only",
   updateChannel: "latest",
+  updateChannelConfiguredByUser: false,
 };
-
-export function resolveDefaultDesktopUpdateChannel(appVersion: string): DesktopUpdateChannel {
-  return NIGHTLY_VERSION_PATTERN.test(appVersion) ? "nightly" : "latest";
-}
 
 export function resolveDefaultDesktopSettings(appVersion: string): DesktopSettings {
   return {
@@ -41,18 +39,15 @@ export function setDesktopUpdateChannelPreference(
   settings: DesktopSettings,
   requestedChannel: DesktopUpdateChannel,
 ): DesktopSettings {
-  return settings.updateChannel === requestedChannel
-    ? settings
-    : {
-        ...settings,
-        updateChannel: requestedChannel,
-      };
+  return {
+    ...settings,
+    updateChannel: requestedChannel,
+    updateChannelConfiguredByUser: true,
+  };
 }
 
-export function readDesktopSettings(
-  settingsPath: string,
-  defaultSettings: DesktopSettings = DEFAULT_DESKTOP_SETTINGS,
-): DesktopSettings {
+export function readDesktopSettings(settingsPath: string, appVersion: string): DesktopSettings {
+  const defaultSettings = resolveDefaultDesktopSettings(appVersion);
   try {
     if (!FS.existsSync(settingsPath)) {
       return defaultSettings;
@@ -62,12 +57,25 @@ export function readDesktopSettings(
     const parsed = JSON.parse(raw) as {
       readonly serverExposureMode?: unknown;
       readonly updateChannel?: unknown;
+      readonly updateChannelConfiguredByUser?: unknown;
     };
+    const parsedUpdateChannel =
+      parsed.updateChannel === "nightly" || parsed.updateChannel === "latest"
+        ? parsed.updateChannel
+        : null;
+    const isLegacySettings = parsed.updateChannelConfiguredByUser === undefined;
+    const updateChannelConfiguredByUser =
+      parsed.updateChannelConfiguredByUser === true ||
+      (isLegacySettings && parsedUpdateChannel === "nightly");
 
     return {
       serverExposureMode:
         parsed.serverExposureMode === "network-accessible" ? "network-accessible" : "local-only",
-      updateChannel: parsed.updateChannel === "nightly" ? "nightly" : defaultSettings.updateChannel,
+      updateChannel:
+        updateChannelConfiguredByUser && parsedUpdateChannel !== null
+          ? parsedUpdateChannel
+          : defaultSettings.updateChannel,
+      updateChannelConfiguredByUser,
     };
   } catch {
     return defaultSettings;
