@@ -30,6 +30,7 @@ import { page } from "vitest/browser";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
+import { COMPOSER_FOOTER_WIDE_ACTIONS_COMPACT_BREAKPOINT_PX } from "./composerFooterLayout";
 import { useCommandPaletteStore } from "../commandPaletteStore";
 import { useComposerDraftStore, DraftId } from "../composerDraftStore";
 import {
@@ -125,6 +126,7 @@ const COMPACT_FOOTER_VIEWPORT: ViewportSpec = {
   textTolerancePx: 56,
   attachmentTolerancePx: 56,
 };
+const WIDE_FOOTER_OVERFLOW_TEST_WIDTH = COMPOSER_FOOTER_WIDE_ACTIONS_COMPACT_BREAKPOINT_PX - 32;
 
 interface MountedChatView {
   [Symbol.asyncDispose]: () => Promise<void>;
@@ -5455,7 +5457,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       await waitForButtonByText("Implement");
 
       await mounted.setContainerSize({
-        width: 804,
+        width: WIDE_FOOTER_OVERFLOW_TEST_WIDTH,
         height: WIDE_FOOTER_VIEWPORT.height,
       });
 
