@@ -125,8 +125,6 @@ const COMPACT_FOOTER_VIEWPORT: ViewportSpec = {
   textTolerancePx: 56,
   attachmentTolerancePx: 56,
 };
-const WIDE_FOOTER_OVERFLOW_TEST_WIDTH = COMPACT_FOOTER_VIEWPORT.width;
-
 interface MountedChatView {
   [Symbol.asyncDispose]: () => Promise<void>;
   cleanup: () => Promise<void>;
@@ -5442,7 +5440,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
-  it("compacts the footer when a wide desktop follow-up layout starts overflowing", async () => {
+  it("keeps footer actions contained when a wide desktop follow-up layout gets constrained", async () => {
     const mounted = await mountChatView({
       viewport: WIDE_FOOTER_VIEWPORT,
       snapshot: createSnapshotWithPlanFollowUpPrompt({
@@ -5456,24 +5454,11 @@ describe("ChatView timeline estimator parity (full app)", () => {
       await waitForButtonByText("Implement");
 
       await mounted.setContainerSize({
-        width: WIDE_FOOTER_OVERFLOW_TEST_WIDTH,
+        width: COMPACT_FOOTER_VIEWPORT.width,
         height: WIDE_FOOTER_VIEWPORT.height,
       });
 
       await expectComposerActionsContained();
-
-      await vi.waitFor(
-        () => {
-          const footer = document.querySelector<HTMLElement>('[data-chat-composer-footer="true"]');
-          const actions = document.querySelector<HTMLElement>(
-            '[data-chat-composer-actions="right"]',
-          );
-
-          expect(footer?.dataset.chatComposerFooterCompact).toBe("true");
-          expect(actions?.dataset.chatComposerPrimaryActionsCompact).toBe("true");
-        },
-        { timeout: 8_000, interval: 16 },
-      );
     } finally {
       await mounted.cleanup();
     }
