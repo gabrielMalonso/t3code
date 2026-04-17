@@ -98,15 +98,14 @@ import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
 import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow";
 import type { ComposerFileReference } from "../../t3code-custom/file-references";
-import { resolveComposerPlaceholder, useComposerCustomExtension } from "../../t3code-custom/chat";
-import { buildComposerSkillMenuItems, useComposerProviderSkills } from "../../t3code-custom/hooks";
+import {
+  resolveComposerCustomFooterCompactnessAllowancePx,
+  resolveComposerPlaceholder,
+  useComposerCustomExtension,
+} from "../../t3code-custom/chat";
+import { useComposerSkillExtension } from "../../t3code-custom/hooks";
 
 const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB`;
-// t3code note: the trailing Loop control is local custom UI, so the upstream
-// footer budget needs this tiny allowance during plan follow-up layouts.
-// Recheck this when syncing ChatComposer from upstream so the 804px overflow
-// case keeps compacting without collapsing the wider layouts too early.
-const PLAN_FOLLOW_UP_CUSTOM_FOOTER_ALLOWANCE_PX = 8;
 
 const runtimeModeConfig: Record<
   RuntimeMode,
@@ -732,14 +731,19 @@ export const ChatComposer = memo(
     );
     const workspaceEntries = workspaceEntriesQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
     const skillDiscoveryCwd = activeWorkspaceRoot ?? gitCwd ?? null;
-    const { availableProviderSkills, selectedSkillReferences, isLoadingWorkspaceSkills } =
-      useComposerProviderSkills({
-        environmentId,
-        provider: selectedProvider,
-        prompt,
-        discoveryCwd: skillDiscoveryCwd,
-        providerSkills: selectedProviderStatus?.skills,
-      });
+    const composerSkillExtension = useComposerSkillExtension({
+      environmentId,
+      provider: selectedProvider,
+      prompt,
+      discoveryCwd: skillDiscoveryCwd,
+      providerSkills: selectedProviderStatus?.skills,
+    });
+    const {
+      availableProviderSkills,
+      selectedSkillReferences,
+      isLoadingWorkspaceSkills,
+      buildMenuItems: buildSkillMenuItems,
+    } = composerSkillExtension;
 
     const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
       if (!composerTrigger) return [];
@@ -795,11 +799,7 @@ export const ChatComposer = memo(
         return searchSlashCommandItems(slashCommandItems, query);
       }
       if (composerTrigger.kind === "skill") {
-        return buildComposerSkillMenuItems({
-          provider: selectedProvider,
-          skills: availableProviderSkills,
-          query: composerTrigger.query,
-        });
+        return buildSkillMenuItems(composerTrigger.query);
       }
       return searchableModelOptions
         .filter(({ searchSlug, searchName, searchProvider }) => {
@@ -820,9 +820,9 @@ export const ChatComposer = memo(
           description: `${providerLabel} · ${slug}`,
         }));
     }, [
+      buildSkillMenuItems,
       composerTrigger,
       searchableModelOptions,
-      availableProviderSkills,
       selectedProvider,
       selectedProviderStatus?.slashCommands,
       workspaceEntries,
@@ -1138,6 +1138,11 @@ export const ChatComposer = memo(
       setComposerTrigger(detectComposerTriggerForContext(promptRef.current, expandedCursor));
     }, [composerCursor, detectComposerTriggerForContext, expandComposerCursor, promptRef]);
 
+    const footerCompactnessAllowancePx = resolveComposerCustomFooterCompactnessAllowancePx({
+      activeThread,
+      isServerThread: _isServerThread,
+    });
+
     // ------------------------------------------------------------------
     // Footer compact layout observation
     // ------------------------------------------------------------------
@@ -1151,8 +1156,7 @@ export const ChatComposer = memo(
         // after the upstream controls in the non-custom composer footer.
         const composerFooterBudgetWidth = Math.max(
           0,
-          composerFormWidth -
-            (showPlanFollowUpPrompt ? PLAN_FOLLOW_UP_CUSTOM_FOOTER_ALLOWANCE_PX : 0),
+          composerFormWidth - (showPlanFollowUpPrompt ? footerCompactnessAllowancePx : 0),
         );
         const footerCompact = shouldUseCompactComposerFooter(composerFooterBudgetWidth, {
           hasWideActions: composerFooterHasWideActions,
@@ -1202,6 +1206,7 @@ export const ChatComposer = memo(
       activeThreadId,
       composerFooterActionLayoutKey,
       composerFooterHasWideActions,
+      footerCompactnessAllowancePx,
       scheduleStickToBottom,
       showPlanFollowUpPrompt,
       shouldAutoScrollRef,
