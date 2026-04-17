@@ -1,9 +1,23 @@
 import { ThreadId } from "@t3tools/contracts";
 import { useCallback } from "react";
 
-import { readEnvironmentApi } from "~/environmentApi";
+import { ensureEnvironmentApi } from "~/environmentApi";
 import { newCommandId, newMessageId } from "~/lib/utils";
 import { selectThreadsAcrossEnvironments, useStore } from "~/store";
+
+function getThreadLoopTarget(threadId: ThreadId) {
+  const thread = selectThreadsAcrossEnvironments(useStore.getState()).find(
+    (entry) => entry.id === threadId,
+  );
+  if (!thread) {
+    throw new Error("Loops are only available after the thread has been created.");
+  }
+
+  return {
+    thread,
+    api: ensureEnvironmentApi(thread.environmentId),
+  };
+}
 
 export function useThreadLoopActions() {
   const upsertLoop = useCallback(
@@ -15,12 +29,7 @@ export function useThreadLoopActions() {
         intervalMinutes: number;
       },
     ) => {
-      const thread = selectThreadsAcrossEnvironments(useStore.getState()).find(
-        (entry) => entry.id === threadId,
-      );
-      if (!thread) return;
-      const api = readEnvironmentApi(thread.environmentId);
-      if (!api) return;
+      const { api } = getThreadLoopTarget(threadId);
       await api.orchestration.dispatchCommand({
         type: "thread.loop.upsert",
         commandId: newCommandId(),
@@ -35,12 +44,7 @@ export function useThreadLoopActions() {
   );
 
   const deleteLoop = useCallback(async (threadId: ThreadId) => {
-    const thread = selectThreadsAcrossEnvironments(useStore.getState()).find(
-      (entry) => entry.id === threadId,
-    );
-    if (!thread) return;
-    const api = readEnvironmentApi(thread.environmentId);
-    if (!api) return;
+    const { api } = getThreadLoopTarget(threadId);
     await api.orchestration.dispatchCommand({
       type: "thread.loop.delete",
       commandId: newCommandId(),
@@ -50,14 +54,7 @@ export function useThreadLoopActions() {
   }, []);
 
   const runLoopNow = useCallback(async (threadId: ThreadId) => {
-    const thread = selectThreadsAcrossEnvironments(useStore.getState()).find(
-      (entry) => entry.id === threadId,
-    );
-    if (!thread) {
-      return;
-    }
-    const api = readEnvironmentApi(thread.environmentId);
-    if (!api) return;
+    const { api, thread } = getThreadLoopTarget(threadId);
     if (!thread.loop) {
       throw new Error("This thread does not have a configured loop.");
     }
