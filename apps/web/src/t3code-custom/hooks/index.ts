@@ -1,8 +1,9 @@
 export { useThreadLoopActions } from "./useThreadLoopActions";
 export { useComposerPasteFileReference } from "./useComposerPasteFileReference";
 export { useComposerFileReferenceSend } from "./useComposerFileReferenceSend";
+export { useComposerProviderSkills } from "./useComposerProviderSkills";
 export {
   buildComposerSkillMenuItems,
-  useComposerProviderSkills,
-} from "./useComposerProviderSkills";
+  useComposerSkillExtension,
+} from "./useComposerSkillExtension";
 export { useComposerSendExtension } from "./useComposerSendExtension";

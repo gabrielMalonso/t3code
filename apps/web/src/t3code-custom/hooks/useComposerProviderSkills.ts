@@ -8,8 +8,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { ensureEnvironmentApi } from "~/environmentApi";
-import { formatProviderSkillDisplayName } from "~/providerSkillPresentation";
-import { searchProviderSkills } from "~/providerSkillSearch";
 
 const EMPTY_PROVIDER_SKILLS: ReadonlyArray<ServerProviderSkill> = Object.freeze([]);
 const EMPTY_WORKSPACE_SKILLS_RESULT: ServerListProviderSkillsResult = {
@@ -92,24 +90,6 @@ export function toProviderSkillReferencesForSend(
     });
   }
   return [...uniqueSelections.values()];
-}
-
-export function buildComposerSkillMenuItems(input: {
-  provider: ProviderKind;
-  skills: ReadonlyArray<ServerProviderSkill>;
-  query: string;
-}) {
-  return searchProviderSkills(input.skills, input.query).map((skill) => ({
-    id: `skill:${input.provider}:${skill.name}`,
-    type: "skill" as const,
-    provider: input.provider,
-    skill,
-    label: formatProviderSkillDisplayName(skill),
-    description:
-      skill.shortDescription ??
-      skill.description ??
-      (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
-  }));
 }
 
 export function useComposerProviderSkills(input: {

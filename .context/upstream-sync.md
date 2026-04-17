@@ -116,3 +116,43 @@
   - `bun typecheck`
   - `bun run test src/desktopSettings.test.ts` em `apps/desktop`
   - `bun run test src/provider/Layers/ClaudeAdapter.test.ts` em `apps/server`
+
+## 2026-04-16 — Auditoria do snapshot pre-sync `e7c4c59a`
+
+- Snapshot auditado: `e7c4c59a` (`fix: sincroniza estado de loop entre backend e frontend`)
+- Divergencia daquele ponto contra `upstream/main` atual:
+  - `6` commits atras
+  - `54` commits a frente
+- O snapshot misturava feature viva com ruido de branch:
+  - feature viva: `thread loop`, `file references`, paste grande para `.t3code/pastes`, skills de workspace, artefatos internos `.t3code`, policy local da fonte mono
+  - ruido que nao vale transplantar como feature: ajustes de CI/browser thresholds, wording de release, script de worktree, tweaks de desktop/nightly e testes de contencao do footer
+- Veredito daquele estado:
+  - isolamento aceitavel, mas com hotspots
+  - nao era um fork cru; boa parte da regra ja estava empurrada para `t3code-custom/*`
+  - ainda nao dava para chamar de `bom isolamento` por causa de `ChatComposer.tsx` e `composerDraftStore.ts`
+- O que ja estava bem posicionado:
+  - `MessagesTimeline.tsx` usando `UserMessageFileReferencesSlot`
+  - `historyBootstrap.ts` usando o parser custom so no boundary de user message
+  - `WorkspaceFileSystem.ts` chamando helper local para artefatos internos em vez de embutir regra do fork
+  - `ComposerPromptEditor.tsx` com `onPasteCapture` e snapshot expandido generico, sem semantica de feature no editor
+- Hotspots reais daquele estado:
+  - `apps/web/src/components/chat/ChatComposer.tsx`
+    diff grande contra upstream e ainda coordenando skill selection, file references, paste capture, footer budget e estados do custom extension
+  - `apps/web/src/composerDraftStore.ts`
+    extensao inevitavel do store compartilhado para `fileReferences`, com persistencia, hidratacao e dedupe
+  - `apps/server/src/ws.ts`
+    contrato cross-module para listar skills de workspace
+  - `packages/contracts/src/orchestration.ts`
+    hotspot estrutural por concentrar `thread loop` e `skills`
+- Regra pratica derivada desta auditoria:
+  - se precisarmos portar features desse snapshot, o melhor doador e o estado final ja isolado em `t3code-custom/*`, nao os commits brutos que criaram a feature
+  - nao vale replay da branch inteira; vale transplante seletivo do perimetro custom e dos contratos minimos
+
+## 2026-04-16 — Refatoracao pequena pos-auditoria
+
+- `ChatComposer.tsx` perdeu mais um pouco de territorio custom:
+  - a extensao de skills do composer saiu do componente e foi empurrada para `apps/web/src/t3code-custom/hooks/useComposerSkillExtension.ts`
+  - a heuristica local de budget do footer para o controle de loop saiu da constante inline e foi movida para helper em `apps/web/src/t3code-custom/chat/useComposerCustomExtension.tsx`
+- Resultado:
+  - `ChatComposer.tsx` continua hotspot, mas com menos regra local espalhada
+  - a feature de skills agora fica atras de um hook custom especifico, em vez de misturar descoberta + menu building no core
