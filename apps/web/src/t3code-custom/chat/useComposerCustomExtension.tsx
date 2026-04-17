@@ -30,11 +30,21 @@ type ComposerSnapshot = {
   terminalContextIds: string[];
 };
 
+export const COMPOSER_CUSTOM_FOOTER_ALLOWANCE_PX = 8;
+
+export function resolveComposerCustomFooterCompactnessAllowancePx(input: {
+  activeThread: Thread | undefined;
+  isServerThread: boolean;
+}) {
+  return input.activeThread && input.isServerThread ? COMPOSER_CUSTOM_FOOTER_ALLOWANCE_PX : 0;
+}
+
 export function useComposerCustomExtension(input: {
   composerDraftTarget: ComposerDraftTarget;
   environmentId: EnvironmentId;
   activeThreadId: ThreadId | null;
   activeThread: Thread | undefined;
+  isServerThread: boolean;
   workspaceRoot: string | null | undefined;
   pendingUserInputCount: number;
   envMode: DraftThreadEnvMode;
@@ -55,6 +65,7 @@ export function useComposerCustomExtension(input: {
     environmentId,
     activeThreadId,
     activeThread,
+    isServerThread,
     workspaceRoot,
     pendingUserInputCount,
     envMode,
@@ -261,19 +272,31 @@ export function useComposerCustomExtension(input: {
   );
 
   const compactControls = useMemo<ReactNode>(
-    () => (activeThread ? <ComposerCustomControlsSlot compact thread={activeThread} /> : null),
-    [activeThread],
+    () =>
+      activeThread && isServerThread ? (
+        <ComposerCustomControlsSlot compact thread={activeThread} />
+      ) : null,
+    [activeThread, isServerThread],
   );
 
   const controls = useMemo<ReactNode>(
-    () => (activeThread ? <ComposerCustomControlsSlot thread={activeThread} /> : null),
-    [activeThread],
+    () =>
+      activeThread && isServerThread ? <ComposerCustomControlsSlot thread={activeThread} /> : null,
+    [activeThread, isServerThread],
   );
+
+  // The loop control is appended after the upstream footer controls, so compact
+  // plan-follow-up layouts need a small local budget adjustment.
+  const footerCompactnessAllowancePx = resolveComposerCustomFooterCompactnessAllowancePx({
+    activeThread,
+    isServerThread,
+  });
 
   return {
     composerFileReferences,
     isResolvingFileReferences: pendingComposerFileResolutionCount > 0,
     isDragOverComposer,
+    footerCompactnessAllowancePx,
     removeComposerImage: removeComposerImageFromDraft,
     onComposerPaste,
     onComposerDragEnter,
