@@ -94,6 +94,17 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
 
 const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 
+function createBufferedLiveStream<T>(source: Stream.Stream<T>) {
+  return Effect.gen(function* () {
+    const queue = yield* Queue.unbounded<T>();
+    yield* Effect.addFinalizer(() => Queue.shutdown(queue).pipe(Effect.asVoid));
+    yield* Stream.runForEach(source, (value) => Queue.offer(queue, value).pipe(Effect.asVoid)).pipe(
+      Effect.forkScoped,
+    );
+    return Stream.fromQueue(queue);
+  });
+}
+
 function toAuthAccessStreamEvent(
   change: BootstrapCredentialChange | SessionCredentialChange,
   revision: number,
@@ -697,6 +708,9 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcStreamEffect(
             ORCHESTRATION_WS_METHODS.subscribeShell,
             Effect.gen(function* () {
+              const bufferedLiveEvents = yield* createBufferedLiveStream(
+                orchestrationEngine.streamDomainEvents,
+              );
               const snapshot = yield* projectionSnapshotQuery.getShellSnapshot().pipe(
                 Effect.mapError(
                   (cause) =>
@@ -706,8 +720,31 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                     }),
                 ),
               );
-
-              const liveStream = orchestrationEngine.streamDomainEvents.pipe(
+              const replayEvents = yield* Stream.runCollect(
+                orchestrationEngine.readEvents(snapshot.snapshotSequence),
+              ).pipe(
+                Effect.map((events): Array<OrchestrationEvent> => Array.from(events)),
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationGetSnapshotError({
+                      message: "Failed to replay orchestration shell events",
+                      cause,
+                    }),
+                ),
+              );
+              const replayedSequences = new Set(replayEvents.map((event) => event.sequence));
+              const replayStream = Stream.fromIterable(replayEvents).pipe(
+                Stream.mapEffect(toShellStreamEvent),
+                Stream.flatMap((event) =>
+                  Option.isSome(event) ? Stream.succeed(event.value) : Stream.empty,
+                ),
+              );
+              const catchUpLiveStream = bufferedLiveEvents.pipe(
+                Stream.filter(
+                  (event) =>
+                    event.sequence > snapshot.snapshotSequence &&
+                    !replayedSequences.has(event.sequence),
+                ),
                 Stream.mapEffect(toShellStreamEvent),
                 Stream.flatMap((event) =>
                   Option.isSome(event) ? Stream.succeed(event.value) : Stream.empty,
@@ -719,7 +756,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   kind: "snapshot" as const,
                   snapshot,
                 }),
-                liveStream,
+                Stream.concat(replayStream, catchUpLiveStream),
               );
             }),
             { "rpc.aggregate": "orchestration" },
@@ -728,6 +765,16 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcStreamEffect(
             ORCHESTRATION_WS_METHODS.subscribeThread,
             Effect.gen(function* () {
+              const bufferedLiveEvents = yield* createBufferedLiveStream(
+                orchestrationEngine.streamDomainEvents.pipe(
+                  Stream.filter(
+                    (event) =>
+                      event.aggregateKind === "thread" &&
+                      event.aggregateId === input.threadId &&
+                      isThreadDetailEvent(event),
+                  ),
+                ),
+              );
               const [threadDetail, snapshotSequence] = yield* Effect.all([
                 projectionSnapshotQuery.getThreadDetailById(input.threadId).pipe(
                   Effect.mapError(
@@ -749,13 +796,38 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   cause: input.threadId,
                 });
               }
-
-              const liveStream = orchestrationEngine.streamDomainEvents.pipe(
+              const replayEvents = yield* Stream.runCollect(
+                orchestrationEngine
+                  .readEvents(snapshotSequence)
+                  .pipe(
+                    Stream.filter(
+                      (event) =>
+                        event.aggregateKind === "thread" &&
+                        event.aggregateId === input.threadId &&
+                        isThreadDetailEvent(event),
+                    ),
+                  ),
+              ).pipe(
+                Effect.map((events): Array<OrchestrationEvent> => Array.from(events)),
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationGetSnapshotError({
+                      message: `Failed to replay thread ${input.threadId}`,
+                      cause,
+                    }),
+                ),
+              );
+              const replayedSequences = new Set(replayEvents.map((event) => event.sequence));
+              const replayStream = Stream.fromIterable(replayEvents).pipe(
+                Stream.map((event) => ({
+                  kind: "event" as const,
+                  event,
+                })),
+              );
+              const catchUpLiveStream = bufferedLiveEvents.pipe(
                 Stream.filter(
                   (event) =>
-                    event.aggregateKind === "thread" &&
-                    event.aggregateId === input.threadId &&
-                    isThreadDetailEvent(event),
+                    event.sequence > snapshotSequence && !replayedSequences.has(event.sequence),
                 ),
                 Stream.map((event) => ({
                   kind: "event" as const,
@@ -771,7 +843,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                     thread: threadDetail.value,
                   },
                 }),
-                liveStream,
+                Stream.concat(replayStream, catchUpLiveStream),
               );
             }),
             { "rpc.aggregate": "orchestration" },

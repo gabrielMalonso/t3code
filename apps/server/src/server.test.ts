@@ -2970,7 +2970,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 snapshotSequence: 18,
               }),
             streamDomainEvents: Stream.make({
-              sequence: 18,
+              sequence: 19,
               eventId: EventId.make("event-thread-loop-upserted"),
               aggregateKind: "thread" as const,
               aggregateId: defaultThreadId,
@@ -3011,7 +3011,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.deepEqual(streamedEvent, {
         kind: "event",
         event: {
-          sequence: 18,
+          sequence: 19,
           eventId: EventId.make("event-thread-loop-upserted"),
           aggregateKind: "thread",
           aggregateId: defaultThreadId,
@@ -3035,6 +3035,166 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             },
           },
         },
+      });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("replays missed shell events before switching to the live stream", () =>
+    Effect.gen(function* () {
+      const now = "2026-04-17T00:02:11.000Z";
+      const replayEvent = {
+        sequence: 19,
+        eventId: EventId.make("event-thread-meta-updated"),
+        aggregateKind: "thread" as const,
+        aggregateId: defaultThreadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-thread-meta-updated"),
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "thread.meta-updated" as const,
+        payload: {
+          threadId: defaultThreadId,
+          title: "Updated Thread",
+          updatedAt: now,
+        },
+      } satisfies Extract<OrchestrationEvent, { type: "thread.meta-updated" }>;
+      const shellSnapshot = {
+        snapshotSequence: 18,
+        updatedAt: now,
+        projects: [],
+        threads: [
+          {
+            id: defaultThreadId,
+            projectId: defaultProjectId,
+            title: "Default Thread",
+            modelSelection: defaultModelSelection,
+            runtimeMode: "full-access" as const,
+            interactionMode: "default" as const,
+            branch: null,
+            worktreePath: null,
+            latestTurn: null,
+            createdAt: now,
+            updatedAt: now,
+            archivedAt: null,
+            session: null,
+            latestUserMessageAt: null,
+            hasPendingApprovals: false,
+            hasPendingUserInput: false,
+            hasActionableProposedPlan: false,
+          },
+        ],
+      };
+      const updatedThreadShell = {
+        ...shellSnapshot.threads[0]!,
+        title: "Updated Thread",
+        updatedAt: "2026-04-17T00:02:12.000Z",
+      };
+
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getShellSnapshot: () => Effect.succeed(shellSnapshot),
+            getThreadShellById: () => Effect.succeed(Option.some(updatedThreadShell)),
+          },
+          orchestrationEngine: {
+            readEvents: (sequenceExclusive) =>
+              sequenceExclusive >= 18
+                ? Stream.fromIterable<OrchestrationEvent>([replayEvent])
+                : Stream.empty,
+            streamDomainEvents: Stream.empty,
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const items = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeShell]({}).pipe(
+            Stream.take(2),
+            Stream.runCollect,
+          ),
+        ),
+      );
+
+      assert.deepEqual(items[1], {
+        kind: "thread-upserted",
+        sequence: 19,
+        thread: updatedThreadShell,
+      });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("replays missed thread detail events before switching to the live stream", () =>
+    Effect.gen(function* () {
+      const now = "2026-04-17T00:05:00.000Z";
+      const nextRunAt = "2026-04-17T00:20:00.000Z";
+      const baseThread = makeDefaultOrchestrationReadModel().threads[0];
+      if (!baseThread) {
+        throw new Error("Expected default read model to include a thread.");
+      }
+      const threadDetail = {
+        ...baseThread,
+        loop: null,
+      };
+      const replayEvent = {
+        sequence: 19,
+        eventId: EventId.make("event-thread-loop-replay"),
+        aggregateKind: "thread" as const,
+        aggregateId: defaultThreadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-thread-loop-replay"),
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "thread.loop-upserted" as const,
+        payload: {
+          threadId: defaultThreadId,
+          loop: {
+            enabled: true,
+            prompt: "Loop prompt",
+            intervalMinutes: 15,
+            nextRunAt,
+            lastRunAt: null,
+            lastError: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        },
+      } satisfies Extract<OrchestrationEvent, { type: "thread.loop-upserted" }>;
+
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getThreadDetailById: () => Effect.succeed(Option.some(threadDetail)),
+          },
+          orchestrationEngine: {
+            getReadModel: () =>
+              Effect.succeed({
+                ...makeDefaultOrchestrationReadModel(),
+                snapshotSequence: 18,
+              }),
+            readEvents: (sequenceExclusive) =>
+              sequenceExclusive >= 18
+                ? Stream.fromIterable<OrchestrationEvent>([replayEvent])
+                : Stream.empty,
+            streamDomainEvents: Stream.empty,
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const items = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeThread]({
+            threadId: defaultThreadId,
+          }).pipe(Stream.take(2), Stream.runCollect),
+        ),
+      );
+
+      assert.deepEqual(items[1], {
+        kind: "event",
+        event: replayEvent,
       });
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
