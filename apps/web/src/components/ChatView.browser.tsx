@@ -879,6 +879,47 @@ function createSnapshotWithPendingUserInput(): OrchestrationReadModel {
   };
 }
 
+function createSnapshotWithActivePlan(): OrchestrationReadModel {
+  const snapshot = createSnapshotForTargetUser({
+    targetMessageId: "msg-user-active-plan-target" as MessageId,
+    targetText: "active plan thread",
+  });
+
+  return {
+    ...snapshot,
+    threads: snapshot.threads.map((thread) =>
+      thread.id === THREAD_ID
+        ? Object.assign({}, thread, {
+            latestTurn: {
+              turnId: "turn-active-plan" as TurnId,
+              state: "running",
+              requestedAt: isoAt(1_000),
+              startedAt: isoAt(1_001),
+              completedAt: null,
+              assistantMessageId: null,
+            },
+            activities: [
+              {
+                id: EventId.make("activity-active-plan-updated"),
+                tone: "info",
+                kind: "turn.plan.updated",
+                summary: "Plan updated",
+                payload: {
+                  explanation: "Keep the work visible without annoying the user.",
+                  plan: [{ step: "Inspect active plan state", status: "inProgress" }],
+                },
+                turnId: "turn-active-plan" as TurnId,
+                sequence: 1,
+                createdAt: isoAt(1_002),
+              },
+            ],
+            updatedAt: isoAt(1_002),
+          })
+        : thread,
+    ),
+  };
+}
+
 function createSnapshotWithPlanFollowUpPrompt(options?: {
   modelSelection?: { provider: "codex"; model: string };
   planMarkdown?: string;
@@ -5221,6 +5262,35 @@ describe("ChatView timeline estimator parity (full app)", () => {
         { timeout: 8_000, interval: 16 },
       );
     } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("does not render or auto-open the plan sidebar when the setting is disabled", async () => {
+    localStorage.setItem(
+      "t3code:client-settings:v1",
+      JSON.stringify({
+        ...DEFAULT_CLIENT_SETTINGS,
+        showPlanSidebar: false,
+      }),
+    );
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotWithActivePlan(),
+    });
+
+    try {
+      await vi.waitFor(
+        () => {
+          expect(document.body.textContent ?? "").not.toContain("Inspect active plan state");
+          expect(document.querySelector('[aria-label="Close tasks sidebar"]')).toBeNull();
+          expect(document.querySelector('[title="Show plan sidebar"]')).toBeNull();
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      localStorage.removeItem("t3code:client-settings:v1");
       await mounted.cleanup();
     }
   });
