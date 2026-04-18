@@ -438,6 +438,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.diffWordWrap !== DEFAULT_UNIFIED_SETTINGS.diffWordWrap
         ? ["Diff line wrapping"]
         : []),
+      ...(settings.showPlanSidebar !== DEFAULT_UNIFIED_SETTINGS.showPlanSidebar
+        ? ["Plan sidebar"]
+        : []),
       ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
         ? ["Assistant output"]
         : []),
@@ -464,6 +467,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
       settings.diffWordWrap,
+      settings.showPlanSidebar,
       settings.enableAssistantStreaming,
       settings.timestampFormat,
       theme,
@@ -852,6 +856,30 @@ export function GeneralSettingsPanel() {
               checked={settings.diffWordWrap}
               onCheckedChange={(checked) => updateSettings({ diffWordWrap: Boolean(checked) })}
               aria-label="Wrap diff lines by default"
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Plan sidebar"
+          description="Show the Plan/Tasks side panel. Turn this off if you never use it and want it to stop popping open."
+          resetAction={
+            settings.showPlanSidebar !== DEFAULT_UNIFIED_SETTINGS.showPlanSidebar ? (
+              <SettingResetButton
+                label="plan sidebar"
+                onClick={() =>
+                  updateSettings({
+                    showPlanSidebar: DEFAULT_UNIFIED_SETTINGS.showPlanSidebar,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.showPlanSidebar}
+              onCheckedChange={(checked) => updateSettings({ showPlanSidebar: Boolean(checked) })}
+              aria-label="Show plan sidebar"
             />
           }
         />

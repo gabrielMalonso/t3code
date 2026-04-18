@@ -864,7 +864,8 @@ export const ChatComposer = memo(
       (showPlanFollowUpPrompt && activeProposedPlan !== null);
 
     const composerFooterHasWideActions = showPlanFollowUpPrompt || activePendingProgress !== null;
-    const showPlanSidebarToggle = Boolean(activePlan || sidebarProposedPlan || planSidebarOpen);
+    const showPlanSidebarToggle =
+      settings.showPlanSidebar && Boolean(activePlan || sidebarProposedPlan || planSidebarOpen);
     const composerFooterActionLayoutKey = useMemo(() => {
       if (activePendingProgress) {
         return `pending:${activePendingProgress.questionIndex}:${activePendingProgress.isLastQuestion}:${activePendingIsResponding}`;
