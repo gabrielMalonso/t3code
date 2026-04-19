@@ -1194,9 +1194,9 @@ const make = Effect.gen(function* () {
               ? (event.payload.errorMessage ?? thread.session?.lastError ?? "Turn failed")
               : event.type === "turn.aborted"
                 ? (event.payload.reason ?? thread.session?.lastError ?? "Turn interrupted")
-              : status === "ready"
-                ? null
-                : (thread.session?.lastError ?? null);
+                : status === "ready"
+                  ? null
+                  : (thread.session?.lastError ?? null);
 
         if (shouldApplyThreadLifecycle) {
           if (event.type === "turn.started" && acceptedTurnStartedSourcePlan !== null) {
