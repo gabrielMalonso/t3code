@@ -2,16 +2,17 @@
 
 ## Status atual
 
-- Data: 2026-04-11
+- Data: 2026-04-19
 - Branch de trabalho: `main`
-- Upstream integrado nesta wave: `5467d11980e2b41e4cf5c8d1c5fe972532da3a74` (`upstream/main`)
-- Estado: merge aplicado e validado localmente com `thread loop` e `file references` preservados
+- Upstream integrado nesta wave: `9df3c640` (`upstream/main`)
+- Estado: merge aplicado e validado localmente com `thread loop`, `file references`, `showPlanSidebar` e `skills de workspace` preservados
 - Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
 ## Features locais vivas
 
 - `t3code-custom/file-references`: referencia de arquivos por path, colagem e envio
 - `t3code-custom/chat/ThreadLoop*`: controles e comportamento de thread loop
+- `showPlanSidebar`: toggle local para desligar a Plan/Tasks sidebar e impedir auto-open
 - `t3code-custom/hooks/useComposerProviderSkills.ts`: descoberta de skills do workspace e selecao de `$skill` para turnos do Codex
 - `t3code-custom/hooks/useComposerFileReferenceSend.ts`: serializacao custom no envio
 - `apps/server/src/t3code-custom/workspace/internalArtifacts.ts`: artefatos internos de workspace, como `.t3code/.gitignore`
@@ -156,3 +157,53 @@
 - Resultado:
   - `ChatComposer.tsx` continua hotspot, mas com menos regra local espalhada
   - a feature de skills agora fica atras de um hook custom especifico, em vez de misturar descoberta + menu building no core
+
+## 2026-04-19 — Sync ate `9df3c640`
+
+- Branch de trabalho: `main`
+- Donor local usado para replay seletivo: `6a818b04` (`Add plan sidebar visibility setting`)
+- Regra dominante desta wave: aceitar o core do upstream primeiro e reaplicar so o diferencial vivo do fork, sem reabrir o composer inteiro
+- Zona de atrito prevista antes do merge:
+  - `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts` — `hotspot-compartilhado`
+  - `apps/server/src/server.ts` — `adaptador-core`
+  - `apps/server/src/ws.ts` — `hotspot-compartilhado`
+  - `apps/server/src/persistence/Migrations.ts` — `hotspot-compartilhado`
+  - `apps/web/src/components/chat/ChatComposer.tsx` — `hotspot-compartilhado`
+  - `packages/contracts/src/settings.ts` — `adaptador-core`
+- Conflitos reais do merge:
+  - `ProviderRuntimeIngestion.ts`, `server.ts`, `ws.ts`, `Migrations.ts`, `ChatComposer.tsx`, `settings.ts` e alguns testes de desktop/server/web
+  - nao houve conflito textual em `ChatView.tsx`, `MessagesTimeline.tsx`, `composerDraftStore.ts` ou `historyBootstrap.ts`, o que poupou uma boa quantidade de sangue
+- O que foi absorvido do upstream:
+  - suporte ACP com Cursor provider
+  - provider `opencode`
+  - thread deletion reactor
+  - session reaper
+  - Node-native TypeScript no server/desktop
+  - configurable project grouping
+  - ajustes de terminal/global shortcuts, command palette e release pipeline
+- O que foi reaplicado do custom vivo:
+  - `thread loop`, incluindo eventos detalhados na WS e start do scheduler no reactor
+  - `file references` por path e paste grande para `.t3code/pastes`
+  - descoberta de skills do workspace para turnos do Codex
+  - `showPlanSidebar` no schema de settings, painel de settings e gates de auto-open
+  - artefatos internos `.t3code/.gitignore`
+- O que foi deliberadamente nao reaplicado:
+  - qualquer ruído antigo de CI/browser thresholds
+  - runner local antigo em `.github/workflows/ci.yml`; a wave aceitou o `blacksmith-8vcpu-ubuntu-2404` do upstream
+  - duplicacao de imports/paths antigos sem `.ts` onde o upstream ja migrou o modulo
+- Decisao sensivel desta wave:
+  - `apps/server/src/persistence/Migrations.ts` preservou a nossa `023_ProjectionThreadLoops`
+  - as migracoes de shell summary ficaram em `024` e `025` no fork
+  - a limpeza de pending approvals do upstream entrou como `026` logica, importando a implementacao do arquivo `025_CleanupInvalidProjectionPendingApprovals.ts`
+  - isso evita quebrar bancos do fork que ja conhecem a `023` local de loop
+- Resultado pratico:
+  - o reencaixe ficou majoritariamente em `adaptador-core`
+  - os hotspots reais continuam sendo `ProviderRuntimeIngestion.ts`, `ws.ts`, `ChatComposer.tsx` e `Migrations.ts`
+  - o sync diminuiu conflito futuro porque absorveu o core novo de providers/runtime sem reaplicar custom morto
+- Validacao final:
+  - `bun install`
+  - `bun fmt`
+  - `bun lint`
+  - `bun typecheck`
+  - `bun run test src/server.test.ts src/orchestration/Layers/OrchestrationReactor.test.ts` em `apps/server`
+  - `bun run test src/localApi.test.ts src/components/chat/TraitsPicker.browser.tsx` em `apps/web`

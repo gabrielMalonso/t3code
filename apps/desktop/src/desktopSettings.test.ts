@@ -11,8 +11,8 @@ import {
   setDesktopServerExposurePreference,
   setDesktopUpdateChannelPreference,
   writeDesktopSettings,
-} from "./desktopSettings";
-import { resolveDefaultDesktopUpdateChannel } from "./updateChannels";
+} from "./desktopSettings.ts";
+import { resolveDefaultDesktopUpdateChannel } from "./updateChannels.ts";
 
 const tempDirectories: string[] = [];
 
