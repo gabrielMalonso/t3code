@@ -266,6 +266,15 @@ export const OrchestrationCheckpointSummary = Schema.Struct({
 });
 export type OrchestrationCheckpointSummary = typeof OrchestrationCheckpointSummary.Type;
 
+export const ThreadBootstrapPhase = Schema.Literals([
+  "ready",
+  "creating_worktree",
+  "renaming_branch",
+  "running_setup",
+  "failed",
+]);
+export type ThreadBootstrapPhase = typeof ThreadBootstrapPhase.Type;
+
 export const OrchestrationThreadActivityTone = Schema.Literals([
   "info",
   "tool",
@@ -328,6 +337,11 @@ export const OrchestrationThread = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  bootstrapPhase: Schema.optional(
+    ThreadBootstrapPhase.pipe(
+      Schema.withDecodingDefault(Effect.succeed("ready" satisfies ThreadBootstrapPhase)),
+    ),
+  ),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -377,6 +391,11 @@ export const OrchestrationThreadShell = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  bootstrapPhase: Schema.optional(
+    ThreadBootstrapPhase.pipe(
+      Schema.withDecodingDefault(Effect.succeed("ready" satisfies ThreadBootstrapPhase)),
+    ),
+  ),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -511,6 +530,7 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  bootstrapPhase: Schema.optional(ThreadBootstrapPhase),
 });
 
 const ThreadRuntimeModeSetCommand = Schema.Struct({
@@ -866,6 +886,11 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  bootstrapPhase: Schema.optional(
+    ThreadBootstrapPhase.pipe(
+      Schema.withDecodingDefault(Effect.succeed("ready" satisfies ThreadBootstrapPhase)),
+    ),
+  ),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -892,6 +917,7 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  bootstrapPhase: Schema.optional(ThreadBootstrapPhase),
   updatedAt: IsoDateTime,
 });
 

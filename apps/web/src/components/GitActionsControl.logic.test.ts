@@ -1029,6 +1029,16 @@ describe("resolveLiveThreadBranchUpdate", () => {
 
     assert.equal(update, null);
   });
+
+  it("returns null while thread bootstrap is still in progress", () => {
+    const update = resolveLiveThreadBranchUpdate({
+      threadBranch: "t3code/1234abcd",
+      gitStatus: status({ branch: "main" }),
+      bootstrapPhase: "renaming_branch",
+    });
+
+    assert.equal(update, null);
+  });
 });
 
 describe("resolveAutoFeatureBranchName", () => {

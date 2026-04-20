@@ -11,6 +11,7 @@ import {
   KeybindingRule,
   MessageId,
   OpenError,
+  type OrchestrationReadModel,
   type OrchestrationThreadShell,
   TerminalNotRunningError,
   type OrchestrationCommand,
@@ -58,6 +59,7 @@ import {
 } from "./checkpointing/Services/CheckpointDiffQuery.ts";
 import { GitCore, type GitCoreShape } from "./git/Services/GitCore.ts";
 import { GitManager, type GitManagerShape } from "./git/Services/GitManager.ts";
+import { TextGeneration, type TextGenerationShape } from "./git/Services/TextGeneration.ts";
 import { GitStatusBroadcasterLive } from "./git/Layers/GitStatusBroadcaster.ts";
 import {
   GitStatusBroadcaster,
@@ -125,7 +127,7 @@ const testEnvironmentDescriptor = {
     repositoryIdentity: true,
   },
 };
-const makeDefaultOrchestrationReadModel = () => {
+const makeDefaultOrchestrationReadModel = (): OrchestrationReadModel => {
   const now = new Date().toISOString();
   return {
     snapshotSequence: 0,
@@ -152,6 +154,7 @@ const makeDefaultOrchestrationReadModel = () => {
         runtimeMode: "full-access" as const,
         branch: null,
         worktreePath: null,
+        bootstrapPhase: "ready" as const,
         createdAt: now,
         updatedAt: now,
         archivedAt: null,
@@ -180,6 +183,7 @@ const makeDefaultOrchestrationThreadShell = (
     interactionMode: "default",
     branch: null,
     worktreePath: null,
+    bootstrapPhase: "ready",
     latestTurn: null,
     createdAt: now,
     updatedAt: now,
@@ -192,16 +196,6 @@ const makeDefaultOrchestrationThreadShell = (
     ...overrides,
   };
 };
-
-const workspaceAndProjectServicesLayer = Layer.mergeAll(
-  WorkspacePathsLive,
-  WorkspaceEntriesLive.pipe(Layer.provide(WorkspacePathsLive)),
-  WorkspaceFileSystemLive.pipe(
-    Layer.provide(WorkspacePathsLive),
-    Layer.provide(WorkspaceEntriesLive.pipe(Layer.provide(WorkspacePathsLive))),
-  ),
-  ProjectFaviconResolverLive,
-);
 
 const browserOtlpTracingLayer = Layer.mergeAll(
   FetchHttpClient.layer,
@@ -324,6 +318,7 @@ const buildAppUnderTest = (options?: {
     open?: Partial<OpenShape>;
     gitCore?: Partial<GitCoreShape>;
     gitManager?: Partial<GitManagerShape>;
+    textGeneration?: Partial<TextGenerationShape>;
     gitStatusBroadcaster?: Partial<GitStatusBroadcasterShape>;
     projectSetupScriptRunner?: Partial<ProjectSetupScriptRunnerShape>;
     terminalManager?: Partial<TerminalManagerShape>;
@@ -441,6 +436,15 @@ const buildAppUnderTest = (options?: {
       ),
       Layer.provide(gitCoreLayer),
       Layer.provide(gitManagerLayer),
+      Layer.provide(
+        Layer.mock(TextGeneration)({
+          generateCommitMessage: () => Effect.die("generateCommitMessage should not be called"),
+          generatePrContent: () => Effect.die("generatePrContent should not be called"),
+          generateBranchName: () => Effect.succeed({ branch: "feature/bootstrap-branch" }),
+          generateThreadTitle: () => Effect.succeed({ title: "Generated thread title" }),
+          ...options?.layers?.textGeneration,
+        }),
+      ),
       Layer.provideMerge(gitStatusBroadcasterLayer),
       Layer.provide(
         Layer.mock(ProjectSetupScriptRunner)({
@@ -3171,6 +3175,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             interactionMode: "default" as const,
             branch: null,
             worktreePath: null,
+            bootstrapPhase: "ready" as const,
             latestTurn: null,
             createdAt: now,
             updatedAt: now,
@@ -3724,7 +3729,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             isRepo: true,
             hasOriginRemote: true,
             isDefaultBranch: false,
-            branch: "t3code/bootstrap-branch",
+            branch: "t3code/8d593fe1",
             hasWorkingTreeChanges: false,
             workingTree: {
               files: [],
@@ -3740,9 +3745,14 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         const createWorktree = vi.fn((_: Parameters<GitCoreShape["createWorktree"]>[0]) =>
           Effect.succeed({
             worktree: {
-              branch: "t3code/bootstrap-branch",
+              branch: "t3code/8d593fe1",
               path: "/tmp/bootstrap-worktree",
             },
+          }),
+        );
+        const renameBranch = vi.fn((_: Parameters<GitCoreShape["renameBranch"]>[0]) =>
+          Effect.succeed({
+            branch: "t3code/feature/bootstrap-branch",
           }),
         );
         const runForThread = vi.fn(
@@ -3760,6 +3770,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           layers: {
             gitCore: {
               createWorktree,
+              renameBranch,
             },
             gitStatusBroadcaster: {
               refreshStatus,
@@ -3809,7 +3820,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 prepareWorktree: {
                   projectCwd: "/tmp/project",
                   baseBranch: "main",
-                  branch: "t3code/bootstrap-branch",
+                  branch: "t3code/8d593fe1",
                 },
                 runSetupScript: true,
               },
@@ -3818,22 +3829,30 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           ),
         );
 
-        assert.equal(response.sequence, 5);
+        assert.equal(response.sequence, 8);
         assert.deepEqual(
           dispatchedCommands.map((command) => command.type),
           [
             "thread.create",
             "thread.meta.update",
+            "thread.meta.update",
+            "thread.meta.update",
             "thread.activity.append",
             "thread.activity.append",
+            "thread.meta.update",
             "thread.turn.start",
           ],
         );
         assert.deepEqual(createWorktree.mock.calls[0]?.[0], {
           cwd: "/tmp/project",
           branch: "main",
-          newBranch: "t3code/bootstrap-branch",
+          newBranch: "t3code/8d593fe1",
           path: null,
+        });
+        assert.deepEqual(renameBranch.mock.calls[0]?.[0], {
+          cwd: "/tmp/bootstrap-worktree",
+          oldBranch: "t3code/8d593fe1",
+          newBranch: "t3code/feature/bootstrap-branch",
         });
         assert.deepEqual(runForThread.mock.calls[0]?.[0], {
           threadId: ThreadId.make("thread-bootstrap"),
@@ -3843,6 +3862,22 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         });
         assert.deepEqual(refreshStatus.mock.calls[0]?.[0], "/tmp/bootstrap-worktree");
 
+        const threadMetaUpdates = dispatchedCommands.filter(
+          (command): command is Extract<OrchestrationCommand, { type: "thread.meta.update" }> =>
+            command.type === "thread.meta.update",
+        );
+        assert.deepEqual(
+          threadMetaUpdates.map((command) => ({
+            branch: command.branch ?? null,
+            bootstrapPhase: command.bootstrapPhase ?? null,
+          })),
+          [
+            { branch: null, bootstrapPhase: "creating_worktree" },
+            { branch: "t3code/8d593fe1", bootstrapPhase: "renaming_branch" },
+            { branch: "t3code/feature/bootstrap-branch", bootstrapPhase: "running_setup" },
+            { branch: "t3code/feature/bootstrap-branch", bootstrapPhase: "ready" },
+          ],
+        );
         const setupActivities = dispatchedCommands.filter(
           (command): command is Extract<OrchestrationCommand, { type: "thread.activity.append" }> =>
             command.type === "thread.activity.append",
@@ -3851,7 +3886,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           setupActivities.map((command) => command.activity.kind),
           ["setup-script.requested", "setup-script.started"],
         );
-        const finalCommand = dispatchedCommands[4];
+        const finalCommand = dispatchedCommands.at(-1);
         assertTrue(finalCommand?.type === "thread.turn.start");
         if (finalCommand?.type === "thread.turn.start") {
           assert.equal(finalCommand.bootstrap, undefined);
@@ -3865,9 +3900,14 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const createWorktree = vi.fn((_: Parameters<GitCoreShape["createWorktree"]>[0]) =>
         Effect.succeed({
           worktree: {
-            branch: "t3code/bootstrap-branch",
+            branch: "t3code/8d593fe1",
             path: "/tmp/bootstrap-worktree",
           },
+        }),
+      );
+      const renameBranch = vi.fn((_: Parameters<GitCoreShape["renameBranch"]>[0]) =>
+        Effect.succeed({
+          branch: "t3code/feature/bootstrap-branch",
         }),
       );
       const runForThread = vi.fn(
@@ -3879,6 +3919,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         layers: {
           gitCore: {
             createWorktree,
+            renameBranch,
           },
           orchestrationEngine: {
             dispatch: (command) =>
@@ -3925,7 +3966,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               prepareWorktree: {
                 projectCwd: "/tmp/project",
                 baseBranch: "main",
-                branch: "t3code/bootstrap-branch",
+                branch: "t3code/8d593fe1",
               },
               runSetupScript: true,
             },
@@ -3934,10 +3975,18 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         ),
       );
 
-      assert.equal(response.sequence, 4);
+      assert.equal(response.sequence, 7);
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
-        ["thread.create", "thread.meta.update", "thread.activity.append", "thread.turn.start"],
+        [
+          "thread.create",
+          "thread.meta.update",
+          "thread.meta.update",
+          "thread.meta.update",
+          "thread.activity.append",
+          "thread.meta.update",
+          "thread.turn.start",
+        ],
       );
       const setupFailureActivity = dispatchedCommands.find(
         (command): command is Extract<OrchestrationCommand, { type: "thread.activity.append" }> =>
@@ -3958,9 +4007,14 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const createWorktree = vi.fn((_: Parameters<GitCoreShape["createWorktree"]>[0]) =>
         Effect.succeed({
           worktree: {
-            branch: "t3code/bootstrap-branch",
+            branch: "t3code/8d593fe1",
             path: "/tmp/bootstrap-worktree",
           },
+        }),
+      );
+      const renameBranch = vi.fn((_: Parameters<GitCoreShape["renameBranch"]>[0]) =>
+        Effect.succeed({
+          branch: "t3code/feature/bootstrap-branch",
         }),
       );
       const runForThread = vi.fn(
@@ -3979,6 +4033,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         layers: {
           gitCore: {
             createWorktree,
+            renameBranch,
           },
           orchestrationEngine: {
             dispatch: (command) => {
@@ -4041,7 +4096,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               prepareWorktree: {
                 projectCwd: "/tmp/project",
                 baseBranch: "main",
-                branch: "t3code/bootstrap-branch",
+                branch: "t3code/8d593fe1",
               },
               runSetupScript: true,
             },
@@ -4050,10 +4105,18 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         ),
       );
 
-      assert.equal(response.sequence, 4);
+      assert.equal(response.sequence, 7);
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
-        ["thread.create", "thread.meta.update", "thread.activity.append", "thread.turn.start"],
+        [
+          "thread.create",
+          "thread.meta.update",
+          "thread.meta.update",
+          "thread.meta.update",
+          "thread.activity.append",
+          "thread.meta.update",
+          "thread.turn.start",
+        ],
       );
       const setupActivities = dispatchedCommands.filter(
         (command): command is Extract<OrchestrationCommand, { type: "thread.activity.append" }> =>
@@ -4138,7 +4201,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.include(result.failure.message, "worktree exploded");
       assert.deepEqual(
         dispatchedCommands.map((command) => command.type),
-        ["thread.create", "thread.delete"],
+        ["thread.create", "thread.meta.update", "thread.delete"],
       );
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );

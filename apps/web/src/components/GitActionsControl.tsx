@@ -265,6 +265,13 @@ export default function GitActionsControl({
       }
 
       if (activeServerThread) {
+        const isBootstrapActive =
+          activeServerThread.bootstrapPhase !== "ready" &&
+          activeServerThread.bootstrapPhase !== "failed";
+        if (isBootstrapActive) {
+          return;
+        }
+
         if (activeServerThread.branch === branch) {
           return;
         }
@@ -367,6 +374,7 @@ export default function GitActionsControl({
     const branchUpdate = resolveLiveThreadBranchUpdate({
       threadBranch: activeServerThread?.branch ?? activeDraftThread?.branch ?? null,
       gitStatus: gitStatusForActions,
+      bootstrapPhase: activeServerThread?.bootstrapPhase ?? null,
     });
     if (!branchUpdate) {
       return;
@@ -375,6 +383,7 @@ export default function GitActionsControl({
     persistThreadBranchSync(branchUpdate.branch);
   }, [
     activeServerThread?.branch,
+    activeServerThread?.bootstrapPhase,
     activeDraftThread?.branch,
     gitStatusForActions,
     isGitActionRunning,
