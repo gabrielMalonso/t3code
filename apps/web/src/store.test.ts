@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyOrchestrationEvent,
   applyOrchestrationEvents,
+  applyShellEvent,
   selectEnvironmentState,
   selectProjectsAcrossEnvironments,
   selectThreadByRef,
@@ -126,6 +127,7 @@ function makeState(thread: Thread): AppState {
         updatedAt: thread.updatedAt,
         branch: thread.branch,
         worktreePath: thread.worktreePath,
+        ...(thread.loop !== undefined ? { loop: thread.loop } : {}),
       },
     },
     threadSessionById: {
@@ -689,6 +691,63 @@ describe("incremental orchestration updates", () => {
     expect(nextEnvironmentState?.messageByThreadId[thread2.id]).toBe(
       previousEnvironmentState?.messageByThreadId[thread2.id],
     );
+  });
+
+  it("preserves loop state across shell-thread updates", () => {
+    const thread = makeThread({
+      loop: {
+        enabled: true,
+        prompt: "rodar",
+        intervalMinutes: 15,
+        nextRunAt: "2026-02-27T00:15:00.000Z",
+        lastRunAt: null,
+        lastError: null,
+        createdAt: "2026-02-27T00:00:00.000Z",
+        updatedAt: "2026-02-27T00:00:00.000Z",
+      },
+    });
+    const ref = scopeThreadRef(thread.environmentId, thread.id);
+    const state = makeState(thread);
+
+    const next = applyShellEvent(
+      state,
+      {
+        sequence: 1,
+        kind: "thread-upserted",
+        thread: {
+          id: thread.id,
+          projectId: thread.projectId,
+          title: thread.title,
+          modelSelection: thread.modelSelection,
+          runtimeMode: thread.runtimeMode,
+          interactionMode: thread.interactionMode,
+          branch: thread.branch,
+          worktreePath: thread.worktreePath,
+          bootstrapPhase: "ready",
+          latestTurn: null,
+          createdAt: thread.createdAt,
+          updatedAt: "2026-02-27T00:01:00.000Z",
+          archivedAt: thread.archivedAt,
+          session: {
+            threadId: thread.id,
+            status: "running",
+            providerName: "codex",
+            runtimeMode: "full-access",
+            activeTurnId: TurnId.make("turn-running"),
+            lastError: null,
+            updatedAt: "2026-02-27T00:01:00.000Z",
+          },
+          latestUserMessageAt: null,
+          hasPendingApprovals: false,
+          hasPendingUserInput: false,
+          hasActionableProposedPlan: false,
+        },
+      },
+      localEnvironmentId,
+    );
+
+    expect(selectThreadByRef(next, ref)?.loop).toEqual(thread.loop);
+    expect(localEnvironmentStateOf(next).threadShellById[thread.id]?.loop).toEqual(thread.loop);
   });
 
   it("applies replay batches in sequence and updates session state", () => {

@@ -2,6 +2,7 @@ import type {
   GitRunStackedActionResult,
   GitStackedAction,
   GitStatusResult,
+  ThreadBootstrapPhase,
 } from "@t3tools/contracts";
 import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
 
@@ -342,8 +343,18 @@ export function resolveThreadBranchUpdate(
 export function resolveLiveThreadBranchUpdate(input: {
   threadBranch: string | null;
   gitStatus: GitStatusResult | null;
+  bootstrapPhase?: ThreadBootstrapPhase | null;
 }): { branch: string | null } | null {
   if (!input.gitStatus) {
+    return null;
+  }
+
+  if (
+    input.bootstrapPhase !== undefined &&
+    input.bootstrapPhase !== null &&
+    input.bootstrapPhase !== "ready" &&
+    input.bootstrapPhase !== "failed"
+  ) {
     return null;
   }
 

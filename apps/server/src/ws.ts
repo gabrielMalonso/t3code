@@ -1,5 +1,6 @@
 import { Cause, Data, Duration, Effect, Layer, Option, Queue, Ref, Schema, Stream } from "effect";
 import {
+  type ChatAttachment,
   type AuthAccessStreamEvent,
   AuthSessionId,
   CommandId,
@@ -21,9 +22,15 @@ import {
   FilesystemBrowseError,
   ThreadId,
   type TerminalEvent,
+  type ThreadBootstrapPhase,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
+import {
+  isTemporaryWorktreeBranch,
+  sanitizeBranchFragment,
+  WORKTREE_BRANCH_PREFIX,
+} from "@t3tools/shared/git";
 import { clamp } from "effect/Number";
 import { HttpRouter, HttpServerRequest } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
@@ -33,6 +40,7 @@ import { ServerConfig } from "./config.ts";
 import { GitCore } from "./git/Services/GitCore.ts";
 import { GitManager } from "./git/Services/GitManager.ts";
 import { GitStatusBroadcaster } from "./git/Services/GitStatusBroadcaster.ts";
+import { TextGeneration } from "./git/Services/TextGeneration.ts";
 import { Keybindings } from "./keybindings.ts";
 import { Open, resolveAvailableEditors } from "./open.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
@@ -93,6 +101,38 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
 }
 
 const PROVIDER_STATUS_DEBOUNCE_MS = 200;
+const ACTIVE_BOOTSTRAP_PHASES = new Set<ThreadBootstrapPhase>([
+  "creating_worktree",
+  "renaming_branch",
+  "running_setup",
+]);
+
+function isBootstrapPhaseActive(phase: ThreadBootstrapPhase | null | undefined): boolean {
+  return phase !== undefined && phase !== null && ACTIVE_BOOTSTRAP_PHASES.has(phase);
+}
+
+function buildGeneratedWorktreeBranchName(raw: string): string {
+  const normalized = raw
+    .trim()
+    .toLowerCase()
+    .replace(/^refs\/heads\//, "");
+  const withoutPrefix = normalized.startsWith(`${WORKTREE_BRANCH_PREFIX}/`)
+    ? normalized.slice(`${WORKTREE_BRANCH_PREFIX}/`.length)
+    : normalized;
+  return `${WORKTREE_BRANCH_PREFIX}/${sanitizeBranchFragment(withoutPrefix)}`;
+}
+
+function hasMeaningfulThreadMetaUpdate(
+  command: Extract<OrchestrationCommand, { type: "thread.meta.update" }>,
+): boolean {
+  return (
+    command.title !== undefined ||
+    command.modelSelection !== undefined ||
+    command.branch !== undefined ||
+    command.worktreePath !== undefined ||
+    command.bootstrapPhase !== undefined
+  );
+}
 
 function createBufferedLiveStream<T>(source: Stream.Stream<T>) {
   return Effect.gen(function* () {
@@ -160,6 +200,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const open = yield* Open;
       const gitManager = yield* GitManager;
       const git = yield* GitCore;
+      const textGeneration = yield* TextGeneration;
       const gitStatusBroadcaster = yield* GitStatusBroadcaster;
       const terminalManager = yield* TerminalManager;
       const providerRegistry = yield* ProviderRegistry;
@@ -438,10 +479,10 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                             error,
                             requestedAt,
                             worktreePath,
-                          }),
+                          }).pipe(Effect.as("failed" as const)),
                         onSuccess: (setupResult) => {
                           if (setupResult.status !== "started") {
-                            return Effect.void;
+                            return Effect.succeed("skipped" as const);
                           }
                           return recordSetupScriptStarted({
                             requestedAt,
@@ -449,12 +490,12 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                             scriptId: setupResult.scriptId,
                             scriptName: setupResult.scriptName,
                             terminalId: setupResult.terminalId,
-                          });
+                          }).pipe(Effect.as("started" as const));
                         },
                       }),
                     );
                 })()
-              : Effect.void;
+              : Effect.succeed("disabled" as const);
 
           const bootstrapProgram = Effect.gen(function* () {
             if (bootstrap?.createThread) {
@@ -475,6 +516,11 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             }
 
             if (bootstrap?.prepareWorktree) {
+              yield* dispatchServerThreadMetaUpdate({
+                threadId: command.threadId,
+                commandTag: "bootstrap-thread-phase-creating-worktree",
+                bootstrapPhase: "creating_worktree",
+              });
               const worktree = yield* git.createWorktree({
                 cwd: bootstrap.prepareWorktree.projectCwd,
                 branch: bootstrap.prepareWorktree.baseBranch,
@@ -482,17 +528,54 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 path: null,
               });
               targetWorktreePath = worktree.worktree.path;
-              yield* orchestrationEngine.dispatch({
-                type: "thread.meta.update",
-                commandId: serverCommandId("bootstrap-thread-meta-update"),
+              const temporaryBranch = worktree.worktree.branch;
+              yield* dispatchServerThreadMetaUpdate({
                 threadId: command.threadId,
-                branch: worktree.worktree.branch,
+                commandTag: "bootstrap-thread-meta-update",
+                branch: temporaryBranch,
                 worktreePath: targetWorktreePath,
+                bootstrapPhase: "renaming_branch",
               });
               yield* refreshGitStatus(targetWorktreePath);
-            }
+              const resolvedBranch = yield* maybeGenerateAndRenameBootstrapWorktreeBranch({
+                threadId: command.threadId,
+                branch: temporaryBranch,
+                worktreePath: targetWorktreePath,
+                messageText: finalTurnStartCommand.message.text,
+                attachments: finalTurnStartCommand.message.attachments,
+              });
 
-            yield* runSetupProgram();
+              if (bootstrap.runSetupScript) {
+                yield* dispatchServerThreadMetaUpdate({
+                  threadId: command.threadId,
+                  commandTag: "bootstrap-thread-phase-running-setup",
+                  branch: resolvedBranch,
+                  worktreePath: targetWorktreePath,
+                  bootstrapPhase: "running_setup",
+                });
+                const setupLaunchStatus = yield* runSetupProgram();
+                yield* dispatchServerThreadMetaUpdate({
+                  threadId: command.threadId,
+                  commandTag:
+                    setupLaunchStatus === "failed"
+                      ? "bootstrap-thread-phase-failed"
+                      : "bootstrap-thread-phase-ready",
+                  branch: resolvedBranch,
+                  worktreePath: targetWorktreePath,
+                  bootstrapPhase: setupLaunchStatus === "failed" ? "failed" : "ready",
+                });
+              } else {
+                yield* dispatchServerThreadMetaUpdate({
+                  threadId: command.threadId,
+                  commandTag: "bootstrap-thread-phase-ready",
+                  branch: resolvedBranch,
+                  worktreePath: targetWorktreePath,
+                  bootstrapPhase: "ready",
+                });
+              }
+            } else {
+              yield* runSetupProgram();
+            }
 
             return yield* orchestrationEngine.dispatch(finalTurnStartCommand);
           });
@@ -511,19 +594,33 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const dispatchNormalizedCommand = (
         normalizedCommand: OrchestrationCommand,
       ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> => {
-        const dispatchEffect =
-          normalizedCommand.type === "thread.turn.start" && normalizedCommand.bootstrap
-            ? dispatchBootstrapTurnStart(normalizedCommand)
-            : orchestrationEngine
-                .dispatch(normalizedCommand)
-                .pipe(
-                  Effect.mapError((cause) =>
-                    toDispatchCommandError(cause, "Failed to dispatch orchestration command"),
-                  ),
-                );
-
         return startup
-          .enqueueCommand(dispatchEffect)
+          .enqueueCommand(
+            Effect.gen(function* () {
+              const guardedCommand =
+                normalizedCommand.type === "thread.meta.update"
+                  ? yield* sanitizeClientThreadMetaUpdateCommand(normalizedCommand)
+                  : normalizedCommand;
+
+              if (
+                guardedCommand.type === "thread.meta.update" &&
+                !hasMeaningfulThreadMetaUpdate(guardedCommand)
+              ) {
+                const readModel = yield* orchestrationEngine.getReadModel();
+                return { sequence: readModel.snapshotSequence };
+              }
+
+              return yield* guardedCommand.type === "thread.turn.start" && guardedCommand.bootstrap
+                ? dispatchBootstrapTurnStart(guardedCommand)
+                : orchestrationEngine
+                    .dispatch(guardedCommand)
+                    .pipe(
+                      Effect.mapError((cause) =>
+                        toDispatchCommandError(cause, "Failed to dispatch orchestration command"),
+                      ),
+                    );
+            }),
+          )
           .pipe(
             Effect.mapError((cause) =>
               toDispatchCommandError(cause, "Failed to dispatch orchestration command"),
@@ -565,6 +662,98 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         gitStatusBroadcaster
           .refreshStatus(cwd)
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
+
+      const dispatchServerThreadMetaUpdate = (input: {
+        readonly threadId: ThreadId;
+        readonly commandTag: string;
+        readonly title?: string;
+        readonly branch?: string | null;
+        readonly worktreePath?: string | null;
+        readonly bootstrapPhase?: ThreadBootstrapPhase;
+      }) =>
+        orchestrationEngine.dispatch({
+          type: "thread.meta.update",
+          commandId: serverCommandId(input.commandTag),
+          threadId: input.threadId,
+          ...(input.title !== undefined ? { title: input.title } : {}),
+          ...(input.branch !== undefined ? { branch: input.branch } : {}),
+          ...(input.worktreePath !== undefined ? { worktreePath: input.worktreePath } : {}),
+          ...(input.bootstrapPhase !== undefined ? { bootstrapPhase: input.bootstrapPhase } : {}),
+        });
+
+      const sanitizeClientThreadMetaUpdateCommand = (
+        command: Extract<OrchestrationCommand, { type: "thread.meta.update" }>,
+      ) =>
+        Effect.gen(function* () {
+          const readModel = yield* orchestrationEngine.getReadModel();
+          const thread = readModel.threads.find((entry) => entry.id === command.threadId);
+          if (!thread || !isBootstrapPhaseActive(thread.bootstrapPhase)) {
+            return command;
+          }
+
+          if (
+            command.branch === undefined &&
+            command.worktreePath === undefined &&
+            command.bootstrapPhase === undefined
+          ) {
+            return command;
+          }
+
+          yield* Effect.logDebug("ignoring client thread meta bootstrap update", {
+            threadId: command.threadId,
+            bootstrapPhase: thread.bootstrapPhase,
+          });
+
+          return {
+            ...command,
+            branch: undefined,
+            worktreePath: undefined,
+            bootstrapPhase: undefined,
+          } satisfies Extract<OrchestrationCommand, { type: "thread.meta.update" }>;
+        });
+
+      const maybeGenerateAndRenameBootstrapWorktreeBranch = (input: {
+        readonly threadId: ThreadId;
+        readonly branch: string;
+        readonly worktreePath: string;
+        readonly messageText: string;
+        readonly attachments: ReadonlyArray<ChatAttachment>;
+      }) =>
+        Effect.gen(function* () {
+          if (!isTemporaryWorktreeBranch(input.branch)) {
+            return input.branch;
+          }
+
+          const { textGenerationModelSelection: modelSelection } =
+            yield* serverSettings.getSettings;
+          const generated = yield* textGeneration.generateBranchName({
+            cwd: input.worktreePath,
+            message: input.messageText,
+            ...(input.attachments.length > 0 ? { attachments: input.attachments } : {}),
+            modelSelection,
+          });
+          const targetBranch = buildGeneratedWorktreeBranchName(generated.branch);
+          if (targetBranch === input.branch) {
+            return input.branch;
+          }
+
+          const renamed = yield* git.renameBranch({
+            cwd: input.worktreePath,
+            oldBranch: input.branch,
+            newBranch: targetBranch,
+          });
+          yield* refreshGitStatus(input.worktreePath);
+          return renamed.branch;
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("bootstrap worktree branch rename failed", {
+              threadId: input.threadId,
+              cwd: input.worktreePath,
+              oldBranch: input.branch,
+              cause: Cause.pretty(cause),
+            }).pipe(Effect.as(input.branch)),
+          ),
+        );
 
       const listProviderSkills = (input: {
         readonly provider: "codex" | "claudeAgent" | "cursor" | "opencode";

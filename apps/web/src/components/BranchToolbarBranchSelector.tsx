@@ -136,6 +136,13 @@ export function BranchToolbarBranchSelector({
   const setThreadBranch = useCallback(
     (branch: string | null, worktreePath: string | null) => {
       if (!activeThreadId || !activeProject) return;
+      const isBootstrapActive =
+        serverThread !== undefined &&
+        serverThread.bootstrapPhase !== "ready" &&
+        serverThread.bootstrapPhase !== "failed";
+      if (isBootstrapActive) {
+        return;
+      }
       const api = readEnvironmentApi(environmentId);
       if (serverSession && worktreePath !== activeWorktreePath && api) {
         void api.orchestration
@@ -186,6 +193,7 @@ export function BranchToolbarBranchSelector({
       threadRef,
       environmentId,
       effectiveEnvMode,
+      serverThread,
     ],
   );
 
@@ -391,16 +399,25 @@ export function BranchToolbarBranchSelector({
   };
 
   useEffect(() => {
+    const bootstrapPhase = serverThread?.bootstrapPhase;
     if (
       effectiveEnvMode !== "worktree" ||
       activeWorktreePath ||
       activeThreadBranch ||
-      !currentGitBranch
+      !currentGitBranch ||
+      (bootstrapPhase !== undefined && bootstrapPhase !== "ready" && bootstrapPhase !== "failed")
     ) {
       return;
     }
     setThreadBranch(currentGitBranch, null);
-  }, [activeThreadBranch, activeWorktreePath, currentGitBranch, effectiveEnvMode, setThreadBranch]);
+  }, [
+    activeThreadBranch,
+    activeWorktreePath,
+    currentGitBranch,
+    effectiveEnvMode,
+    serverThread?.bootstrapPhase,
+    setThreadBranch,
+  ]);
 
   // ---------------------------------------------------------------------------
   // Combobox / list plumbing

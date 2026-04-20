@@ -261,6 +261,7 @@ export function projectEvent(
             interactionMode: payload.interactionMode,
             branch: payload.branch,
             worktreePath: payload.worktreePath,
+            bootstrapPhase: payload.bootstrapPhase,
             latestTurn: null,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
@@ -328,6 +329,9 @@ export function projectEvent(
               : {}),
             ...(payload.branch !== undefined ? { branch: payload.branch } : {}),
             ...(payload.worktreePath !== undefined ? { worktreePath: payload.worktreePath } : {}),
+            ...(payload.bootstrapPhase !== undefined
+              ? { bootstrapPhase: payload.bootstrapPhase }
+              : {}),
             updatedAt: payload.updatedAt,
           }),
         })),

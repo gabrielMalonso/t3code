@@ -16,6 +16,7 @@ import type {
   CheckpointRef,
   ProviderInteractionMode,
   RuntimeMode,
+  ThreadBootstrapPhase,
 } from "@t3tools/contracts";
 
 export type SessionPhase = "disconnected" | "connecting" | "ready" | "running";
@@ -114,6 +115,7 @@ export interface Thread {
   pendingSourceProposedPlan?: OrchestrationLatestTurn["sourceProposedPlan"];
   branch: string | null;
   worktreePath: string | null;
+  bootstrapPhase?: ThreadBootstrapPhase;
   turnDiffSummaries: TurnDiffSummary[];
   activities: OrchestrationThreadActivity[];
   loop?: ThreadLoop | null;
@@ -134,6 +136,7 @@ export interface ThreadShell {
   updatedAt?: string | undefined;
   branch: string | null;
   worktreePath: string | null;
+  bootstrapPhase?: ThreadBootstrapPhase;
   loop?: ThreadLoop | null;
 }
 
@@ -155,6 +158,7 @@ export interface SidebarThreadSummary {
   latestTurn: OrchestrationLatestTurn | null;
   branch: string | null;
   worktreePath: string | null;
+  bootstrapPhase?: ThreadBootstrapPhase;
   latestUserMessageAt: string | null;
   hasPendingApprovals: boolean;
   hasPendingUserInput: boolean;

@@ -245,6 +245,7 @@ function mapThread(thread: OrchestrationThread, environmentId: EnvironmentId): T
     pendingSourceProposedPlan: thread.latestTurn?.sourceProposedPlan,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
+    bootstrapPhase: thread.bootstrapPhase ?? "ready",
     turnDiffSummaries: thread.checkpoints.map(mapTurnDiffSummary),
     activities: thread.activities.map((activity) => ({ ...activity })),
     loop: thread.loop ? { ...thread.loop } : null,
@@ -275,6 +276,7 @@ function mapThreadShell(
     updatedAt: thread.updatedAt,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
+    bootstrapPhase: thread.bootstrapPhase ?? "ready",
   };
   const session = thread.session ? mapSession(thread.session) : null;
   const turnState: ThreadTurnState = {
@@ -294,6 +296,7 @@ function mapThreadShell(
     latestTurn: thread.latestTurn,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
+    bootstrapPhase: thread.bootstrapPhase ?? "ready",
     latestUserMessageAt: thread.latestUserMessageAt,
     hasPendingApprovals: thread.hasPendingApprovals,
     hasPendingUserInput: thread.hasPendingUserInput,
@@ -323,6 +326,7 @@ function toThreadShell(thread: Thread): ThreadShell {
     updatedAt: thread.updatedAt,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
+    bootstrapPhase: thread.bootstrapPhase ?? "ready",
     loop: thread.loop ?? null,
   };
 }
@@ -396,6 +400,7 @@ function sidebarThreadSummariesEqual(
     latestTurnsEqual(left.latestTurn, right.latestTurn) &&
     left.branch === right.branch &&
     left.worktreePath === right.worktreePath &&
+    left.bootstrapPhase === right.bootstrapPhase &&
     left.latestUserMessageAt === right.latestUserMessageAt &&
     left.hasPendingApprovals === right.hasPendingApprovals &&
     left.hasPendingUserInput === right.hasPendingUserInput &&
@@ -420,6 +425,7 @@ function threadShellsEqual(left: ThreadShell | undefined, right: ThreadShell): b
     left.updatedAt === right.updatedAt &&
     left.branch === right.branch &&
     left.worktreePath === right.worktreePath &&
+    left.bootstrapPhase === right.bootstrapPhase &&
     left.loop === right.loop
   );
 }
@@ -698,59 +704,61 @@ function writeThreadShellState(
   },
 ): EnvironmentState {
   const previousShell = state.threadShellById[nextThread.shell.id];
+  // Shell stream snapshots do not include loop state, so preserve the detail-stream
+  // value instead of clobbering it on every thread/session shell update.
+  const mergedShell =
+    previousShell?.loop !== undefined
+      ? {
+          ...nextThread.shell,
+          loop: previousShell.loop,
+        }
+      : nextThread.shell;
 
   let nextState = ensureThreadRegistered(
     state,
-    nextThread.shell.id,
-    nextThread.shell.projectId,
+    mergedShell.id,
+    mergedShell.projectId,
     previousShell?.projectId,
   );
 
-  if (!threadShellsEqual(previousShell, nextThread.shell)) {
+  if (!threadShellsEqual(previousShell, mergedShell)) {
     nextState = {
       ...nextState,
       threadShellById: {
         ...nextState.threadShellById,
-        [nextThread.shell.id]: nextThread.shell,
+        [mergedShell.id]: mergedShell,
       },
     };
   }
 
-  if (
-    !threadSessionsEqual(state.threadSessionById[nextThread.shell.id] ?? null, nextThread.session)
-  ) {
+  if (!threadSessionsEqual(state.threadSessionById[mergedShell.id] ?? null, nextThread.session)) {
     nextState = {
       ...nextState,
       threadSessionById: {
         ...nextState.threadSessionById,
-        [nextThread.shell.id]: nextThread.session,
+        [mergedShell.id]: nextThread.session,
       },
     };
   }
 
-  if (
-    !threadTurnStatesEqual(state.threadTurnStateById[nextThread.shell.id], nextThread.turnState)
-  ) {
+  if (!threadTurnStatesEqual(state.threadTurnStateById[mergedShell.id], nextThread.turnState)) {
     nextState = {
       ...nextState,
       threadTurnStateById: {
         ...nextState.threadTurnStateById,
-        [nextThread.shell.id]: nextThread.turnState,
+        [mergedShell.id]: nextThread.turnState,
       },
     };
   }
 
   if (
-    !sidebarThreadSummariesEqual(
-      state.sidebarThreadSummaryById[nextThread.shell.id],
-      nextThread.summary,
-    )
+    !sidebarThreadSummariesEqual(state.sidebarThreadSummaryById[mergedShell.id], nextThread.summary)
   ) {
     nextState = {
       ...nextState,
       sidebarThreadSummaryById: {
         ...nextState.sidebarThreadSummaryById,
-        [nextThread.shell.id]: nextThread.summary,
+        [mergedShell.id]: nextThread.summary,
       },
     };
   }
@@ -1256,6 +1264,7 @@ function applyEnvironmentOrchestrationEvent(
           interactionMode: event.payload.interactionMode,
           branch: event.payload.branch,
           worktreePath: event.payload.worktreePath,
+          bootstrapPhase: event.payload.bootstrapPhase,
           latestTurn: null,
           createdAt: event.payload.createdAt,
           updatedAt: event.payload.updatedAt,
@@ -1300,6 +1309,9 @@ function applyEnvironmentOrchestrationEvent(
         ...(event.payload.branch !== undefined ? { branch: event.payload.branch } : {}),
         ...(event.payload.worktreePath !== undefined
           ? { worktreePath: event.payload.worktreePath }
+          : {}),
+        ...(event.payload.bootstrapPhase !== undefined
+          ? { bootstrapPhase: event.payload.bootstrapPhase }
           : {}),
         updatedAt: event.payload.updatedAt,
       }));
