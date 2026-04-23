@@ -83,19 +83,11 @@ export const ServerProviderSkill = Schema.Struct({
 });
 export type ServerProviderSkill = typeof ServerProviderSkill.Type;
 
-export const ServerListProviderSkillsInput = Schema.Struct({
-  provider: ProviderKind,
-  cwd: TrimmedNonEmptyString,
-});
-export type ServerListProviderSkillsInput = typeof ServerListProviderSkillsInput.Type;
-
-export const ServerListProviderSkillsResult = Schema.Struct({
-  skills: Schema.Array(ServerProviderSkill),
-});
-export type ServerListProviderSkillsResult = typeof ServerListProviderSkillsResult.Type;
-
 export const ServerProvider = Schema.Struct({
   provider: ProviderKind,
+  displayName: Schema.optional(TrimmedNonEmptyString),
+  badgeLabel: Schema.optional(TrimmedNonEmptyString),
+  showInteractionModeToggle: Schema.optional(Schema.Boolean),
   enabled: Schema.Boolean,
   installed: Schema.Boolean,
   version: Schema.NullOr(TrimmedNonEmptyString),

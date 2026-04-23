@@ -18,7 +18,6 @@ import {
   ProviderInteractionMode,
   ProviderKind,
   ProviderRequestKind,
-  ProviderSkillReference,
   ProviderSandboxMode,
   ProviderUserInputAnswers,
   RuntimeMode,
@@ -67,7 +66,6 @@ export const ProviderSendTurnInput = Schema.Struct({
   attachments: Schema.optional(
     Schema.Array(ChatAttachment).check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS)),
   ),
-  skills: Schema.optional(Schema.Array(ProviderSkillReference)),
   modelSelection: Schema.optional(ModelSelection),
   interactionMode: Schema.optional(ProviderInteractionMode),
 });
