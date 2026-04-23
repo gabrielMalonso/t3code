@@ -69,11 +69,10 @@ import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
 import { searchSlashCommandItems } from "./composerSlashCommandSearch";
 import {
-  getComposerProviderControls,
   getComposerProviderState,
   renderProviderTraitsMenuContent,
   renderProviderTraitsPicker,
-} from "./composerProviderRegistry";
+} from "./composerProviderState";
 import { ContextWindowMeter } from "./ContextWindowMeter";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { basenameOfPath } from "../../vscode-icons";
@@ -93,19 +92,24 @@ import {
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
-import { resolveSelectableProvider, getProviderModels } from "../../providerModels";
+import {
+  getProviderInteractionModeToggle,
+  getProviderModels,
+  resolveSelectableProvider,
+} from "../../providerModels";
 import type { UnifiedSettings } from "@t3tools/contracts/settings";
 import type { SessionPhase, Thread } from "../../types";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
 import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow";
+import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
+import { searchProviderSkills } from "../../providerSkillSearch";
 import type { ComposerFileReference } from "../../t3code-custom/file-references";
 import {
   resolveComposerCustomFooterCompactnessAllowancePx,
   resolveComposerPlaceholder,
   useComposerCustomExtension,
 } from "../../t3code-custom/chat";
-import { useComposerSkillExtension } from "../../t3code-custom/hooks";
 
 const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB`;
 
@@ -342,7 +346,6 @@ export interface ChatComposerHandle {
   getSendContext: () => {
     prompt: string;
     images: ComposerImageAttachment[];
-    selectedSkills: Array<{ name: string; path: string }>;
     fileReferences: ComposerFileReference[];
     terminalContexts: TerminalContextDraft[];
     isResolvingFileReferences: boolean;
@@ -608,7 +611,7 @@ export const ChatComposer = memo(
           model: selectedModel,
           models: selectedProviderModels,
           prompt,
-          modelOptions: composerModelOptions,
+          modelOptions: composerModelOptions?.[selectedProvider],
         }),
       [composerModelOptions, prompt, selectedModel, selectedProvider, selectedProviderModels],
     );
@@ -616,8 +619,13 @@ export const ChatComposer = memo(
     const selectedPromptEffort = composerProviderState.promptEffort;
     const selectedModelOptionsForDispatch = composerProviderState.modelOptionsForDispatch;
     const composerProviderControls = useMemo(
-      () => getComposerProviderControls(selectedProvider),
-      [selectedProvider],
+      () => ({
+        showInteractionModeToggle: getProviderInteractionModeToggle(
+          providerStatuses,
+          selectedProvider,
+        ),
+      }),
+      [providerStatuses, selectedProvider],
     );
     const selectedModelSelection = useMemo<ModelSelection>(
       () => createModelSelection(selectedProvider, selectedModel, selectedModelOptionsForDispatch),
@@ -731,20 +739,6 @@ export const ChatComposer = memo(
       }),
     );
     const workspaceEntries = workspaceEntriesQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
-    const skillDiscoveryCwd = activeWorkspaceRoot ?? gitCwd ?? null;
-    const composerSkillExtension = useComposerSkillExtension({
-      environmentId,
-      provider: selectedProvider,
-      prompt,
-      discoveryCwd: skillDiscoveryCwd,
-      providerSkills: selectedProviderStatus?.skills,
-    });
-    const {
-      availableProviderSkills,
-      selectedSkillReferences,
-      isLoadingWorkspaceSkills,
-      buildMenuItems: buildSkillMenuItems,
-    } = composerSkillExtension;
 
     const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
       if (!composerTrigger) return [];
@@ -800,16 +794,23 @@ export const ChatComposer = memo(
         return searchSlashCommandItems(slashCommandItems, query);
       }
       if (composerTrigger.kind === "skill") {
-        return buildSkillMenuItems(composerTrigger.query);
+        return searchProviderSkills(
+          selectedProviderStatus?.skills ?? [],
+          composerTrigger.query,
+        ).map((skill) => ({
+          id: `skill:${selectedProvider}:${skill.name}`,
+          type: "skill" as const,
+          provider: selectedProvider,
+          skill,
+          label: formatProviderSkillDisplayName(skill),
+          description:
+            skill.shortDescription ??
+            skill.description ??
+            (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
+        }));
       }
       return [];
-    }, [
-      buildSkillMenuItems,
-      composerTrigger,
-      selectedProvider,
-      selectedProviderStatus?.slashCommands,
-      workspaceEntries,
-    ]);
+    }, [composerTrigger, selectedProvider, selectedProviderStatus, workspaceEntries]);
 
     const composerMenuOpen = Boolean(composerTrigger);
     const composerMenuSearchKey = composerTrigger
@@ -873,11 +874,10 @@ export const ChatComposer = memo(
     ]);
 
     const isComposerMenuLoading =
-      (composerTriggerKind === "path" &&
-        ((pathTriggerQuery.length > 0 && composerPathQueryDebouncer.state.isPending) ||
-          workspaceEntriesQuery.isLoading ||
-          workspaceEntriesQuery.isFetching)) ||
-      (composerTriggerKind === "skill" && isLoadingWorkspaceSkills);
+      composerTriggerKind === "path" &&
+      ((pathTriggerQuery.length > 0 && composerPathQueryDebouncer.state.isPending) ||
+        workspaceEntriesQuery.isLoading ||
+        workspaceEntriesQuery.isFetching);
     const composerMenuEmptyState = useMemo(() => {
       if (composerTriggerKind === "skill") {
         return "No skills found. Try / to browse provider commands.";
@@ -1689,7 +1689,6 @@ export const ChatComposer = memo(
         getSendContext: () => ({
           prompt: promptRef.current,
           images: composerImagesRef.current,
-          selectedSkills: selectedSkillReferences,
           fileReferences: composerFileReferencesRef.current,
           terminalContexts: composerTerminalContextsRef.current,
           isResolvingFileReferences: customExtension.isResolvingFileReferences,
@@ -1724,7 +1723,6 @@ export const ChatComposer = memo(
         selectedPromptEffort,
         selectedProvider,
         selectedProviderModels,
-        selectedSkillReferences,
       ],
     );
 
@@ -1894,7 +1892,7 @@ export const ChatComposer = memo(
                     ? composerTerminalContexts
                     : []
                 }
-                skills={availableProviderSkills}
+                skills={selectedProviderStatus?.skills ?? []}
                 onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
                 onChange={onPromptChange}
                 onCommandKeyDown={onComposerCommandKey}

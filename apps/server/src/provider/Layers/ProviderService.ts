@@ -374,9 +374,31 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           (persistedBinding?.provider === input.provider
             ? persistedBinding.resumeCursor
             : undefined);
+        const effectiveCwd =
+          input.cwd ??
+          (persistedBinding?.provider === input.provider
+            ? readPersistedCwd(persistedBinding.runtimePayload)
+            : undefined);
+        yield* Effect.annotateCurrentSpan({
+          "provider.resume_cursor.source":
+            input.resumeCursor !== undefined
+              ? "request"
+              : effectiveResumeCursor !== undefined && persistedBinding?.provider === input.provider
+                ? "persisted"
+                : "none",
+          "provider.resume_cursor.present": effectiveResumeCursor !== undefined,
+          "provider.cwd.source":
+            input.cwd !== undefined
+              ? "request"
+              : effectiveCwd !== undefined && persistedBinding?.provider === input.provider
+                ? "persisted"
+                : "none",
+          "provider.cwd.effective": effectiveCwd ?? "",
+        });
         const adapter = yield* registry.getByProvider(input.provider);
         const session = yield* adapter.startSession({
           ...input,
+          ...(effectiveCwd !== undefined ? { cwd: effectiveCwd } : {}),
           ...(effectiveResumeCursor !== undefined ? { resumeCursor: effectiveResumeCursor } : {}),
         });
 
@@ -398,7 +420,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           provider: session.provider,
           runtimeMode: input.runtimeMode,
           hasResumeCursor: session.resumeCursor !== undefined,
-          hasCwd: typeof input.cwd === "string" && input.cwd.trim().length > 0,
+          hasCwd: typeof effectiveCwd === "string" && effectiveCwd.trim().length > 0,
           hasModel:
             typeof input.modelSelection?.model === "string" &&
             input.modelSelection.model.trim().length > 0,
@@ -426,12 +448,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     const input = {
       ...parsed,
       attachments: parsed.attachments ?? [],
-      skills: parsed.skills ?? [],
     };
-    if (!input.input && input.attachments.length === 0 && input.skills.length === 0) {
+    if (!input.input && input.attachments.length === 0) {
       return yield* toValidationError(
         "ProviderService.sendTurn",
-        "Either input text, at least one attachment, or at least one skill is required",
+        "Either input text or at least one attachment is required",
       );
     }
     yield* Effect.annotateCurrentSpan({
@@ -439,7 +460,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       "provider.thread_id": input.threadId,
       "provider.interaction_mode": input.interactionMode,
       "provider.attachment_count": input.attachments.length,
-      "provider.skill_count": input.skills.length,
     });
     let metricProvider = "unknown";
     let metricModel = input.modelSelection?.model;
