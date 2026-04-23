@@ -1,4 +1,4 @@
-import { Cause, Data, Duration, Effect, Layer, Option, Queue, Ref, Schema, Stream } from "effect";
+import { Cause, Duration, Effect, Layer, Option, Queue, Ref, Schema, Stream } from "effect";
 import {
   type ChatAttachment,
   type AuthAccessStreamEvent,
@@ -51,8 +51,8 @@ import {
   observeRpcStream,
   observeRpcStreamEffect,
 } from "./observability/RpcInstrumentation.ts";
+import { probeCodexDiscovery } from "./provider/Layers/CodexProvider.ts";
 import { ProviderRegistry } from "./provider/Services/ProviderRegistry.ts";
-import { probeCodexDiscovery } from "./provider/codexAppServer.ts";
 import { ServerLifecycleEvents } from "./serverLifecycleEvents.ts";
 import { ServerRuntimeStartup } from "./serverRuntimeStartup.ts";
 import { ServerSettingsService } from "./serverSettings.ts";
@@ -184,11 +184,6 @@ function toAuthAccessStreamEvent(
       };
   }
 }
-
-class ProviderSkillsProbeError extends Data.TaggedError("ProviderSkillsProbeError")<{
-  readonly message: string;
-  readonly cause: unknown;
-}> {}
 
 const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
   WsRpcGroup.toLayer(
@@ -770,25 +765,17 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             return [] as ReadonlyArray<ServerProviderSkill>;
           }
 
-          const discoveredSkills = yield* Effect.tryPromise({
-            try: () =>
-              probeCodexDiscovery({
-                binaryPath: codexSettings.binaryPath,
-                ...(codexSettings.homePath ? { homePath: codexSettings.homePath } : {}),
-                cwd: input.cwd,
-              }),
-            catch: (cause) =>
-              new ProviderSkillsProbeError({
-                message: `Failed to probe skills: ${String(cause)}`,
-                cause,
-              }),
+          const discoveredSkills = yield* probeCodexDiscovery({
+            binaryPath: codexSettings.binaryPath,
+            ...(codexSettings.homePath ? { homePath: codexSettings.homePath } : {}),
+            cwd: input.cwd,
           }).pipe(
-            Effect.map((discovery) => discovery.skills),
+            Effect.map(({ skills }) => skills),
             Effect.catch((error) =>
               Effect.logWarning("failed to list provider skills for workspace", {
                 provider: input.provider,
                 cwd: input.cwd,
-                error: error.message,
+                error: error instanceof Error ? error.message : String(error),
               }).pipe(Effect.as([] as ReadonlyArray<ServerProviderSkill>)),
             ),
           );

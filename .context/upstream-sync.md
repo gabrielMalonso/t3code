@@ -2,9 +2,9 @@
 
 ## Status atual
 
-- Data: 2026-04-19
-- Branch de trabalho: `main`
-- Upstream integrado nesta wave: `9df3c640` (`upstream/main`)
+- Data: 2026-04-22
+- Branch de trabalho: `sync/upstream-2026-04-22`
+- Upstream integrado nesta wave: `b8305afa` (`upstream/main`)
 - Estado: merge aplicado e validado localmente com `thread loop`, `file references`, `showPlanSidebar` e `skills de workspace` preservados
 - Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
@@ -207,3 +207,53 @@
   - `bun typecheck`
   - `bun run test src/server.test.ts src/orchestration/Layers/OrchestrationReactor.test.ts` em `apps/server`
   - `bun run test src/localApi.test.ts src/components/chat/TraitsPicker.browser.tsx` em `apps/web`
+
+## 2026-04-22 — Sync ate `b8305afa`
+
+- Branch de trabalho: `sync/upstream-2026-04-22`
+- Donor local usado para replay seletivo: `65df1de0` (`Track thread bootstrap phases during worktree setup`)
+- Regra dominante desta wave: aceitar a arquitetura nova do upstream no provider/runtime do Codex e reaplicar so o diferencial vivo do fork em cima dela
+- Zona de atrito prevista antes do merge:
+  - `apps/desktop/src/clientPersistence.test.ts` — `adaptador-core`
+  - `apps/server/src/codexAppServerManager.ts` — `core-puro`
+  - `apps/server/src/codexAppServerManager.test.ts` — `core-puro`
+  - `apps/server/src/provider/Layers/CodexAdapter.ts` — `hotspot-compartilhado`
+  - `apps/web/src/components/chat/ChatComposer.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/localApi.test.ts` — `adaptador-core`
+  - `packages/contracts/src/settings.ts` — `adaptador-core`
+- Conflitos reais do merge:
+  - `apps/desktop/src/clientPersistence.test.ts`
+  - `apps/server/src/codexAppServerManager.ts`
+  - `apps/server/src/codexAppServerManager.test.ts`
+  - `apps/server/src/provider/Layers/CodexAdapter.ts`
+  - `apps/web/src/components/chat/ChatComposer.tsx`
+  - `apps/web/src/localApi.test.ts`
+  - `packages/contracts/src/settings.ts`
+- O que foi absorvido do upstream:
+  - runtime tipado do Codex via `effect-codex-app-server`
+  - refactor pesado de providers/session runtime no server
+  - redesign do model picker e ajustes de sidebar/toasts/UI
+  - helper de reveal de janela no desktop
+  - `favorites` nos client settings
+- O que foi reaplicado do custom vivo:
+  - `showPlanSidebar` coexistindo com `favorites` em `packages/contracts/src/settings.ts`
+  - descoberta de skills do workspace para turnos do Codex
+  - suporte a `skills` no fluxo novo `CodexAdapter -> CodexSessionRuntime -> turn/start`
+  - gatilhos e placeholder custom do composer sem reabrir o fork inteiro do model picker novo
+- O que foi deliberadamente deixado de fora do replay:
+  - `apps/server/src/codexAppServerManager.ts` e `apps/server/src/codexAppServerManager.test.ts`
+  - qualquer tentativa de ressuscitar o manager antigo do Codex depois que o upstream moveu tudo para runtime tipado
+  - branch de modelo antigo no `ChatComposer`; o picker novo do upstream ficou no comando
+- Decisao sensivel desta wave:
+  - `apps/server/src/provider/codexAppServer.ts` nao voltou como dependencia estrutural
+  - a descoberta custom de skills passou a reaproveitar `CodexProvider.ts`
+  - o replay de `skills` entrou no `CodexSessionRuntime.ts` como item `type: "skill"` em `turn/start`, que casa com o protocolo novo do app-server
+- Resultado pratico:
+  - o reencaixe ficou entre `adaptador-core` e `hotspot-compartilhado`
+  - `ChatComposer.tsx`, `apps/server/src/ws.ts`, `apps/server/src/provider/Layers/CodexAdapter.ts` e `apps/server/src/provider/Layers/CodexSessionRuntime.ts` seguem sendo pontos de contato reais
+  - o sync diminuiu conflito futuro porque aceitou o runtime novo do upstream em vez de carregar um fork paralelo do provider Codex
+- Validacao final:
+  - `bun install`
+  - `bun fmt`
+  - `bun lint`
+  - `bun typecheck`
