@@ -22,7 +22,11 @@ import { VscodeEntryIcon } from "./chat/VscodeEntryIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { openInPreferredEditor } from "../editorPreferences";
-import { resolveDiffThemeName, type DiffThemeName } from "../lib/diffRendering";
+import {
+  resolveDiffThemeName,
+  type AppSyntaxTheme,
+  type DiffThemeName,
+} from "../lib/diffRendering";
 import { fnv1a32 } from "../lib/diffRendering";
 import { LRUCache } from "../lib/lruCache";
 import { useTheme } from "../hooks/useTheme";
@@ -60,6 +64,7 @@ interface ChatMarkdownProps {
 const CODE_FENCE_LANGUAGE_REGEX = /(?:^|\s)language-([^\s]+)/;
 const MAX_HIGHLIGHT_CACHE_ENTRIES = 500;
 const MAX_HIGHLIGHT_CACHE_MEMORY_BYTES = 50 * 1024 * 1024;
+const APP_SYNTAX_THEMES = ["dark", "light", "abyss"] as const satisfies readonly AppSyntaxTheme[];
 const highlightedCodeCache = new LRUCache<string>(
   MAX_HIGHLIGHT_CACHE_ENTRIES,
   MAX_HIGHLIGHT_CACHE_MEMORY_BYTES,
@@ -121,7 +126,7 @@ function getHighlighterPromise(language: string): Promise<DiffsHighlighter> {
   if (cached) return cached;
 
   const promise = getSharedHighlighter({
-    themes: [resolveDiffThemeName("dark"), resolveDiffThemeName("light")],
+    themes: APP_SYNTAX_THEMES.map((theme) => resolveDiffThemeName(theme)),
     langs: [language as SupportedLanguages],
     preferredHighlighter: "shiki-js",
   }).catch((err) => {
@@ -477,8 +482,9 @@ function areMarkdownFileLinkPropsEqual(
 }
 
 function ChatMarkdown({ text, cwd, isStreaming = false }: ChatMarkdownProps) {
-  const { resolvedTheme } = useTheme();
-  const diffThemeName = resolveDiffThemeName(resolvedTheme);
+  const { resolvedTheme, themeAccent } = useTheme();
+  const syntaxTheme = themeAccent === "abyss" ? "abyss" : resolvedTheme;
+  const diffThemeName = resolveDiffThemeName(syntaxTheme);
   const markdownFileLinkMetaByHref = useMemo(() => {
     const metaByHref = new Map<
       string,

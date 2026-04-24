@@ -133,6 +133,36 @@
   }
 }
 
+:root.theme-abyss {
+  color-scheme: dark;
+  --background: #000c18;
+  --app-chrome-background: var(--background);
+  --foreground: #9fb8ee;
+  --card: #060621;
+  --card-foreground: #b7c8ff;
+  --popover: #10192c;
+  --popover-foreground: #c7d4ff;
+  --primary: #6688cc;
+  --primary-foreground: #000c18;
+  --secondary: #10192c;
+  --secondary-foreground: #b7c8ff;
+  --muted: #10192c;
+  --muted-foreground: #7f9bd2;
+  --accent: #08286b;
+  --accent-foreground: #dbe6ff;
+  --destructive: #ab395b;
+  --border: #2b2b4a;
+  --input: #181f2f;
+  --ring: #596f99;
+  --destructive-foreground: #ff9da4;
+  --info: #80baff;
+  --info-foreground: #bbdaff;
+  --success: #5f8b3b;
+  --success-foreground: #d1f1a9;
+  --warning: #5b7e7a;
+  --warning-foreground: #ffeead;
+}
+
 body {
   font-family:
     "DM Sans",
