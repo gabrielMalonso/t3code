@@ -197,6 +197,11 @@ function createMockEnvironmentApi(input: {
   dispatchCommand: EnvironmentApi["orchestration"]["dispatchCommand"];
 }): EnvironmentApi {
   return {
+    server: {
+      listProviderSkills: (async () => ({
+        skills: [],
+      })) as EnvironmentApi["server"]["listProviderSkills"],
+    },
     terminal: {} as EnvironmentApi["terminal"],
     projects: {} as EnvironmentApi["projects"],
     filesystem: {

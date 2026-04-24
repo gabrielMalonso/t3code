@@ -27,6 +27,8 @@ import type {
 } from "./project.ts";
 import type {
   ServerConfig,
+  ServerListProviderSkillsInput,
+  ServerListProviderSkillsResult,
   ServerProviderUpdatedPayload,
   ServerUpsertKeybindingResult,
 } from "./server.ts";
@@ -220,6 +222,9 @@ export interface LocalApi {
   };
   server: {
     getConfig: () => Promise<ServerConfig>;
+    listProviderSkills: (
+      input: ServerListProviderSkillsInput,
+    ) => Promise<ServerListProviderSkillsResult>;
     refreshProviders: () => Promise<ServerProviderUpdatedPayload>;
     upsertKeybinding: (input: ServerUpsertKeybindingInput) => Promise<ServerUpsertKeybindingResult>;
     getSettings: () => Promise<ServerSettings>;
@@ -237,6 +242,11 @@ export interface LocalApi {
  * `environmentId` rather than reaching through the local desktop bridge.
  */
 export interface EnvironmentApi {
+  server: {
+    listProviderSkills: (
+      input: ServerListProviderSkillsInput,
+    ) => Promise<ServerListProviderSkillsResult>;
+  };
   terminal: {
     open: (input: typeof TerminalOpenInput.Encoded) => Promise<TerminalSessionSnapshot>;
     write: (input: typeof TerminalWriteInput.Encoded) => Promise<void>;

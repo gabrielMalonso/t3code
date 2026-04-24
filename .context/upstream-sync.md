@@ -5,7 +5,7 @@
 - Data: 2026-04-23
 - Branch de trabalho: `sync/upstream-2026-04-23`
 - Upstream integrado nesta wave: `ada410bc` (`upstream/main`)
-- Estado: merge aplicado e validado localmente com `thread loop`, `file references` e `showPlanSidebar` preservados; a customizacao de `skills de workspace` foi deliberadamente removida do fork
+- Estado: merge aplicado e validado localmente com `thread loop`, `file references`, `showPlanSidebar` e `skills de workspace` preservados
 - Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
 ## Features locais vivas
@@ -13,6 +13,7 @@
 - `t3code-custom/file-references`: referencia de arquivos por path, colagem e envio
 - `t3code-custom/chat/ThreadLoop*`: controles e comportamento de thread loop
 - `showPlanSidebar`: toggle local para desligar a Plan/Tasks sidebar e impedir auto-open
+- `t3code-custom/hooks/useComposerProviderSkills.ts`: descoberta de skills do workspace e selecao de `$skill` para turnos do Codex
 - `t3code-custom/hooks/useComposerFileReferenceSend.ts`: serializacao custom no envio
 - `apps/server/src/t3code-custom/workspace/internalArtifacts.ts`: artefatos internos de workspace, como `.t3code/.gitignore`
 - `apps/web/src/t3code-custom/terminal/fontFamily.ts`: policy local da fonte monoespacada no terminal e blocos de codigo
@@ -22,7 +23,7 @@
 - O composer agora usa o fluxo nativo do upstream para chips e busca de skills/slash commands
 - Removido `apps/web/src/components/composerInlineTextNodes.ts`, que virou duplicacao da infraestrutura nova do upstream
 - `ChatComposer.tsx` voltou a depender de `selectedProviderStatus.skills` e `selectedProviderStatus.slashCommands`, em vez de puxar catalogo paralelo so para UI
-- A extensao local de `skills de workspace` foi removida do fork; o composer agora fica so com as `skills` nativas do upstream
+- A extensao local de `skills de workspace` voltou a existir como overlay pequeno em cima das `skills` nativas do upstream, sem reabrir um fork inteiro do composer
 - `ComposerPromptEditor.tsx` manteve o snapshot ampliado necessario para o paste custom de file references sem reabrir um fork inteiro do editor
 - A placeholder custom do composer saiu de `ChatComposer.tsx` e voltou para `t3code-custom/chat/composerPlaceholder.ts`
 - A orquestracao custom de envio do composer foi empurrada para `t3code-custom/hooks/useComposerSendExtension.ts`, reduzindo regra local espalhada em `ChatView.tsx`
@@ -45,7 +46,7 @@
 ## Regra pratica para o proximo sync
 
 - Ler `.context/customizations.md` antes de abrir diff sensivel do fork
-- Se a mudanca for UX de skill/slash command, aceitar o upstream e resistir ao impulso de recriar plumbing paralelo
+- Se a mudanca for UX de skill/slash command, absorver o fluxo nativo do upstream e reaplicar so a descoberta/serializacao local que ainda for diferencial real
 - Se a mudanca for regra de negocio local, empurrar para `t3code-custom/*`
 - Se precisar tocar `ChatComposer` ou `ComposerPromptEditor`, fazer o minimo e deixar a adaptacao visivel
 
@@ -76,17 +77,30 @@
   - `showPlanSidebar` como gate local de visibilidade, coexistindo com `autoOpenPlanSidebar`
   - artefatos internos `.t3code`
   - policy local da fonte mono
-- O que foi deliberadamente deixado de fora do replay:
-  - toda a customizacao de `skills de workspace` para turnos do Codex
-  - RPC `server.listProviderSkills`
-  - plumbing custom em `ChatComposer`, `ChatView`, `ProviderService`, `CodexAdapter`, `CodexSessionRuntime`, `environmentApi`, `localApi`, `rpc.ts`, `ipc.ts` e `ws.ts`
+- O que foi deliberadamente deixado de fora do replay inicial:
+  - nada permanente; a customizacao de `skills de workspace` foi recolocada em seguida por pedido explicito do usuario
 - Resultado do reencaixe:
   - `file references` e `thread loop` continuam como `perimetro-custom` com adaptadores pequenos
   - `showPlanSidebar` ficou como `adaptador-core`
-  - `skills de workspace` saiu do inventario vivo e deixou de ser hotspot
+  - `skills de workspace` voltou como `hotspot-compartilhado`, mas atras de hooks/RPC pequenos em vez de branch paralela maior
 - Validacao final:
   - `bun fmt`
   - `bun lint` passou com warnings antigos de hooks em `ChatView.tsx` e avisos informativos de outros pacotes, sem erro bloqueante
+  - `bun typecheck`
+
+## 2026-04-23 — Reinstalacao da customizacao de skills
+
+- Pedido explicito do usuario: restaurar a customizacao de `skills de workspace` depois do sync
+- O que voltou:
+  - `apps/web/src/t3code-custom/hooks/useComposerProviderSkills.ts`
+  - `apps/web/src/t3code-custom/hooks/useComposerSkillExtension.ts`
+  - `apps/web/src/providerSkillSelections.test.ts`
+  - passagem de `skills` em `ChatComposer`, `ChatView`, contracts, RPC, `ProviderService`, `CodexAdapter`, `CodexSessionRuntime`, `decider`, `ProviderCommandReactor` e `ws.ts`
+- Regra que guiou a reinstalacao:
+  - manter o fluxo visual do upstream no composer e recolocar so o overlay local de descoberta por workspace + serializacao para envio
+- Validacao:
+  - `bun fmt`
+  - `bun lint`
   - `bun typecheck`
 
 ## 2026-04-11 — Sync 6 commits do upstream
