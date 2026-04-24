@@ -96,6 +96,10 @@ const THEME_OPTIONS = [
     value: "abyss",
     label: "Abyss",
   },
+  {
+    value: "darkHighContrast",
+    label: "Dark High Contrast",
+  },
 ] as const;
 
 const TIMESTAMP_FORMAT_LABELS = {
@@ -847,7 +851,8 @@ export function GeneralSettingsPanel() {
                   value === "system" ||
                   value === "light" ||
                   value === "dark" ||
-                  value === "abyss"
+                  value === "abyss" ||
+                  value === "darkHighContrast"
                 ) {
                   setTheme(value);
                 }

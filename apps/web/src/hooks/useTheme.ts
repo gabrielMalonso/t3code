@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import type { DesktopTheme } from "@t3tools/contracts";
 
-export type Theme = "light" | "dark" | "system" | "abyss";
+export type Theme = "light" | "dark" | "system" | "abyss" | "darkHighContrast";
 export type ResolvedTheme = "light" | "dark";
-export type ThemeAccent = "default" | "abyss";
+export type ThemeAccent = "default" | "abyss" | "darkHighContrast";
 type ThemeSnapshot = {
   theme: Theme;
   systemDark: boolean;
@@ -20,7 +20,7 @@ const DYNAMIC_THEME_COLOR_SELECTOR = `meta[name="${THEME_COLOR_META_NAME}"][data
 
 let listeners: Array<() => void> = [];
 let lastSnapshot: ThemeSnapshot | null = null;
-let lastDesktopTheme: Theme | null = null;
+let lastDesktopTheme: DesktopTheme | null = null;
 
 function emitChange() {
   for (const listener of listeners) listener();
@@ -37,16 +37,25 @@ function getSystemDark() {
 function getStored(): Theme {
   if (!hasThemeStorage()) return DEFAULT_THEME_SNAPSHOT.theme;
   const raw = localStorage.getItem(STORAGE_KEY);
-  if (raw === "light" || raw === "dark" || raw === "system" || raw === "abyss") return raw;
+  if (
+    raw === "light" ||
+    raw === "dark" ||
+    raw === "system" ||
+    raw === "abyss" ||
+    raw === "darkHighContrast"
+  ) {
+    return raw;
+  }
   return DEFAULT_THEME_SNAPSHOT.theme;
 }
 
 function resolveTheme(theme: Theme): ResolvedTheme {
-  if (theme === "abyss") return "dark";
+  if (theme === "abyss" || theme === "darkHighContrast") return "dark";
   return theme === "system" ? (getSystemDark() ? "dark" : "light") : theme;
 }
 
 function resolveThemeAccent(theme: Theme): ThemeAccent {
+  if (theme === "darkHighContrast") return "darkHighContrast";
   return theme === "abyss" ? "abyss" : "default";
 }
 
@@ -107,8 +116,12 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
   const isDark = resolveTheme(theme) === "dark";
   document.documentElement.classList.toggle("dark", isDark);
   document.documentElement.classList.toggle("theme-abyss", theme === "abyss");
+  document.documentElement.classList.toggle(
+    "theme-dark-high-contrast",
+    theme === "darkHighContrast",
+  );
   syncBrowserChromeTheme();
-  syncDesktopTheme(theme === "abyss" ? "dark" : theme);
+  syncDesktopTheme(theme === "system" ? "system" : resolveTheme(theme));
   if (suppressTransitions) {
     // Force a reflow so the no-transitions class takes effect before removal
     // oxlint-disable-next-line no-unused-expressions

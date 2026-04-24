@@ -169,7 +169,7 @@ export { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const navigate = useNavigate();
   const { resolvedTheme, themeAccent } = useTheme();
-  const syntaxTheme = themeAccent === "abyss" ? "abyss" : resolvedTheme;
+  const syntaxTheme = themeAccent === "default" ? resolvedTheme : themeAccent;
   const settings = useSettings();
   const [diffRenderMode, setDiffRenderMode] = useState<DiffRenderMode>("stacked");
   const [diffWordWrap, setDiffWordWrap] = useState(settings.diffWordWrap);
