@@ -1,12 +1,27 @@
+import { RegisteredCustomThemes, registerCustomTheme } from "@pierre/diffs";
+
+import abyssTheme from "../themes/abyss-color-theme.json";
+
+export type AppSyntaxTheme = "light" | "dark" | "abyss";
+
 export const DIFF_THEME_NAMES = {
   light: "pierre-light",
   dark: "pierre-dark",
+  abyss: "t3code-abyss",
 } as const;
 
 export type DiffThemeName = (typeof DIFF_THEME_NAMES)[keyof typeof DIFF_THEME_NAMES];
 
-export function resolveDiffThemeName(theme: "light" | "dark"): DiffThemeName {
-  return theme === "dark" ? DIFF_THEME_NAMES.dark : DIFF_THEME_NAMES.light;
+if (!RegisteredCustomThemes.has(DIFF_THEME_NAMES.abyss)) {
+  registerCustomTheme(DIFF_THEME_NAMES.abyss, async () => ({
+    ...abyssTheme,
+    name: DIFF_THEME_NAMES.abyss,
+    type: "dark",
+  }));
+}
+
+export function resolveDiffThemeName(theme: AppSyntaxTheme): DiffThemeName {
+  return DIFF_THEME_NAMES[theme];
 }
 
 const FNV_OFFSET_BASIS_32 = 0x811c9dc5;
