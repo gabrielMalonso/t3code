@@ -35,6 +35,12 @@ export function useComposerSendExtension(input: {
       : null;
   }, []);
 
+  const buildTurnStartOverrides = useCallback(
+    (selectedSkills: ReadonlyArray<{ name: string; path: string }>) =>
+      selectedSkills.length > 0 ? { skills: [...selectedSkills] } : {},
+    [],
+  );
+
   const buildPlanFollowUpText = useCallback(
     (trimmedPrompt: string, fileReferences: ReadonlyArray<ComposerFileReference>) =>
       fileReferenceSend.appendPromptWithFileReferences(trimmedPrompt, fileReferences),
@@ -56,6 +62,7 @@ export function useComposerSendExtension(input: {
 
   return {
     ...fileReferenceSend,
+    buildTurnStartOverrides,
     buildMessageTextForSend,
     buildPlanFollowUpText,
     getBlockedSendError,

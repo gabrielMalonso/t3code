@@ -2409,6 +2409,7 @@ export default function ChatView(props: ChatViewProps) {
     if (!sendCtx) return;
     const {
       images: composerImages,
+      selectedSkills: composerSelectedSkills,
       fileReferences: composerFileReferences,
       terminalContexts: composerTerminalContexts,
       isResolvingFileReferences,
@@ -2664,6 +2665,7 @@ export default function ChatView(props: ChatViewProps) {
           attachments: turnAttachments,
         },
         modelSelection: ctxSelectedModelSelection,
+        ...composerSendExtension.buildTurnStartOverrides(composerSelectedSkills),
         titleSeed: title,
         runtimeMode,
         interactionMode,

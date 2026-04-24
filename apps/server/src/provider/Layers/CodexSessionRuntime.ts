@@ -10,6 +10,7 @@ import {
   type ProviderInteractionMode,
   type ProviderRequestKind,
   type ProviderSession,
+  type ProviderSkillReference,
   type ProviderTurnStartResult,
   type ProviderUserInputAnswers,
   RuntimeMode,
@@ -88,6 +89,7 @@ export interface CodexSessionRuntimeOptions {
 export interface CodexSessionRuntimeSendTurnInput {
   readonly input?: string;
   readonly attachments?: ReadonlyArray<{ readonly type: "image"; readonly url: string }>;
+  readonly skills?: ReadonlyArray<ProviderSkillReference>;
   readonly model?: string;
   readonly serviceTier?: EffectCodexSchema.V2TurnStartParams__ServiceTier | undefined;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort | undefined;
@@ -322,6 +324,7 @@ export function buildTurnStartParams(input: {
   readonly runtimeMode: RuntimeMode;
   readonly prompt?: string;
   readonly attachments?: ReadonlyArray<{ readonly type: "image"; readonly url: string }>;
+  readonly skills?: ReadonlyArray<ProviderSkillReference>;
   readonly model?: string;
   readonly serviceTier?: EffectCodexSchema.V2TurnStartParams__ServiceTier;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
@@ -339,6 +342,13 @@ export function buildTurnStartParams(input: {
   }
   for (const attachment of input.attachments ?? []) {
     turnInput.push(attachment);
+  }
+  for (const skill of input.skills ?? []) {
+    turnInput.push({
+      type: "skill",
+      name: skill.name,
+      path: skill.path,
+    });
   }
 
   const config = runtimeModeToThreadConfig(input.runtimeMode);
@@ -1207,6 +1217,7 @@ export const makeCodexSessionRuntime = (
             runtimeMode: options.runtimeMode,
             ...(input.input ? { prompt: input.input } : {}),
             ...(input.attachments ? { attachments: input.attachments } : {}),
+            ...(input.skills ? { skills: input.skills } : {}),
             ...(normalizedModel ? { model: normalizedModel } : {}),
             ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
             ...(input.effort ? { effort: input.effort } : {}),
