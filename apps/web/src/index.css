@@ -163,6 +163,36 @@
   --warning-foreground: #ffeead;
 }
 
+:root.theme-dark-high-contrast {
+  color-scheme: dark;
+  --background: #000000;
+  --app-chrome-background: var(--background);
+  --foreground: #ffffff;
+  --card: #000000;
+  --card-foreground: #ffffff;
+  --popover: #000000;
+  --popover-foreground: #ffffff;
+  --primary: #ffffff;
+  --primary-foreground: #000000;
+  --secondary: #1f1f1f;
+  --secondary-foreground: #ffffff;
+  --muted: #1f1f1f;
+  --muted-foreground: #c8c8c8;
+  --accent: #008000;
+  --accent-foreground: #ffffff;
+  --destructive: #f44747;
+  --border: #ffffff;
+  --input: #000000;
+  --ring: #ffffff;
+  --destructive-foreground: #ffb3b3;
+  --info: #569cd6;
+  --info-foreground: #9cdcfe;
+  --success: #008000;
+  --success-foreground: #cbedcb;
+  --warning: #d7ba7d;
+  --warning-foreground: #fff2b8;
+}
+
 body {
   font-family:
     "DM Sans",

@@ -30,7 +30,9 @@ function DiffWorkerThemeSync({ themeName }: { themeName: DiffThemeName }) {
 
 export function DiffWorkerPoolProvider({ children }: { children?: ReactNode }) {
   const { resolvedTheme, themeAccent } = useTheme();
-  const diffThemeName = resolveDiffThemeName(themeAccent === "abyss" ? "abyss" : resolvedTheme);
+  const diffThemeName = resolveDiffThemeName(
+    themeAccent === "default" ? resolvedTheme : themeAccent,
+  );
   const workerPoolSize = useMemo(() => {
     const cores =
       typeof navigator === "undefined" ? 4 : Math.max(1, navigator.hardwareConcurrency || 4);

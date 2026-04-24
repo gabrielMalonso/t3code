@@ -1,13 +1,15 @@
 import { RegisteredCustomThemes, registerCustomTheme } from "@pierre/diffs";
 
 import abyssTheme from "../themes/abyss-color-theme.json";
+import darkHighContrastTheme from "../themes/dark-high-contrast-color-theme.json";
 
-export type AppSyntaxTheme = "light" | "dark" | "abyss";
+export type AppSyntaxTheme = "light" | "dark" | "abyss" | "darkHighContrast";
 
 export const DIFF_THEME_NAMES = {
   light: "pierre-light",
   dark: "pierre-dark",
   abyss: "t3code-abyss",
+  darkHighContrast: "t3code-dark-high-contrast",
 } as const;
 
 export type DiffThemeName = (typeof DIFF_THEME_NAMES)[keyof typeof DIFF_THEME_NAMES];
@@ -16,6 +18,14 @@ if (!RegisteredCustomThemes.has(DIFF_THEME_NAMES.abyss)) {
   registerCustomTheme(DIFF_THEME_NAMES.abyss, async () => ({
     ...abyssTheme,
     name: DIFF_THEME_NAMES.abyss,
+    type: "dark",
+  }));
+}
+
+if (!RegisteredCustomThemes.has(DIFF_THEME_NAMES.darkHighContrast)) {
+  registerCustomTheme(DIFF_THEME_NAMES.darkHighContrast, async () => ({
+    ...darkHighContrastTheme,
+    name: DIFF_THEME_NAMES.darkHighContrast,
     type: "dark",
   }));
 }

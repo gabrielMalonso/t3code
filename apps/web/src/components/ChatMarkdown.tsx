@@ -64,7 +64,12 @@ interface ChatMarkdownProps {
 const CODE_FENCE_LANGUAGE_REGEX = /(?:^|\s)language-([^\s]+)/;
 const MAX_HIGHLIGHT_CACHE_ENTRIES = 500;
 const MAX_HIGHLIGHT_CACHE_MEMORY_BYTES = 50 * 1024 * 1024;
-const APP_SYNTAX_THEMES = ["dark", "light", "abyss"] as const satisfies readonly AppSyntaxTheme[];
+const APP_SYNTAX_THEMES = [
+  "dark",
+  "light",
+  "abyss",
+  "darkHighContrast",
+] as const satisfies readonly AppSyntaxTheme[];
 const highlightedCodeCache = new LRUCache<string>(
   MAX_HIGHLIGHT_CACHE_ENTRIES,
   MAX_HIGHLIGHT_CACHE_MEMORY_BYTES,
@@ -483,7 +488,7 @@ function areMarkdownFileLinkPropsEqual(
 
 function ChatMarkdown({ text, cwd, isStreaming = false }: ChatMarkdownProps) {
   const { resolvedTheme, themeAccent } = useTheme();
-  const syntaxTheme = themeAccent === "abyss" ? "abyss" : resolvedTheme;
+  const syntaxTheme = themeAccent === "default" ? resolvedTheme : themeAccent;
   const diffThemeName = resolveDiffThemeName(syntaxTheme);
   const markdownFileLinkMetaByHref = useMemo(() => {
     const metaByHref = new Map<
