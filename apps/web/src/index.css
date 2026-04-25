@@ -133,6 +133,96 @@
   }
 }
 
+:root.theme-abyss {
+  color-scheme: dark;
+  --background: #000c18;
+  --app-chrome-background: var(--background);
+  --foreground: #9fb8ee;
+  --card: #060621;
+  --card-foreground: #b7c8ff;
+  --popover: #10192c;
+  --popover-foreground: #c7d4ff;
+  --primary: #6688cc;
+  --primary-foreground: #000c18;
+  --secondary: #10192c;
+  --secondary-foreground: #b7c8ff;
+  --muted: #10192c;
+  --muted-foreground: #7f9bd2;
+  --accent: #08286b;
+  --accent-foreground: #dbe6ff;
+  --destructive: #ab395b;
+  --border: #2b2b4a;
+  --input: #181f2f;
+  --ring: #596f99;
+  --destructive-foreground: #ff9da4;
+  --info: #80baff;
+  --info-foreground: #bbdaff;
+  --success: #5f8b3b;
+  --success-foreground: #d1f1a9;
+  --warning: #5b7e7a;
+  --warning-foreground: #ffeead;
+}
+
+:root.theme-dark-high-contrast {
+  color-scheme: dark;
+  --background: #000000;
+  --app-chrome-background: var(--background);
+  --foreground: #ffffff;
+  --card: #000000;
+  --card-foreground: #ffffff;
+  --popover: #000000;
+  --popover-foreground: #ffffff;
+  --primary: #ffffff;
+  --primary-foreground: #000000;
+  --secondary: #1f1f1f;
+  --secondary-foreground: #ffffff;
+  --muted: #1f1f1f;
+  --muted-foreground: #c8c8c8;
+  --accent: #008000;
+  --accent-foreground: #ffffff;
+  --destructive: #f44747;
+  --border: #ffffff;
+  --input: #000000;
+  --ring: #ffffff;
+  --destructive-foreground: #ffb3b3;
+  --info: #569cd6;
+  --info-foreground: #9cdcfe;
+  --success: #008000;
+  --success-foreground: #cbedcb;
+  --warning: #d7ba7d;
+  --warning-foreground: #fff2b8;
+}
+
+:root.theme-dracula {
+  color-scheme: dark;
+  --background: #282a36;
+  --app-chrome-background: var(--background);
+  --foreground: #f8f8f2;
+  --card: #21222c;
+  --card-foreground: #f8f8f2;
+  --popover: #343746;
+  --popover-foreground: #f8f8f2;
+  --primary: #bd93f9;
+  --primary-foreground: #191a21;
+  --secondary: #343746;
+  --secondary-foreground: #f8f8f2;
+  --muted: #343746;
+  --muted-foreground: #c6cbef;
+  --accent: #44475a;
+  --accent-foreground: #f8f8f2;
+  --destructive: #ff5555;
+  --border: #424450;
+  --input: #282a36;
+  --ring: #ff79c6;
+  --destructive-foreground: #ffb3b3;
+  --info: #8be9fd;
+  --info-foreground: #c9f7ff;
+  --success: #50fa7b;
+  --success-foreground: #b7ffc9;
+  --warning: #ffb86c;
+  --warning-foreground: #ffe1bd;
+}
+
 body {
   font-family:
     "DM Sans",

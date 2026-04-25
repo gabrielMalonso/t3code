@@ -2,9 +2,9 @@
 
 ## Status atual
 
-- Data: 2026-04-22
-- Branch de trabalho: `sync/upstream-2026-04-22`
-- Upstream integrado nesta wave: `b8305afa` (`upstream/main`)
+- Data: 2026-04-23
+- Branch de trabalho: `sync/upstream-2026-04-23`
+- Upstream integrado nesta wave: `ada410bc` (`upstream/main`)
 - Estado: merge aplicado e validado localmente com `thread loop`, `file references`, `showPlanSidebar` e `skills de workspace` preservados
 - Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
@@ -23,7 +23,7 @@
 - O composer agora usa o fluxo nativo do upstream para chips e busca de skills/slash commands
 - Removido `apps/web/src/components/composerInlineTextNodes.ts`, que virou duplicacao da infraestrutura nova do upstream
 - `ChatComposer.tsx` voltou a depender de `selectedProviderStatus.skills` e `selectedProviderStatus.slashCommands`, em vez de puxar catalogo paralelo so para UI
-- A descoberta local de skills do workspace e a serializacao de `$skill` para envio sairam de `ChatComposer.tsx` e foram empurradas para `t3code-custom/hooks/useComposerProviderSkills.ts`, deixando o componente mais perto do upstream
+- A extensao local de `skills de workspace` voltou a existir como overlay pequeno em cima das `skills` nativas do upstream, sem reabrir um fork inteiro do composer
 - `ComposerPromptEditor.tsx` manteve o snapshot ampliado necessario para o paste custom de file references sem reabrir um fork inteiro do editor
 - A placeholder custom do composer saiu de `ChatComposer.tsx` e voltou para `t3code-custom/chat/composerPlaceholder.ts`
 - A orquestracao custom de envio do composer foi empurrada para `t3code-custom/hooks/useComposerSendExtension.ts`, reduzindo regra local espalhada em `ChatView.tsx`
@@ -46,9 +46,62 @@
 ## Regra pratica para o proximo sync
 
 - Ler `.context/customizations.md` antes de abrir diff sensivel do fork
-- Se a mudanca for UX de skill/slash command, tentar absorver do upstream primeiro
+- Se a mudanca for UX de skill/slash command, absorver o fluxo nativo do upstream e reaplicar so a descoberta/serializacao local que ainda for diferencial real
 - Se a mudanca for regra de negocio local, empurrar para `t3code-custom/*`
 - Se precisar tocar `ChatComposer` ou `ComposerPromptEditor`, fazer o minimo e deixar a adaptacao visivel
+
+## 2026-04-23 — Sync ate `ada410bc`
+
+- Branch de sync: `sync/upstream-2026-04-23`
+- Donor local usado para replay seletivo: `d633e440` (`Sync upstream Codex runtime and UI updates`)
+- Regra dominante desta wave: aceitar o upstream primeiro e usar o sync para reduzir superficie do fork, nao para mumificar custom antigo
+- Zona de atrito prevista antes do merge:
+  - `apps/server/src/persistence/Migrations.ts` — `hotspot-compartilhado`
+  - `apps/web/src/components/ChatView.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/components/chat/ChatComposer.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/components/settings/SettingsPanels.tsx` — `adaptador-core`
+  - `packages/contracts/src/settings.ts` — `adaptador-core`
+- Conflitos reais do merge:
+  - `apps/server/src/persistence/Migrations.ts`
+  - `apps/web/src/components/ChatView.tsx`
+  - `apps/web/src/components/settings/SettingsPanels.tsx`
+  - `apps/web/src/components/chat/TraitsPicker.browser.tsx`
+- O que foi absorvido do upstream:
+  - `autoOpenPlanSidebar` separado de `showPlanSidebar`
+  - fixes de `Claude cwd resume`, `CODEX_HOME` com `~`, cache atomico e comandos localizados no Windows
+  - refactor de model selection para option arrays, com migracao nova carregada como `028_CanonicalizeModelSelectionOptions`
+  - cleanup do `TraitsPicker.browser.tsx` e fluxo novo do composer para `skills` nativas
+- O que foi reaplicado do custom vivo:
+  - `thread loop`
+  - `file references` por path
+  - `showPlanSidebar` como gate local de visibilidade, coexistindo com `autoOpenPlanSidebar`
+  - artefatos internos `.t3code`
+  - policy local da fonte mono
+- O que foi deliberadamente deixado de fora do replay inicial:
+  - nada permanente; a customizacao de `skills de workspace` foi recolocada em seguida por pedido explicito do usuario
+- Resultado do reencaixe:
+  - `file references` e `thread loop` continuam como `perimetro-custom` com adaptadores pequenos
+  - `showPlanSidebar` ficou como `adaptador-core`
+  - `skills de workspace` voltou como `hotspot-compartilhado`, mas atras de hooks/RPC pequenos em vez de branch paralela maior
+- Validacao final:
+  - `bun fmt`
+  - `bun lint` passou com warnings antigos de hooks em `ChatView.tsx` e avisos informativos de outros pacotes, sem erro bloqueante
+  - `bun typecheck`
+
+## 2026-04-23 — Reinstalacao da customizacao de skills
+
+- Pedido explicito do usuario: restaurar a customizacao de `skills de workspace` depois do sync
+- O que voltou:
+  - `apps/web/src/t3code-custom/hooks/useComposerProviderSkills.ts`
+  - `apps/web/src/t3code-custom/hooks/useComposerSkillExtension.ts`
+  - `apps/web/src/providerSkillSelections.test.ts`
+  - passagem de `skills` em `ChatComposer`, `ChatView`, contracts, RPC, `ProviderService`, `CodexAdapter`, `CodexSessionRuntime`, `decider`, `ProviderCommandReactor` e `ws.ts`
+- Regra que guiou a reinstalacao:
+  - manter o fluxo visual do upstream no composer e recolocar so o overlay local de descoberta por workspace + serializacao para envio
+- Validacao:
+  - `bun fmt`
+  - `bun lint`
+  - `bun typecheck`
 
 ## 2026-04-11 — Sync 6 commits do upstream
 

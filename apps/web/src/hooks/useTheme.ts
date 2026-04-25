@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
+import type { DesktopTheme } from "@t3tools/contracts";
 
-type Theme = "light" | "dark" | "system";
+export type Theme = "light" | "dark" | "system" | "abyss" | "darkHighContrast" | "dracula";
+export type ResolvedTheme = "light" | "dark";
+export type ThemeAccent = "default" | "abyss" | "darkHighContrast" | "dracula";
 type ThemeSnapshot = {
   theme: Theme;
   systemDark: boolean;
@@ -17,7 +20,7 @@ const DYNAMIC_THEME_COLOR_SELECTOR = `meta[name="${THEME_COLOR_META_NAME}"][data
 
 let listeners: Array<() => void> = [];
 let lastSnapshot: ThemeSnapshot | null = null;
-let lastDesktopTheme: Theme | null = null;
+let lastDesktopTheme: DesktopTheme | null = null;
 
 function emitChange() {
   for (const listener of listeners) listener();
@@ -34,8 +37,28 @@ function getSystemDark() {
 function getStored(): Theme {
   if (!hasThemeStorage()) return DEFAULT_THEME_SNAPSHOT.theme;
   const raw = localStorage.getItem(STORAGE_KEY);
-  if (raw === "light" || raw === "dark" || raw === "system") return raw;
+  if (
+    raw === "light" ||
+    raw === "dark" ||
+    raw === "system" ||
+    raw === "abyss" ||
+    raw === "darkHighContrast" ||
+    raw === "dracula"
+  ) {
+    return raw;
+  }
   return DEFAULT_THEME_SNAPSHOT.theme;
+}
+
+function resolveTheme(theme: Theme): ResolvedTheme {
+  if (theme === "abyss" || theme === "darkHighContrast" || theme === "dracula") return "dark";
+  return theme === "system" ? (getSystemDark() ? "dark" : "light") : theme;
+}
+
+function resolveThemeAccent(theme: Theme): ThemeAccent {
+  if (theme === "dracula") return "dracula";
+  if (theme === "darkHighContrast") return "darkHighContrast";
+  return theme === "abyss" ? "abyss" : "default";
 }
 
 function ensureThemeColorMetaTag(): HTMLMetaElement {
@@ -92,10 +115,16 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
   if (suppressTransitions) {
     document.documentElement.classList.add("no-transitions");
   }
-  const isDark = theme === "dark" || (theme === "system" && getSystemDark());
+  const isDark = resolveTheme(theme) === "dark";
   document.documentElement.classList.toggle("dark", isDark);
+  document.documentElement.classList.toggle("theme-abyss", theme === "abyss");
+  document.documentElement.classList.toggle(
+    "theme-dark-high-contrast",
+    theme === "darkHighContrast",
+  );
+  document.documentElement.classList.toggle("theme-dracula", theme === "dracula");
   syncBrowserChromeTheme();
-  syncDesktopTheme(theme);
+  syncDesktopTheme(theme === "system" ? "system" : resolveTheme(theme));
   if (suppressTransitions) {
     // Force a reflow so the no-transitions class takes effect before removal
     // oxlint-disable-next-line no-unused-expressions
@@ -106,7 +135,7 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
   }
 }
 
-function syncDesktopTheme(theme: Theme) {
+function syncDesktopTheme(theme: DesktopTheme) {
   if (typeof window === "undefined") return;
   const bridge = window.desktopBridge;
   if (!bridge || lastDesktopTheme === theme) {
@@ -175,8 +204,9 @@ export function useTheme() {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const theme = snapshot.theme;
 
-  const resolvedTheme: "light" | "dark" =
-    theme === "system" ? (snapshot.systemDark ? "dark" : "light") : theme;
+  const resolvedTheme: ResolvedTheme =
+    theme === "system" ? (snapshot.systemDark ? "dark" : "light") : resolveTheme(theme);
+  const themeAccent = resolveThemeAccent(theme);
 
   const setTheme = useCallback((next: Theme) => {
     if (!hasThemeStorage()) return;
@@ -190,5 +220,5 @@ export function useTheme() {
     applyTheme(theme);
   }, [theme]);
 
-  return { theme, setTheme, resolvedTheme } as const;
+  return { theme, setTheme, resolvedTheme, themeAccent } as const;
 }
