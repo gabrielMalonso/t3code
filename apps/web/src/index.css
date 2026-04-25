@@ -193,6 +193,36 @@
   --warning-foreground: #fff2b8;
 }
 
+:root.theme-dracula {
+  color-scheme: dark;
+  --background: #282a36;
+  --app-chrome-background: var(--background);
+  --foreground: #f8f8f2;
+  --card: #21222c;
+  --card-foreground: #f8f8f2;
+  --popover: #343746;
+  --popover-foreground: #f8f8f2;
+  --primary: #bd93f9;
+  --primary-foreground: #191a21;
+  --secondary: #343746;
+  --secondary-foreground: #f8f8f2;
+  --muted: #343746;
+  --muted-foreground: #c6cbef;
+  --accent: #44475a;
+  --accent-foreground: #f8f8f2;
+  --destructive: #ff5555;
+  --border: #424450;
+  --input: #282a36;
+  --ring: #ff79c6;
+  --destructive-foreground: #ffb3b3;
+  --info: #8be9fd;
+  --info-foreground: #c9f7ff;
+  --success: #50fa7b;
+  --success-foreground: #b7ffc9;
+  --warning: #ffb86c;
+  --warning-foreground: #ffe1bd;
+}
+
 body {
   font-family:
     "DM Sans",
