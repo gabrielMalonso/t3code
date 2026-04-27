@@ -2,9 +2,9 @@
 
 ## Status atual
 
-- Data: 2026-04-23
+- Data: 2026-04-27
 - Branch de trabalho: `sync/upstream-2026-04-23`
-- Upstream integrado nesta wave: `ada410bc` (`upstream/main`)
+- Upstream integrado nesta wave: `dbebc387` (`upstream/main`)
 - Estado: merge aplicado e validado localmente com `thread loop`, `file references`, `showPlanSidebar` e `skills de workspace` preservados
 - Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
@@ -49,6 +49,37 @@
 - Se a mudanca for UX de skill/slash command, absorver o fluxo nativo do upstream e reaplicar so a descoberta/serializacao local que ainda for diferencial real
 - Se a mudanca for regra de negocio local, empurrar para `t3code-custom/*`
 - Se precisar tocar `ChatComposer` ou `ComposerPromptEditor`, fazer o minimo e deixar a adaptacao visivel
+
+## 2026-04-27 — Sync ate `dbebc387`
+
+- Branch de sync: `sync/upstream-2026-04-23`
+- Donor local usado para replay seletivo: `e2a52329` (`Add Dracula theme support`)
+- Commits upstream absorvidos:
+  - `5cf83ffe` — `fix(release): use configured node for smoke manifest merge`
+  - `dbebc387` — `Ignore stale WebSocket lifecycle events after reconnect`
+- Zona de atrito prevista antes do merge:
+  - vazia; os arquivos alterados pelo upstream nao intersectavam os arquivos custom alterados desde a base
+- Conflitos reais do merge:
+  - nenhum
+- O que foi absorvido do upstream:
+  - `scripts/release-smoke.ts` passou a usar `process.execPath` ao mesclar manifests Windows, respeitando o Node configurado
+  - `apps/web/src/rpc/protocol.ts` ganhou `isActive` nos lifecycle handlers
+  - `apps/web/src/rpc/wsTransport.ts` passou a identificar sessoes ativas para ignorar eventos atrasados de WebSocket antigo apos reconnect
+  - `apps/web/src/rpc/wsTransport.test.ts` cobriu reconnect com close stale e reset correto do status de conexao
+- O que foi reaplicado do custom vivo:
+  - nada; o merge foi upstream puro e nao tocou `t3code-custom`, composer, contracts custom ou bridge
+- O que foi deliberadamente deixado de fora do replay:
+  - nenhum replay foi necessario; restaurar blocos locais aqui seria ruido
+- Resultado pratico:
+  - `apps/web/src/rpc/protocol.ts` e `apps/web/src/rpc/wsTransport.ts` ficaram como `core-puro`
+  - `apps/web/src/rpc/wsTransport.test.ts` ficou como `core-puro`
+  - `scripts/release-smoke.ts` ficou como `core-puro`
+  - nenhum hotspot custom novo foi criado
+- Validacao final:
+  - `bun fmt`
+  - `bun run --cwd apps/web test src/rpc/wsTransport.test.ts`
+  - `bun lint`
+  - `bun typecheck`
 
 ## 2026-04-23 — Sync ate `ada410bc`
 
