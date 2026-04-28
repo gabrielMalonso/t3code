@@ -206,6 +206,7 @@ export class WsTransport {
     if (this.disposed) {
       return;
     }
+    clearAllTrackedRpcRequests();
     this.disposed = true;
     await this.closeSession(this.session);
   }
