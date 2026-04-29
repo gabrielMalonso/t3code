@@ -98,6 +98,16 @@ it.layer(NodeServices.layer)("resolveEditorLaunch", (it) => {
         command: "idea",
         args: ["/tmp/workspace"],
       });
+
+      const ghosttyLaunch = yield* resolveEditorLaunch(
+        { cwd: "/tmp/workspace", editor: "ghostty" },
+        "linux",
+        { PATH: "" },
+      );
+      assert.deepEqual(ghosttyLaunch, {
+        command: "ghostty",
+        args: ["--working-directory=/tmp/workspace"],
+      });
     }),
   );
 

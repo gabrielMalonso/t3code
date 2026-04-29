@@ -7,6 +7,9 @@
  * @module Open
  */
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 import { EDITORS, OpenError, type EditorId } from "@t3tools/contracts";
 import { isCommandAvailable, type CommandAvailabilityOptions } from "@t3tools/shared/shell";
@@ -101,6 +104,21 @@ function fileManagerCommandForPlatform(platform: NodeJS.Platform): string {
   }
 }
 
+function macApplicationExists(appName: string): boolean {
+  return [
+    path.join("/Applications", `${appName}.app`),
+    path.join(os.homedir(), "Applications", `${appName}.app`),
+  ].some((candidate) => existsSync(candidate));
+}
+
+function canUseMacApplicationFallback(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): boolean {
+  return platform === "darwin" && env.PATH !== "";
+}
+
+function getMacAppName(editor: (typeof EDITORS)[number]): string | undefined {
+  return "macAppName" in editor ? editor.macAppName : undefined;
+}
+
 export function resolveAvailableEditors(
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
@@ -117,7 +135,13 @@ export function resolveAvailableEditors(
     }
 
     const command = resolveAvailableCommand(editor.commands, { platform, env });
-    if (command !== null) {
+    const macAppName = getMacAppName(editor);
+    if (
+      command !== null ||
+      (canUseMacApplicationFallback(platform, env) &&
+        macAppName !== undefined &&
+        macApplicationExists(macAppName))
+    ) {
       available.push(editor.id);
     }
   }
@@ -167,10 +191,49 @@ export const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
   }
 
   if (editorDef.commands) {
-    const command =
-      resolveAvailableCommand(editorDef.commands, { platform, env }) ?? editorDef.commands[0];
+    const command = resolveAvailableCommand(editorDef.commands, { platform, env });
+    const macAppName = getMacAppName(editorDef);
+
+    if (editorDef.id === "ghostty") {
+      const workingDirectoryArg = `--working-directory=${input.cwd}`;
+      if (command !== null) {
+        return {
+          command,
+          args: [workingDirectoryArg],
+        };
+      }
+
+      if (
+        canUseMacApplicationFallback(platform, env) &&
+        macAppName !== undefined &&
+        macApplicationExists(macAppName)
+      ) {
+        return {
+          command: "open",
+          args: ["-na", macAppName, "--args", workingDirectoryArg],
+        };
+      }
+
+      return {
+        command: editorDef.commands[0],
+        args: [workingDirectoryArg],
+      };
+    }
+
+    if (
+      command === null &&
+      canUseMacApplicationFallback(platform, env) &&
+      macAppName !== undefined &&
+      macApplicationExists(macAppName)
+    ) {
+      return {
+        command: "open",
+        args: ["-a", macAppName, input.cwd],
+      };
+    }
+
     return {
-      command,
+      command: command ?? editorDef.commands[0],
       args: resolveEditorArgs(editorDef, input.cwd),
     };
   }
