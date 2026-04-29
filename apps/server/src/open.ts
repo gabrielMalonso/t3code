@@ -119,6 +119,43 @@ function getMacAppName(editor: (typeof EDITORS)[number]): string | undefined {
   return "macAppName" in editor ? editor.macAppName : undefined;
 }
 
+function quoteAppleScriptString(value: string): string {
+  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+}
+
+function resolveGhosttyMacTabLaunch(cwd: string): EditorLaunch {
+  const quotedCwd = quoteAppleScriptString(cwd);
+  return {
+    command: "osascript",
+    args: [
+      "-e",
+      'tell application "Ghostty"',
+      "-e",
+      "activate",
+      "-e",
+      "set cfg to new surface configuration",
+      "-e",
+      `set initial working directory of cfg to ${quotedCwd}`,
+      "-e",
+      "if (count of windows) is 0 then",
+      "-e",
+      "set win to new window with configuration cfg",
+      "-e",
+      "else",
+      "-e",
+      "set win to front window",
+      "-e",
+      "set newTab to new tab in win with configuration cfg",
+      "-e",
+      "select tab newTab",
+      "-e",
+      "end if",
+      "-e",
+      "end tell",
+    ],
+  };
+}
+
 export function resolveAvailableEditors(
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
@@ -195,11 +232,16 @@ export const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
     const macAppName = getMacAppName(editorDef);
 
     if (editorDef.id === "ghostty") {
+      if (platform === "darwin" && macAppName !== undefined && macApplicationExists(macAppName)) {
+        return resolveGhosttyMacTabLaunch(input.cwd);
+      }
+
       const workingDirectoryArg = `--working-directory=${input.cwd}`;
+      const args = ["+new-tab", workingDirectoryArg];
       if (command !== null) {
         return {
           command,
-          args: [workingDirectoryArg],
+          args,
         };
       }
 
@@ -210,13 +252,13 @@ export const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
       ) {
         return {
           command: "open",
-          args: ["-na", macAppName, "--args", workingDirectoryArg],
+          args: ["-na", macAppName, "--args", ...args],
         };
       }
 
       return {
         command: editorDef.commands[0],
-        args: [workingDirectoryArg],
+        args,
       };
     }
 

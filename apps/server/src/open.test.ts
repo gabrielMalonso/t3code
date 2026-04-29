@@ -106,7 +106,7 @@ it.layer(NodeServices.layer)("resolveEditorLaunch", (it) => {
       );
       assert.deepEqual(ghosttyLaunch, {
         command: "ghostty",
-        args: ["--working-directory=/tmp/workspace"],
+        args: ["+new-tab", "--working-directory=/tmp/workspace"],
       });
     }),
   );
