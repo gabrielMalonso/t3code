@@ -1,8 +1,8 @@
-import { EditorId, type ResolvedKeybindingsConfig } from "@t3tools/contracts";
+import { type EditorId, type ResolvedKeybindingsConfig } from "@t3tools/contracts";
 import { memo, useCallback, useEffect, useMemo } from "react";
 import { isOpenFavoriteEditorShortcut, shortcutLabelForCommand } from "../../keybindings";
-import { usePreferredEditor } from "../../editorPreferences";
-import { ChevronDownIcon, FolderClosedIcon } from "lucide-react";
+import { isPersistablePreferredEditor, usePreferredEditor } from "../../editorPreferences";
+import { ChevronDownIcon, FolderClosedIcon, TerminalSquareIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Group, GroupSeparator } from "../ui/group";
 import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "../ui/menu";
@@ -69,6 +69,11 @@ const resolveOptions = (platform: string, availableEditors: ReadonlyArray<Editor
       value: "idea",
     },
     {
+      label: "Ghostty",
+      Icon: TerminalSquareIcon,
+      value: "ghostty",
+    },
+    {
       label: isMacPlatform(platform)
         ? "Finder"
         : isWindowsPlatform(platform)
@@ -104,7 +109,9 @@ export const OpenInPicker = memo(function OpenInPicker({
       const editor = editorId ?? preferredEditor;
       if (!editor) return;
       void api.shell.openInEditor(openInCwd, editor);
-      setPreferredEditor(editor);
+      if (isPersistablePreferredEditor(editor)) {
+        setPreferredEditor(editor);
+      }
     },
     [preferredEditor, openInCwd, setPreferredEditor],
   );
@@ -129,7 +136,7 @@ export const OpenInPicker = memo(function OpenInPicker({
   }, [preferredEditor, keybindings, openInCwd]);
 
   return (
-    <Group aria-label="Subscription actions">
+    <Group aria-label="Open workspace">
       <Button
         size="xs"
         variant="outline"
@@ -143,7 +150,7 @@ export const OpenInPicker = memo(function OpenInPicker({
       </Button>
       <GroupSeparator className="hidden @3xl/header-actions:block" />
       <Menu>
-        <MenuTrigger render={<Button aria-label="Copy options" size="icon-xs" variant="outline" />}>
+        <MenuTrigger render={<Button aria-label="Open options" size="icon-xs" variant="outline" />}>
           <ChevronDownIcon aria-hidden="true" className="size-4" />
         </MenuTrigger>
         <MenuPopup align="end">

@@ -688,7 +688,7 @@ export const ChatComposer = memo(
     const [composerHighlightedSearchKey, setComposerHighlightedSearchKey] = useState<string | null>(
       null,
     );
-    const [isComposerFooterCompact, setIsComposerFooterCompact] = useState(false);
+    const [isComposerFooterCompact, setIsComposerFooterCompact] = useState(true);
     const [isComposerPrimaryActionsCompact, setIsComposerPrimaryActionsCompact] = useState(false);
     const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
 

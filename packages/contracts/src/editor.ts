@@ -9,6 +9,7 @@ type EditorDefinition = {
   readonly label: string;
   readonly commands: readonly [string, ...string[]] | null;
   readonly baseArgs?: readonly string[];
+  readonly macAppName?: string;
   readonly launchStyle: EditorLaunchStyle;
 };
 
@@ -16,17 +17,31 @@ export const EDITORS = [
   { id: "cursor", label: "Cursor", commands: ["cursor"], launchStyle: "goto" },
   { id: "trae", label: "Trae", commands: ["trae"], launchStyle: "goto" },
   { id: "kiro", label: "Kiro", commands: ["kiro"], baseArgs: ["ide"], launchStyle: "goto" },
-  { id: "vscode", label: "VS Code", commands: ["code"], launchStyle: "goto" },
+  {
+    id: "vscode",
+    label: "VS Code",
+    commands: ["code"],
+    macAppName: "Visual Studio Code",
+    launchStyle: "goto",
+  },
   {
     id: "vscode-insiders",
     label: "VS Code Insiders",
     commands: ["code-insiders"],
+    macAppName: "Visual Studio Code - Insiders",
     launchStyle: "goto",
   },
   { id: "vscodium", label: "VSCodium", commands: ["codium"], launchStyle: "goto" },
   { id: "zed", label: "Zed", commands: ["zed", "zeditor"], launchStyle: "direct-path" },
   { id: "antigravity", label: "Antigravity", commands: ["agy"], launchStyle: "goto" },
   { id: "idea", label: "IntelliJ IDEA", commands: ["idea"], launchStyle: "line-column" },
+  {
+    id: "ghostty",
+    label: "Ghostty",
+    commands: ["ghostty"],
+    macAppName: "Ghostty",
+    launchStyle: "direct-path",
+  },
   { id: "file-manager", label: "File Manager", commands: null, launchStyle: "direct-path" },
 ] as const satisfies ReadonlyArray<EditorDefinition>;
 

@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { assertSuccess } from "@effect/vitest/utils";
+import { EDITORS } from "@t3tools/contracts";
 import { FileSystem, Path, Effect } from "effect";
 
 import {
@@ -8,6 +9,7 @@ import {
   launchDetached,
   resolveAvailableEditors,
   resolveEditorLaunch,
+  resolveMacApplicationFallbackLaunch,
 } from "./open.ts";
 
 it.layer(NodeServices.layer)("resolveEditorLaunch", (it) => {
@@ -97,6 +99,16 @@ it.layer(NodeServices.layer)("resolveEditorLaunch", (it) => {
       assert.deepEqual(ideaLaunch, {
         command: "idea",
         args: ["/tmp/workspace"],
+      });
+
+      const ghosttyLaunch = yield* resolveEditorLaunch(
+        { cwd: "/tmp/workspace", editor: "ghostty" },
+        "linux",
+        { PATH: "" },
+      );
+      assert.deepEqual(ghosttyLaunch, {
+        command: "ghostty",
+        args: ["+new-tab", "--working-directory=/tmp/workspace"],
       });
     }),
   );
@@ -240,6 +252,23 @@ it.layer(NodeServices.layer)("resolveEditorLaunch", (it) => {
       });
     }),
   );
+
+  it("passes editor launch args through macOS app fallbacks", () => {
+    const vscode = EDITORS.find((editor) => editor.id === "vscode");
+    assert.ok(vscode);
+
+    assert.deepEqual(
+      resolveMacApplicationFallbackLaunch(
+        vscode,
+        "Visual Studio Code",
+        "/tmp/workspace/src/open.ts:71:5",
+      ),
+      {
+        command: "open",
+        args: ["-a", "Visual Studio Code", "--args", "--goto", "/tmp/workspace/src/open.ts:71:5"],
+      },
+    );
+  });
 
   it.effect("maps file-manager editor to OS open commands", () =>
     Effect.gen(function* () {
