@@ -4,13 +4,10 @@ export const COMPOSER_PRIMARY_ACTIONS_COMPACT_BREAKPOINT_PX =
   COMPOSER_FOOTER_WIDE_ACTIONS_COMPACT_BREAKPOINT_PX;
 
 export function shouldUseCompactComposerFooter(
-  width: number | null,
-  options?: { hasWideActions?: boolean },
+  _width: number | null,
+  _options?: { hasWideActions?: boolean },
 ): boolean {
-  const breakpoint = options?.hasWideActions
-    ? COMPOSER_FOOTER_WIDE_ACTIONS_COMPACT_BREAKPOINT_PX
-    : COMPOSER_FOOTER_COMPACT_BREAKPOINT_PX;
-  return width !== null && width < breakpoint;
+  return true;
 }
 
 export function shouldUseCompactComposerPrimaryActions(
