@@ -1,7 +1,7 @@
 import { type EditorId, type ResolvedKeybindingsConfig } from "@t3tools/contracts";
 import { memo, useCallback, useEffect, useMemo } from "react";
 import { isOpenFavoriteEditorShortcut, shortcutLabelForCommand } from "../../keybindings";
-import { usePreferredEditor } from "../../editorPreferences";
+import { isPersistablePreferredEditor, usePreferredEditor } from "../../editorPreferences";
 import { ChevronDownIcon, FolderClosedIcon, TerminalSquareIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Group, GroupSeparator } from "../ui/group";
@@ -109,7 +109,9 @@ export const OpenInPicker = memo(function OpenInPicker({
       const editor = editorId ?? preferredEditor;
       if (!editor) return;
       void api.shell.openInEditor(openInCwd, editor);
-      setPreferredEditor(editor);
+      if (isPersistablePreferredEditor(editor)) {
+        setPreferredEditor(editor);
+      }
     },
     [preferredEditor, openInCwd, setPreferredEditor],
   );

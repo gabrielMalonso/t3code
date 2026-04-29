@@ -156,6 +156,17 @@ function resolveGhosttyMacTabLaunch(cwd: string): EditorLaunch {
   };
 }
 
+export function resolveMacApplicationFallbackLaunch(
+  editor: (typeof EDITORS)[number],
+  macAppName: string,
+  target: string,
+): EditorLaunch {
+  return {
+    command: "open",
+    args: ["-a", macAppName, "--args", ...resolveEditorArgs(editor, target)],
+  };
+}
+
 export function resolveAvailableEditors(
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
@@ -268,10 +279,7 @@ export const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
       macAppName !== undefined &&
       macApplicationExists(macAppName)
     ) {
-      return {
-        command: "open",
-        args: ["-a", macAppName, input.cwd],
-      };
+      return resolveMacApplicationFallbackLaunch(editorDef, macAppName, input.cwd);
     }
 
     return {

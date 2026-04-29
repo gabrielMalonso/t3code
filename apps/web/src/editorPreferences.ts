@@ -3,13 +3,36 @@ import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "./hoo
 import { useMemo } from "react";
 
 const LAST_EDITOR_KEY = "t3code:last-editor";
+const WORKSPACE_ONLY_EDITOR_IDS = new Set<EditorId>(["ghostty"]);
+
+export function isPersistablePreferredEditor(editor: EditorId): boolean {
+  return !WORKSPACE_ONLY_EDITOR_IDS.has(editor);
+}
+
+export function resolvePreferredEditor(
+  availableEditors: readonly EditorId[],
+  storedEditor: EditorId | null,
+): EditorId | null {
+  const availableEditorIds = new Set(availableEditors);
+  if (
+    storedEditor &&
+    availableEditorIds.has(storedEditor) &&
+    isPersistablePreferredEditor(storedEditor)
+  ) {
+    return storedEditor;
+  }
+  return (
+    EDITORS.find(
+      (editor) => availableEditorIds.has(editor.id) && isPersistablePreferredEditor(editor.id),
+    )?.id ?? null
+  );
+}
 
 export function usePreferredEditor(availableEditors: ReadonlyArray<EditorId>) {
   const [lastEditor, setLastEditor] = useLocalStorage(LAST_EDITOR_KEY, null, EditorId);
 
   const effectiveEditor = useMemo(() => {
-    if (lastEditor && availableEditors.includes(lastEditor)) return lastEditor;
-    return EDITORS.find((editor) => availableEditors.includes(editor.id))?.id ?? null;
+    return resolvePreferredEditor(availableEditors, lastEditor);
   }, [lastEditor, availableEditors]);
 
   return [effectiveEditor, setLastEditor] as const;
@@ -18,10 +41,8 @@ export function usePreferredEditor(availableEditors: ReadonlyArray<EditorId>) {
 export function resolveAndPersistPreferredEditor(
   availableEditors: readonly EditorId[],
 ): EditorId | null {
-  const availableEditorIds = new Set(availableEditors);
   const stored = getLocalStorageItem(LAST_EDITOR_KEY, EditorId);
-  if (stored && availableEditorIds.has(stored)) return stored;
-  const editor = EDITORS.find((editor) => availableEditorIds.has(editor.id))?.id ?? null;
+  const editor = resolvePreferredEditor(availableEditors, stored);
   if (editor) setLocalStorageItem(LAST_EDITOR_KEY, editor, EditorId);
   return editor ?? null;
 }
