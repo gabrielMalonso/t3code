@@ -2,10 +2,10 @@
 
 ## Status atual
 
-- Data: 2026-04-27
-- Branch de trabalho: `sync/upstream-2026-04-23`
-- Upstream integrado nesta wave: `dbebc387` (`upstream/main`)
-- Estado: merge aplicado e validado localmente com `thread loop`, `file references`, `showPlanSidebar` e `skills de workspace` preservados
+- Data: 2026-05-01
+- Branch de trabalho: `sync/upstream-2026-05-01`
+- Upstream integrado nesta wave: `17b43960` (`upstream/main`)
+- Estado: merge aplicado e validado localmente com `thread loop`, `file references`, `showPlanSidebar` e `skills de workspace` preservados sobre o novo Multi-Provider upstream
 - Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
 ## Features locais vivas
@@ -42,13 +42,79 @@
   Permanece hotspot compartilhado para draft, imagens, terminal context e file references
 - `apps/web/src/components/chat/MessagesTimeline.tsx`
   Continua sendo fronteira entre renderizacao do core e parser dos sentinelas custom
+- `packages/contracts/src/server.ts`, `packages/contracts/src/providerInstance.ts`, `apps/server/src/ws.ts`
+  O upstream agora roteia providers por `ProviderInstanceId`; qualquer custom de skills precisa usar `ProviderDriverKind` so como metadata, nao como identidade de sessao
+- `apps/server/src/persistence/Migrations.ts`
+  Continua sensivel porque o fork ja ocupou IDs que o upstream tenta usar em waves futuras
 
 ## Regra pratica para o proximo sync
 
 - Ler `.context/customizations.md` antes de abrir diff sensivel do fork
 - Se a mudanca for UX de skill/slash command, absorver o fluxo nativo do upstream e reaplicar so a descoberta/serializacao local que ainda for diferencial real
+- Se a mudanca for Multi-Provider/provider instances, aceitar o roteamento por `instanceId` e reaplicar skills do workspace apenas como overlay de Codex
 - Se a mudanca for regra de negocio local, empurrar para `t3code-custom/*`
 - Se precisar tocar `ChatComposer` ou `ComposerPromptEditor`, fazer o minimo e deixar a adaptacao visivel
+
+## 2026-05-01 — Sync ate `17b43960`
+
+- Branch de sync: `sync/upstream-2026-05-01`
+- Donor local usado para replay seletivo: `73cd6149` (`Add Ghostty and macOS app fallbacks for editor launches`)
+- Commits upstream absorvidos:
+  - `08e6d4cf` — `feat: Multi-Provider support (#2277)`
+  - fixes mobile/iOS de sidebar, safe areas e botoes de thread
+  - fixes de OpenCode no Windows, terminal dimensions, clock skew e git PR stale
+  - release workflow com Discord webhook/logging
+- Zona de atrito prevista antes do merge:
+  - `apps/web/src/components/chat/ChatComposer.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/components/ChatView.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/composerDraftStore.ts` — `hotspot-compartilhado`
+  - `apps/web/src/components/settings/SettingsPanels.tsx` — `adaptador-core`
+  - `apps/server/src/ws.ts` — `hotspot-compartilhado`
+  - `apps/server/src/provider/Layers/CodexAdapter.ts` — `hotspot-compartilhado`
+  - `apps/server/src/provider/Layers/CodexProvider.ts` — `hotspot-compartilhado`
+  - `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — `hotspot-compartilhado`
+  - `apps/server/src/persistence/Migrations.ts` — `hotspot-compartilhado`
+  - `packages/contracts/src/server.ts`, `packages/contracts/src/settings.ts`, `packages/contracts/src/ipc.ts` — `hotspot-compartilhado`
+- Conflitos reais do merge:
+  - `apps/server/src/persistence/Migrations.ts`
+  - `apps/server/src/provider/Layers/CodexAdapter.ts`
+  - `apps/server/src/provider/Layers/CodexProvider.ts`
+  - `apps/server/src/provider/Layers/CodexSessionRuntime.ts`
+  - `apps/web/src/components/chat/ChatComposer.tsx`
+  - `apps/web/src/rpc/wsRpcClient.ts`
+  - `packages/contracts/src/ipc.ts`
+  - `packages/contracts/src/server.ts`
+  - `packages/contracts/src/settings.ts`
+- O que foi absorvido do upstream:
+  - Multi-Provider com `ProviderInstanceId`, provider instance registry, provider drivers e UI de instancias
+  - novo model selection por `instanceId`
+  - refresh direcionado por provider instance
+  - redaction de settings expostos ao cliente
+  - migrations upstream de `provider_instance_id` em runtime/session projections
+  - melhorias mobile/iOS, release workflow e fixes operacionais
+- O que foi reaplicado do custom vivo:
+  - `listProviderSkills` e descoberta de skills de workspace para Codex
+  - envio de `skills` no `CodexAdapter` e `CodexSessionRuntime`
+  - `showPlanSidebar` em `ClientSettingsSchema` e patch
+  - migrations locais de thread loop preservadas antes das migrations novas de provider instance
+  - testes custom ajustados para `ProviderDriverKind.make(...)` e `ProviderInstanceId`
+- O que foi deliberadamente deixado de fora do replay:
+  - qualquer tentativa de restaurar `ProviderKind` como identidade de provider; o upstream venceu aqui e com razao
+  - menu/discovery paralelo dentro do `ChatComposer`; o custom segue atras dos hooks em `t3code-custom`
+  - IDs upstream `27/28` para provider instance; no fork eles viraram `29/30` para nao corromper bancos que ja conhecem migrations locais
+- Resultado pratico:
+  - `apps/web/src/t3code-custom/hooks/useComposerProviderSkills.ts` ficou como `perimetro-custom`
+  - `apps/web/src/components/chat/ChatComposer.tsx` ficou como `adaptador-core`
+  - `apps/server/src/ws.ts`, `packages/contracts/src/server.ts`, `packages/contracts/src/ipc.ts` e `packages/contracts/src/settings.ts` ficaram como `hotspot-compartilhado`
+  - `apps/server/src/persistence/Migrations.ts` ficou como `hotspot-compartilhado` por historico de IDs do fork
+  - o reencaixe diminuiu conflito futuro no composer, mas aumentou a responsabilidade em provider instance/contracts; normal, Multi-Provider mexe no chao da casa
+- Validacao final:
+  - `bun fmt`
+  - `bun lint`
+  - `bun typecheck`
+  - `bun run --cwd apps/server test src/persistence/Migrations/027_028_ProviderInstanceIdColumns.test.ts src/orchestration/Layers/ProviderRuntimeIngestion.test.ts src/orchestration/Layers/CheckpointReactor.test.ts src/orchestration/Layers/ThreadLoopScheduler.test.ts`
+  - `bun run --cwd apps/web test src/providerSkillSelections.test.ts src/modelSelection.test.ts src/components/settings/SettingsPanels.logic.test.ts src/localApi.test.ts`
+  - `bun run --cwd packages/contracts test src/settings.test.ts src/providerInstance.test.ts src/server.test.ts`
 
 ## 2026-04-27 — Sync ate `dbebc387`
 
