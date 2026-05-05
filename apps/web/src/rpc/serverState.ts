@@ -199,9 +199,13 @@ export function startServerStateSync(client: ServerStateClient): () => void {
   };
 }
 
-export function resetServerStateForTests() {
+export function resetServerState() {
   resetAppAtomRegistryForTests();
   nextServerConfigUpdatedNotificationId = 1;
+}
+
+export function resetServerStateForTests() {
+  resetServerState();
 }
 
 let nextServerConfigUpdatedNotificationId = 1;

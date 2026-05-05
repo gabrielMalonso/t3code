@@ -35,6 +35,8 @@ import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesTree } from "./ChangedFilesTree";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { MessageCopyButton } from "./MessageCopyButton";
+import { isMobileBearerAssetUrl, resolveMobileBearerAssetBlobUrl } from "../../mobile/assets";
+import { isMobileCapacitorRuntime } from "../../mobile/platform";
 import {
   computeStableMessagesTimelineRows,
   MAX_VISIBLE_WORK_LOG_ENTRIES,
@@ -277,6 +279,49 @@ function keyExtractor(item: MessagesTimelineRow) {
 
 type TimelineEntry = ReturnType<typeof deriveTimelineEntries>[number];
 type TimelineMessage = Extract<TimelineEntry, { kind: "message" }>["message"];
+
+function AuthenticatedTimelineImage(input: {
+  readonly environmentId: EnvironmentId;
+  readonly src: string;
+  readonly alt: string;
+}) {
+  const [resolvedSrc, setResolvedSrc] = useState(input.src);
+
+  useEffect(() => {
+    let disposed = false;
+    if (!isMobileCapacitorRuntime() || !isMobileBearerAssetUrl(input.src)) {
+      setResolvedSrc(input.src);
+      return;
+    }
+
+    resolveMobileBearerAssetBlobUrl({
+      environmentId: input.environmentId,
+      url: input.src,
+    })
+      .then((nextSrc) => {
+        if (!disposed) {
+          setResolvedSrc(nextSrc);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setResolvedSrc(input.src);
+        }
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [input.environmentId, input.src]);
+
+  return (
+    <img
+      src={resolvedSrc}
+      alt={input.alt}
+      className="block h-auto max-h-[220px] w-full object-cover"
+    />
+  );
+}
 type TimelineWorkEntry = Extract<MessagesTimelineRow, { kind: "work" }>["groupedEntries"][number];
 type TimelineRow = MessagesTimelineRow;
 
@@ -330,10 +375,10 @@ function TimelineRowContent({ row }: { row: TimelineRow }) {
                                 ctx.onImageExpand(preview);
                               }}
                             >
-                              <img
+                              <AuthenticatedTimelineImage
+                                environmentId={ctx.activeThreadEnvironmentId}
                                 src={image.previewUrl}
                                 alt={image.name}
-                                className="block h-auto max-h-[220px] w-full object-cover"
                               />
                             </button>
                           ) : (

@@ -30,10 +30,10 @@ Criar um app iOS/Android que replique a experiencia mobile do T3 Code, com parea
 
 O app deve salvar perfis separados:
 
-| Modo | Exemplo | Quando usar |
-|---|---|---|
+| Modo      | Exemplo                             | Quando usar                                |
+| --------- | ----------------------------------- | ------------------------------------------ |
 | Tailscale | `http://100.x.y.z:3774` ou MagicDNS | fora de casa, redes diferentes, IP estavel |
-| LAN | `http://192.168.15.12:3774` | em casa, mesma rede Wi-Fi, teste rapido |
+| LAN       | `http://192.168.15.12:3774`         | em casa, mesma rede Wi-Fi, teste rapido    |
 
 Mesmo que Tailscale e LAN apontem para o mesmo servidor, cada modo deve ter seu proprio profile e bearer token.
 
@@ -89,25 +89,25 @@ Nao e app standalone. E um controle remoto nativo para um T3 Code server.
 
 Pecas existentes que ajudam:
 
-| Peca | Estado | Codigo |
-|---|---|---|
-| UI web React/Vite | pronta para bundle web | `apps/web` |
-| Rota `/pair` | existe | `apps/web/src/routes/pair.tsx` |
-| Pairing token em URL/QR | existe | `apps/server/src/startupAccess.ts` |
-| Bearer session para clientes remotos | existe | `apps/server/src/auth/http.ts` |
-| Remote API bearer/ws-token | existe | `apps/web/src/environments/remote/api.ts` |
-| WebSocket com `wsToken` | existe | `apps/web/src/environments/remote/api.ts` |
+| Peca                                 | Estado                 | Codigo                                    |
+| ------------------------------------ | ---------------------- | ----------------------------------------- |
+| UI web React/Vite                    | pronta para bundle web | `apps/web`                                |
+| Rota `/pair`                         | existe                 | `apps/web/src/routes/pair.tsx`            |
+| Pairing token em URL/QR              | existe                 | `apps/server/src/startupAccess.ts`        |
+| Bearer session para clientes remotos | existe                 | `apps/server/src/auth/http.ts`            |
+| Remote API bearer/ws-token           | existe                 | `apps/web/src/environments/remote/api.ts` |
+| WebSocket com `wsToken`              | existe                 | `apps/web/src/environments/remote/api.ts` |
 
 Pecas que nao podem ser reaproveitadas diretamente no mobile neutro:
 
-| Peca | Problema |
-|---|---|
-| `apps/web/src/routes/__root.tsx` | roda primary bootstrap global |
-| `apps/web/src/environments/runtime/service.ts` | autoconecta saved environments e registra conexoes por `environmentId` |
+| Peca                                           | Problema                                                                          |
+| ---------------------------------------------- | --------------------------------------------------------------------------------- |
+| `apps/web/src/routes/__root.tsx`               | roda primary bootstrap global                                                     |
+| `apps/web/src/environments/runtime/service.ts` | autoconecta saved environments e registra conexoes por `environmentId`            |
 | `apps/web/src/environments/runtime/catalog.ts` | persiste saved env por `environmentId`, insuficiente para LAN/Tailscale separados |
-| `apps/web/src/localApi.ts` | pode criar primary connection so para montar API local |
-| `apps/web/src/environments/remote/target.ts` | bare host vira `https://`, ruim para LAN/Tailscale HTTP |
-| attachments/favicons via `<img src>` | nao enviam bearer `Authorization` |
+| `apps/web/src/localApi.ts`                     | pode criar primary connection so para montar API local                            |
+| `apps/web/src/environments/remote/target.ts`   | bare host vira `https://`, ruim para LAN/Tailscale HTTP                           |
+| attachments/favicons via `<img src>`           | nao enviam bearer `Authorization`                                                 |
 
 ## Fluxo do MVP
 
@@ -162,14 +162,14 @@ Exemplo: o QR pode vir como `http://localhost:3774/pair#token=abc`, mas o usuari
 
 Regra pratica:
 
-| Entrada | Comportamento |
-|---|---|
-| Pairing URL com token | extrai token e sugere host da URL |
-| Token manual | usuario informa host separado |
-| Modo Tailscale | sugerir host Tailscale/MagicDNS salvo anteriormente |
-| Modo LAN | sugerir ultimo IP LAN salvo |
+| Entrada                   | Comportamento                                                |
+| ------------------------- | ------------------------------------------------------------ |
+| Pairing URL com token     | extrai token e sugere host da URL                            |
+| Token manual              | usuario informa host separado                                |
+| Modo Tailscale            | sugerir host Tailscale/MagicDNS salvo anteriormente          |
+| Modo LAN                  | sugerir ultimo IP LAN salvo                                  |
 | Host sem scheme em mobile | para IP privado/Tailscale, usar `http://` por default no MVP |
-| URL com scheme explicito | preservar scheme |
+| URL com scheme explicito  | preservar scheme                                             |
 
 ## Modelo de Dados Mobile
 
@@ -211,10 +211,10 @@ type MobileBackend = {
 Criar um controller explicito:
 
 ```ts
-activateProfile(profileId)
-closeActiveProfile()
-reconnectActiveProfile()
-getActiveProfile()
+activateProfile(profileId);
+closeActiveProfile();
+reconnectActiveProfile();
+getActiveProfile();
 ```
 
 Invariantes:
@@ -230,7 +230,7 @@ Invariantes:
 Criar uma API de producao, nao usar helpers de teste:
 
 ```ts
-resetRuntimeForClosedEnvironment()
+resetRuntimeForClosedEnvironment();
 ```
 
 Ela deve limpar explicitamente:
@@ -275,13 +275,13 @@ Criar `apps/mobile` como wrapper Capacitor do build web.
 
 Plugins previstos:
 
-| Necessidade | Plugin |
-|---|---|
-| QR code de pareamento | `@capacitor/barcode-scanner` |
-| Persistencia leve | `@capacitor/preferences` |
-| Status de rede/reconexao | `@capacitor/network` |
-| Teclado mobile | `@capacitor/keyboard` |
-| Status bar/safe area | `@capacitor/status-bar` |
+| Necessidade              | Plugin                       |
+| ------------------------ | ---------------------------- |
+| QR code de pareamento    | `@capacitor/barcode-scanner` |
+| Persistencia leve        | `@capacitor/preferences`     |
+| Status de rede/reconexao | `@capacitor/network`         |
+| Teclado mobile           | `@capacitor/keyboard`        |
+| Status bar/safe area     | `@capacitor/status-bar`      |
 
 O bundle web deve ir dentro do app. `server.url` do Capacitor pode ajudar em dev/live reload, mas nao deve ser a arquitetura de producao.
 
@@ -402,19 +402,19 @@ Verificacao:
 
 ## Testes Necessarios
 
-| Area | Teste |
-|---|---|
-| Root mobile | origem Capacitor nao chama primary bootstrap |
-| Storage mobile | profiles Tailscale/LAN com mesmo `environmentId` |
-| Storage mobile | token e `sessionExpiresAt` persistem por profile |
-| Resolver mobile | `100.x`, `192.168.x`, MagicDNS e URL com scheme |
-| Pairing | token one-time nao reaproveita |
-| Runtime | activate/close/reconnect single-active |
-| Runtime | close limpa estado volatil |
-| Routes | deep link sem active profile volta ao neutro |
-| WebSocket | reconnect reemite wsToken |
-| Assets | bearer fetch cria blob e revoga no close |
-| Native | LAN/Tailscale em device/simulador |
+| Area            | Teste                                            |
+| --------------- | ------------------------------------------------ |
+| Root mobile     | origem Capacitor nao chama primary bootstrap     |
+| Storage mobile  | profiles Tailscale/LAN com mesmo `environmentId` |
+| Storage mobile  | token e `sessionExpiresAt` persistem por profile |
+| Resolver mobile | `100.x`, `192.168.x`, MagicDNS e URL com scheme  |
+| Pairing         | token one-time nao reaproveita                   |
+| Runtime         | activate/close/reconnect single-active           |
+| Runtime         | close limpa estado volatil                       |
+| Routes          | deep link sem active profile volta ao neutro     |
+| WebSocket       | reconnect reemite wsToken                        |
+| Assets          | bearer fetch cria blob e revoga no close         |
+| Native          | LAN/Tailscale em device/simulador                |
 
 ## Checklist de Validacao
 
@@ -455,4 +455,3 @@ Verificacao:
 - Capacitor Security: https://capacitorjs.com/docs/guides/security
 - Apple Local Network permission: https://developer.apple.com/documentation/bundleresources/information-property-list/nslocalnetworkusagedescription
 - Android Network Security Config: https://developer.android.com/privacy-and-security/security-config
-
