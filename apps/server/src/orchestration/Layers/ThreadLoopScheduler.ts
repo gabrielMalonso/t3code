@@ -7,10 +7,12 @@ import {
   type OrchestrationEvent,
 } from "@t3tools/contracts";
 import { Cause, Effect, Layer, Stream } from "effect";
+import * as Option from "effect/Option";
 
 import { ProjectionThreadLoopRepositoryLive } from "../../persistence/Layers/ProjectionThreadLoops.ts";
 import { ProjectionThreadLoopRepository } from "../../persistence/Services/ProjectionThreadLoops.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
+import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import {
   ThreadLoopScheduler,
   type ThreadLoopSchedulerShape,
@@ -31,6 +33,7 @@ const isThreadLoopBusy = (thread: {
 
 export const makeThreadLoopScheduler = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
+  const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const projectionThreadLoopRepository = yield* ProjectionThreadLoopRepository;
 
   const appendLoopActivity = (input: {
@@ -78,9 +81,10 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
   const pauseLoopForArchivedThread = Effect.fn("pauseLoopForArchivedThread")(function* (
     event: Extract<OrchestrationEvent, { type: "thread.archived" }>,
   ) {
-    const readModel = yield* orchestrationEngine.getReadModel();
-    const thread = readModel.threads.find((entry) => entry.id === event.payload.threadId);
-    if (!thread?.loop?.enabled) {
+    const loop = yield* projectionThreadLoopRepository.getByThreadId({
+      threadId: event.payload.threadId,
+    });
+    if (Option.isNone(loop) || !loop.value.enabled) {
       return;
     }
 
@@ -122,9 +126,8 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         continue;
       }
 
-      const readModel = yield* orchestrationEngine.getReadModel();
-      const thread = readModel.threads.find((entry) => entry.id === loop.threadId);
-      if (!thread) {
+      const thread = yield* projectionSnapshotQuery.getThreadShellById(loop.threadId);
+      if (Option.isNone(thread)) {
         yield* projectionThreadLoopRepository
           .deleteByThreadId({
             threadId: loop.threadId,
@@ -139,22 +142,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
           );
         continue;
       }
-      if (!thread.loop) {
-        yield* projectionThreadLoopRepository
-          .deleteByThreadId({
-            threadId: loop.threadId,
-          })
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning("thread loop scheduler failed to delete stale loop row", {
-                threadId: loop.threadId,
-                cause: Cause.pretty(cause),
-              }),
-            ),
-          );
-        continue;
-      }
-      if (!thread.loop.enabled) {
+      if (!loop.enabled) {
         yield* syncLoopPatch({
           threadId: loop.threadId,
           createdAt: nowIso,
@@ -172,7 +160,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         );
         continue;
       }
-      if (thread.archivedAt !== null) {
+      if (thread.value.archivedAt !== null) {
         yield* syncLoopPatch({
           threadId: loop.threadId,
           createdAt: nowIso,
@@ -190,7 +178,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         });
         continue;
       }
-      if (isThreadLoopBusy(thread)) {
+      if (isThreadLoopBusy(thread.value)) {
         yield* syncLoopPatch({
           threadId: loop.threadId,
           createdAt: nowIso,
@@ -241,9 +229,9 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
             text: loop.prompt,
             attachments: [],
           },
-          modelSelection: thread.modelSelection,
-          runtimeMode: thread.runtimeMode,
-          interactionMode: thread.interactionMode,
+          modelSelection: thread.value.modelSelection,
+          runtimeMode: thread.value.runtimeMode,
+          interactionMode: thread.value.interactionMode,
           createdAt: nowIso,
         })
         .pipe(

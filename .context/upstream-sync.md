@@ -2,10 +2,10 @@
 
 ## Status atual
 
-- Data: 2026-05-01
-- Branch de trabalho: `sync/upstream-2026-05-01`
-- Upstream integrado nesta wave: `17b43960` (`upstream/main`)
-- Estado: merge aplicado e validado localmente com `thread loop`, `file references`, `showPlanSidebar` e `skills de workspace` preservados sobre o novo Multi-Provider upstream
+- Data: 2026-05-05
+- Branch de trabalho: `sync/upstream-2026-05-05`
+- Upstream integrado nesta wave: `35721d9a` (`upstream/main`)
+- Estado: merge aplicado localmente com Hosted Frontend/SSH/Tailscale, Source Control/VCS e diff UX do upstream absorvidos; `thread loop`, `file references`, `showPlanSidebar` e `skills de workspace` preservados
 - Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
 ## Features locais vivas
@@ -44,16 +44,87 @@
   Continua sendo fronteira entre renderizacao do core e parser dos sentinelas custom
 - `packages/contracts/src/server.ts`, `packages/contracts/src/providerInstance.ts`, `apps/server/src/ws.ts`
   O upstream agora roteia providers por `ProviderInstanceId`; qualquer custom de skills precisa usar `ProviderDriverKind` so como metadata, nao como identidade de sessao
+- `apps/server/src/orchestration/Layers/ThreadLoopScheduler.ts`, `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts`
+  O upstream removeu leitura de read model do `OrchestrationEngine`; custom de loop deve ler projeção por `ProjectionSnapshotQuery`
 - `apps/server/src/persistence/Migrations.ts`
   Continua sensivel porque o fork ja ocupou IDs que o upstream tenta usar em waves futuras
+- `apps/server/src/ws.ts`, `apps/server/src/git/GitWorkflowService.ts`, `apps/server/src/vcs/*`
+  Bootstrap de worktree local agora precisa seguir VCS/GitWorkflow upstream; nao ressuscitar `GitCore`
 
 ## Regra pratica para o proximo sync
 
 - Ler `.context/customizations.md` antes de abrir diff sensivel do fork
 - Se a mudanca for UX de skill/slash command, absorver o fluxo nativo do upstream e reaplicar so a descoberta/serializacao local que ainda for diferencial real
 - Se a mudanca for Multi-Provider/provider instances, aceitar o roteamento por `instanceId` e reaplicar skills do workspace apenas como overlay de Codex
+- Se a mudanca for VCS/source control/remote, aceitar a fundacao upstream e reencaixar apenas bootstrap phase, branch rename semantico e skills/file refs locais
 - Se a mudanca for regra de negocio local, empurrar para `t3code-custom/*`
 - Se precisar tocar `ChatComposer` ou `ComposerPromptEditor`, fazer o minimo e deixar a adaptacao visivel
+
+## 2026-05-05 — Sync ate `35721d9a`
+
+- Branch de sync: `sync/upstream-2026-05-05`
+- Donor local usado para replay seletivo: `9223a155` (`Merge pull request #46 from gabrielMalonso/sync/upstream-2026-05-01`)
+- Commits upstream absorvidos:
+  - `3772fa12` — Hosted Frontend, Tailscale Integration & SSH Launcher
+  - `6d7fe2ee`, `0ce7e56e`, `91a03e07`, `d7969264` — fundacao VCS/source control com GitLab, Bitbucket, Azure DevOps e discovery/publish remoto
+  - `92e340d8` — composer mobile colapsado por default
+  - `f7748a0d`, `f4c9418d` — diff ignore whitespace e file diffs colapsaveis
+  - `aca0fa4e` — reducao de startup/memoria
+  - fixes de release, markdown highlight, AnimatedHeight, pairing token e provider settings declarativo
+- Zona de atrito prevista antes do merge:
+  - `apps/desktop/src/main.ts` — `hotspot-compartilhado`
+  - `apps/server/src/ws.ts` — `hotspot-compartilhado`
+  - `apps/server/src/persistence/Migrations.ts` — `hotspot-compartilhado`
+  - `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts` — `hotspot-compartilhado`
+  - `apps/server/src/orchestration/Layers/ThreadLoopScheduler.ts` — `hotspot-compartilhado`
+  - `apps/web/src/components/ChatView.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/components/chat/ChatComposer.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/components/settings/SettingsPanels.tsx` — `adaptador-core`
+  - `apps/web/src/components/GitActionsControl.logic.ts` — `adaptador-core`
+  - `packages/contracts/src/*` — `hotspot-compartilhado`
+- Conflitos reais do merge:
+  - `apps/desktop/src/desktopSettings.test.ts`
+  - `apps/desktop/src/main.ts`
+  - `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts`
+  - `apps/server/src/persistence/Migrations.ts`
+  - `apps/server/src/server.test.ts`
+  - `apps/server/src/ws.ts`
+  - `apps/web/src/components/ChatView.tsx`
+  - `apps/web/src/components/DiffPanel.tsx`
+  - `apps/web/src/components/GitActionsControl.logic.ts`
+  - `apps/web/src/components/chat/ChatComposer.tsx`
+  - `apps/web/src/components/chat/ComposerPrimaryActions.tsx`
+  - `apps/web/src/components/settings/SettingsPanels.browser.tsx`
+  - `apps/web/src/components/settings/SettingsPanels.tsx`
+  - `apps/web/src/localApi.ts`
+  - `apps/web/src/store.test.ts`
+- O que foi absorvido do upstream:
+  - Hosted Frontend, SSH remote environments, Tailscale Serve e advertised endpoints
+  - fundacao VCS com `GitWorkflowService`, `VcsDriver`, `VcsStatusBroadcaster` e source control providers
+  - remocao de `OrchestrationEngine.getReadModel`; leituras passam por `ProjectionSnapshotQuery`
+  - composer mobile colapsado, banners do composer e estados de ambiente indisponivel
+  - settings declarativos de provider, diff ignore whitespace e collapsible file diffs
+  - pacote `@t3tools/tailscale`, pacote `@t3tools/ssh` e docs de source control
+- O que foi reaplicado do custom vivo:
+  - `listProviderSkills` no RPC/local API e overlay de skills do workspace no composer
+  - `file references` no `ChatComposer`, `ComposerPrimaryActions`, timeline e envio
+  - `showPlanSidebar` coexistindo com o setting upstream `diffIgnoreWhitespace`
+  - bootstrap phase e branch rename semantico no fluxo novo de `GitWorkflowService`
+  - `ThreadLoopScheduler` usando `ProjectionSnapshotQuery` em vez de tentar restaurar `getReadModel`
+  - migrations locais preservadas; index upstream de ordering virou migration `031`
+- O que foi deliberadamente deixado de fora do replay:
+  - `GitCore`, `GitStatusBroadcaster` antigo e services antigos de git; o upstream substituiu por VCS e venceu com folga
+  - qualquer menu paralelo de skills no `ChatComposer`; o custom segue como overlay/hook local
+  - migration upstream `029` com ID original; no fork ela foi deslocada para `031` para respeitar IDs locais ja usados
+- Resultado pratico:
+  - Source Control/VCS ficou como `core-puro` upstream
+  - `apps/server/src/ws.ts` ficou `hotspot-compartilhado` por bootstrap custom + RPC local de skills
+  - `ThreadLoopScheduler.ts` ficou `hotspot-compartilhado`, mas agora alinhado com `ProjectionSnapshotQuery`
+  - `ChatComposer.tsx` continuou `adaptador-core`, com mobile collapse upstream e body/controls custom preservados
+  - `SettingsPanels.tsx` ficou `adaptador-core`, mantendo `showPlanSidebar` e adicionando `diffIgnoreWhitespace`
+- Validacao nesta etapa:
+  - `bun install`
+  - `bun typecheck`
 
 ## 2026-05-01 — Sync ate `17b43960`
 

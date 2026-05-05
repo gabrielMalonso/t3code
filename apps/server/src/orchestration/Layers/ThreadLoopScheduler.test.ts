@@ -15,6 +15,7 @@ import {
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import { Effect, Exit, Layer, ManagedRuntime, PubSub, Ref, Scope, Stream } from "effect";
+import * as Option from "effect/Option";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { afterEach, describe, it } from "vitest";
 
@@ -28,6 +29,7 @@ import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
+import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ThreadLoopScheduler } from "../Services/ThreadLoopScheduler.ts";
 import { makeThreadLoopScheduler, ThreadLoopSchedulerLive } from "./ThreadLoopScheduler.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -205,8 +207,39 @@ describe("ThreadLoopScheduler", () => {
           }),
         ),
         Layer.provideMerge(
+          Layer.mock(ProjectionSnapshotQuery)({
+            getThreadShellById: (threadId) =>
+              Ref.get(readModelRef).pipe(
+                Effect.map((readModel) => {
+                  const thread = readModel.threads.find((entry) => entry.id === threadId);
+                  return thread
+                    ? Option.some({
+                        id: thread.id,
+                        projectId: thread.projectId,
+                        title: thread.title,
+                        modelSelection: thread.modelSelection,
+                        runtimeMode: thread.runtimeMode,
+                        interactionMode: thread.interactionMode,
+                        branch: thread.branch,
+                        worktreePath: thread.worktreePath,
+                        bootstrapPhase: thread.bootstrapPhase,
+                        latestTurn: thread.latestTurn,
+                        createdAt: thread.createdAt,
+                        updatedAt: thread.updatedAt,
+                        archivedAt: thread.archivedAt,
+                        session: thread.session,
+                        latestUserMessageAt: null,
+                        hasPendingApprovals: false,
+                        hasPendingUserInput: false,
+                        hasActionableProposedPlan: false,
+                      })
+                    : Option.none();
+                }),
+              ),
+          }),
+        ),
+        Layer.provideMerge(
           Layer.succeed(OrchestrationEngineService, {
-            getReadModel: () => Ref.get(readModelRef),
             readEvents: () => Stream.empty,
             dispatch: (command: OrchestrationCommand) =>
               Effect.gen(function* () {
@@ -426,11 +459,16 @@ describe("ThreadLoopScheduler", () => {
         Layer.provideMerge(serverConfigLayer),
         Layer.provideMerge(NodeServices.layer),
       );
+      const projectionSnapshotLayer = OrchestrationProjectionSnapshotQueryLive.pipe(
+        Layer.provide(RepositoryIdentityResolverLive),
+        Layer.provide(sqliteLayer),
+      );
 
       return ManagedRuntime.make(
         ThreadLoopSchedulerLive.pipe(
           Layer.provide(sqliteLayer),
           Layer.provideMerge(orchestrationLayer),
+          Layer.provideMerge(projectionSnapshotLayer),
           Layer.provideMerge(RepositoryIdentityResolverLive),
         ),
       );
@@ -594,10 +632,12 @@ describe("ThreadLoopScheduler", () => {
     const scope = await Effect.runPromise(Scope.make("sequential"));
 
     try {
-      const engine = await restartRuntime.runPromise(Effect.service(OrchestrationEngineService));
+      const snapshotQuery = await restartRuntime.runPromise(
+        Effect.service(ProjectionSnapshotQuery),
+      );
       const scheduler = await restartRuntime.runPromise(Effect.service(ThreadLoopScheduler));
 
-      const bootReadModel = await restartRuntime.runPromise(engine.getReadModel());
+      const bootReadModel = await restartRuntime.runPromise(snapshotQuery.getSnapshot());
       const bootThread = bootReadModel.threads.find(
         (thread) => thread.id === asThreadId("thread-restart"),
       );
@@ -609,7 +649,7 @@ describe("ThreadLoopScheduler", () => {
       await restartRuntime.runPromise(scheduler.start().pipe(Scope.provide(scope)));
 
       await waitFor(async () => {
-        const readModel = await restartRuntime.runPromise(engine.getReadModel());
+        const readModel = await restartRuntime.runPromise(snapshotQuery.getSnapshot());
         const thread = readModel.threads.find((entry) => entry.id === asThreadId("thread-restart"));
         return Boolean(
           thread?.activities.some((activity) => activity.kind === "loop.tick.started") &&
@@ -617,7 +657,7 @@ describe("ThreadLoopScheduler", () => {
         );
       });
 
-      const readModel = await restartRuntime.runPromise(engine.getReadModel());
+      const readModel = await restartRuntime.runPromise(snapshotQuery.getSnapshot());
       const thread = readModel.threads.find((entry) => entry.id === asThreadId("thread-restart"));
       assert.isTrue(
         thread?.activities.some((activity) => activity.kind === "loop.tick.started") ?? false,

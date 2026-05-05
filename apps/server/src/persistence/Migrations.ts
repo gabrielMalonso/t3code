@@ -43,6 +43,7 @@ import Migration0027 from "./Migrations/027_ProjectionThreadsBootstrapPhase.ts";
 import Migration0028 from "./Migrations/026_CanonicalizeModelSelectionOptions.ts";
 import Migration0029 from "./Migrations/027_ProviderSessionRuntimeInstanceId.ts";
 import Migration0030 from "./Migrations/028_ProjectionThreadSessionInstanceId.ts";
+import Migration0031 from "./Migrations/031_ProjectionThreadDetailOrderingIndexes.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -85,6 +86,7 @@ export const migrationEntries = [
   [28, "CanonicalizeModelSelectionOptions", Migration0028],
   [29, "ProviderSessionRuntimeInstanceId", Migration0029],
   [30, "ProjectionThreadSessionInstanceId", Migration0030],
+  [31, "ProjectionThreadDetailOrderingIndexes", Migration0031],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>
