@@ -12,6 +12,7 @@ import {
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
+  ProviderInstanceId,
 } from "@t3tools/contracts";
 import { Effect, Exit, Layer, ManagedRuntime, PubSub, Ref, Scope, Stream } from "effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -99,7 +100,7 @@ describe("ThreadLoopScheduler", () => {
             title: "Project",
             workspaceRoot: "/tmp/project",
             defaultModelSelection: {
-              provider: "codex",
+              instanceId: ProviderInstanceId.make("codex"),
               model: "gpt-5-codex",
             },
             scripts: [],
@@ -114,7 +115,7 @@ describe("ThreadLoopScheduler", () => {
             projectId: asProjectId("project-1"),
             title: "Thread",
             modelSelection: {
-              provider: "codex",
+              instanceId: ProviderInstanceId.make("codex"),
               model: "gpt-5-codex",
             },
             runtimeMode: "full-access",
