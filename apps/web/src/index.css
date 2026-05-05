@@ -59,6 +59,22 @@
   }
 }
 
+/* Safe-area inset utilities for surfaces that opt into edge-to-edge rendering.
+   Insets resolve to 0 when the browser already constrains the layout viewport
+   to the safe area. */
+@utility pt-safe {
+  padding-top: max(env(safe-area-inset-top), 0px);
+}
+@utility pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom), 0px);
+}
+@utility pl-safe {
+  padding-left: max(env(safe-area-inset-left), 0px);
+}
+@utility pr-safe {
+  padding-right: max(env(safe-area-inset-right), 0px);
+}
+
 /* Suppress all transitions during theme changes */
 .no-transitions,
 .no-transitions *,
@@ -71,6 +87,8 @@
 :root {
   color-scheme: light;
   --radius: 0.625rem;
+  --app-font-family:
+    "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   /* t3code-custom typography boundary: terminal and code blocks share the fork mono stack. */
   --terminal-font-family:
     "JetBrainsMono Nerd Font", "JetBrains Mono", "SF Mono", "SFMono-Regular", Consolas,
@@ -223,29 +241,68 @@
   --warning-foreground: #ffe1bd;
 }
 
+:root.theme-ayu-black {
+  color-scheme: dark;
+  --app-font-family:
+    "Galaxie Copernicus Book", "Galaxie Copernicus", "DM Sans", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", system-ui, sans-serif;
+  --terminal-font-family:
+    "JetBrainsMono Nerd Font", "JetBrains Mono", "SF Mono", "SFMono-Regular", Consolas,
+    "Liberation Mono", Menlo, monospace;
+  --background: #000000;
+  --app-chrome-background: var(--background);
+  --foreground: #ffffff;
+  --card: #0a0a0a;
+  --card-foreground: #ffffff;
+  --popover: #111111;
+  --popover-foreground: #ffffff;
+  --primary: #f2c04b;
+  --primary-foreground: #000000;
+  --secondary: #161616;
+  --secondary-foreground: #f5f5f5;
+  --muted: #141414;
+  --muted-foreground: #a6a6a6;
+  --accent: #1f1a0b;
+  --accent-foreground: #ffe6a6;
+  --destructive: #ff6b73;
+  --border: #242424;
+  --input: #1a1a1a;
+  --ring: #f2c04b;
+  --destructive-foreground: #ffc0c5;
+  --info: #59c2ff;
+  --info-foreground: #c7eaff;
+  --success: #aad94c;
+  --success-foreground: #e0ff9f;
+  --warning: #f2c04b;
+  --warning-foreground: #ffe6a6;
+}
+
 body {
-  font-family:
-    "DM Sans",
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    system-ui,
-    sans-serif;
+  font-family: var(--app-font-family);
   margin: 0;
   padding: 0;
-  min-height: 100vh;
 }
 
 html,
-body,
+body {
+  min-height: calc(100svh + env(safe-area-inset-top));
+  overscroll-behavior: none;
+}
+
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
 #root {
   height: 100%;
   width: 100%;
   max-width: 100%;
-  overflow-y: hidden;
   overflow-x: hidden;
   overflow-x: clip;
+  overflow-y: hidden;
   overscroll-behavior-y: none;
+  padding-top: max(env(safe-area-inset-top), 0px);
 }
 
 body::after {

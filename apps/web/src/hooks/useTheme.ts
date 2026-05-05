@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import type { DesktopTheme } from "@t3tools/contracts";
 
-export type Theme = "light" | "dark" | "system" | "abyss" | "darkHighContrast" | "dracula";
+export type Theme =
+  | "light"
+  | "dark"
+  | "system"
+  | "abyss"
+  | "darkHighContrast"
+  | "dracula"
+  | "ayuBlack";
 export type ResolvedTheme = "light" | "dark";
-export type ThemeAccent = "default" | "abyss" | "darkHighContrast" | "dracula";
+export type ThemeAccent = "default" | "abyss" | "darkHighContrast" | "dracula" | "ayuBlack";
 type ThemeSnapshot = {
   theme: Theme;
   systemDark: boolean;
@@ -43,7 +50,8 @@ function getStored(): Theme {
     raw === "system" ||
     raw === "abyss" ||
     raw === "darkHighContrast" ||
-    raw === "dracula"
+    raw === "dracula" ||
+    raw === "ayuBlack"
   ) {
     return raw;
   }
@@ -51,11 +59,19 @@ function getStored(): Theme {
 }
 
 function resolveTheme(theme: Theme): ResolvedTheme {
-  if (theme === "abyss" || theme === "darkHighContrast" || theme === "dracula") return "dark";
+  if (
+    theme === "abyss" ||
+    theme === "darkHighContrast" ||
+    theme === "dracula" ||
+    theme === "ayuBlack"
+  ) {
+    return "dark";
+  }
   return theme === "system" ? (getSystemDark() ? "dark" : "light") : theme;
 }
 
 function resolveThemeAccent(theme: Theme): ThemeAccent {
+  if (theme === "ayuBlack") return "ayuBlack";
   if (theme === "dracula") return "dracula";
   if (theme === "darkHighContrast") return "darkHighContrast";
   return theme === "abyss" ? "abyss" : "default";
@@ -123,6 +139,7 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
     theme === "darkHighContrast",
   );
   document.documentElement.classList.toggle("theme-dracula", theme === "dracula");
+  document.documentElement.classList.toggle("theme-ayu-black", theme === "ayuBlack");
   syncBrowserChromeTheme();
   syncDesktopTheme(theme === "system" ? "system" : resolveTheme(theme));
   if (suppressTransitions) {

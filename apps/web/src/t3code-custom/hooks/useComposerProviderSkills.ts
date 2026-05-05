@@ -1,6 +1,6 @@
 import type {
   EnvironmentId,
-  ProviderKind,
+  ProviderDriverKind,
   ServerListProviderSkillsResult,
   ServerProviderSkill,
 } from "@t3tools/contracts";
@@ -13,7 +13,7 @@ const EMPTY_PROVIDER_SKILLS: ReadonlyArray<ServerProviderSkill> = Object.freeze(
 const EMPTY_WORKSPACE_SKILLS_RESULT: ServerListProviderSkillsResult = {
   skills: [],
 };
-const SKILL_TOKEN_REGEX = /(^|\\s)\\$([a-zA-Z][a-zA-Z0-9_:-]*)(?=\\s)/g;
+const SKILL_TOKEN_REGEX = /(^|\s)\$([a-zA-Z][a-zA-Z0-9_:-]*)(?=\s)/g;
 
 function mergeProviderSkills(
   preferredSkills: ReadonlyArray<ServerProviderSkill>,
@@ -94,7 +94,7 @@ export function toProviderSkillReferencesForSend(
 
 export function useComposerProviderSkills(input: {
   environmentId: EnvironmentId;
-  provider: ProviderKind;
+  provider: ProviderDriverKind;
   prompt: string;
   discoveryCwd: string | null;
   providerSkills: ReadonlyArray<ServerProviderSkill> | undefined;

@@ -1,4 +1,4 @@
-import type { EnvironmentId, ProviderKind, ServerProviderSkill } from "@t3tools/contracts";
+import type { EnvironmentId, ProviderDriverKind, ServerProviderSkill } from "@t3tools/contracts";
 import { useCallback } from "react";
 
 import { formatProviderSkillDisplayName } from "~/providerSkillPresentation";
@@ -7,7 +7,7 @@ import { searchProviderSkills } from "~/providerSkillSearch";
 import { useComposerProviderSkills } from "./useComposerProviderSkills";
 
 export function buildComposerSkillMenuItems(input: {
-  provider: ProviderKind;
+  provider: ProviderDriverKind;
   skills: ReadonlyArray<ServerProviderSkill>;
   query: string;
 }) {
@@ -26,7 +26,7 @@ export function buildComposerSkillMenuItems(input: {
 
 export function useComposerSkillExtension(input: {
   environmentId: EnvironmentId;
-  provider: ProviderKind;
+  provider: ProviderDriverKind;
   prompt: string;
   discoveryCwd: string | null;
   providerSkills: ReadonlyArray<ServerProviderSkill> | undefined;
