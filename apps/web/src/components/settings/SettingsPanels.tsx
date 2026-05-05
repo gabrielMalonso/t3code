@@ -99,6 +99,10 @@ const THEME_OPTIONS = [
     value: "dracula",
     label: "Dracula",
   },
+  {
+    value: "ayuBlack",
+    label: "Ayu Black",
+  },
 ] as const;
 
 const TIMESTAMP_FORMAT_LABELS = {
@@ -871,7 +875,8 @@ export function GeneralSettingsPanel() {
                   value === "dark" ||
                   value === "abyss" ||
                   value === "darkHighContrast" ||
-                  value === "dracula"
+                  value === "dracula" ||
+                  value === "ayuBlack"
                 ) {
                   setTheme(value);
                 }
