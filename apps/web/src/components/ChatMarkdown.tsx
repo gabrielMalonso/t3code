@@ -70,6 +70,7 @@ const APP_SYNTAX_THEMES = [
   "abyss",
   "darkHighContrast",
   "dracula",
+  "ayuBlack",
 ] as const satisfies readonly AppSyntaxTheme[];
 const highlightedCodeCache = new LRUCache<string>(
   MAX_HIGHLIGHT_CACHE_ENTRIES,

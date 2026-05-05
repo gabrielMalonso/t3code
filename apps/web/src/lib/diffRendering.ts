@@ -1,10 +1,17 @@
 import { RegisteredCustomThemes, registerCustomTheme } from "@pierre/diffs";
 
 import abyssTheme from "../themes/abyss-color-theme.json";
+import ayuBlackTheme from "../themes/ayu-black-color-theme.json";
 import darkHighContrastTheme from "../themes/dark-high-contrast-color-theme.json";
 import draculaTheme from "../themes/dracula-color-theme.json";
 
-export type AppSyntaxTheme = "light" | "dark" | "abyss" | "darkHighContrast" | "dracula";
+export type AppSyntaxTheme =
+  | "light"
+  | "dark"
+  | "abyss"
+  | "darkHighContrast"
+  | "dracula"
+  | "ayuBlack";
 
 export const DIFF_THEME_NAMES = {
   light: "pierre-light",
@@ -12,6 +19,7 @@ export const DIFF_THEME_NAMES = {
   abyss: "t3code-abyss",
   darkHighContrast: "t3code-dark-high-contrast",
   dracula: "t3code-dracula",
+  ayuBlack: "t3code-ayu-black",
 } as const;
 
 export type DiffThemeName = (typeof DIFF_THEME_NAMES)[keyof typeof DIFF_THEME_NAMES];
@@ -36,6 +44,14 @@ if (!RegisteredCustomThemes.has(DIFF_THEME_NAMES.dracula)) {
   registerCustomTheme(DIFF_THEME_NAMES.dracula, async () => ({
     ...draculaTheme,
     name: DIFF_THEME_NAMES.dracula,
+    type: "dark",
+  }));
+}
+
+if (!RegisteredCustomThemes.has(DIFF_THEME_NAMES.ayuBlack)) {
+  registerCustomTheme(DIFF_THEME_NAMES.ayuBlack, async () => ({
+    ...ayuBlackTheme,
+    name: DIFF_THEME_NAMES.ayuBlack,
     type: "dark",
   }));
 }
