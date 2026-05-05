@@ -1,4 +1,4 @@
-import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
+import { type EnvironmentId, type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime";
 import {
   Outlet,
@@ -46,6 +46,7 @@ import { syncBrowserChromeTheme } from "../hooks/useTheme";
 import {
   ensureEnvironmentConnectionBootstrapped,
   getPrimaryEnvironmentConnection,
+  readEnvironmentConnection,
   startEnvironmentConnectionService,
 } from "../environments/runtime";
 import { configureClientTracing } from "../observability/clientTracing";
@@ -54,17 +55,28 @@ import {
   resolveInitialServerAuthGateState,
   updatePrimaryEnvironmentDescriptor,
 } from "../environments/primary";
+import { MobileNeutralSurface } from "../mobile/MobileNeutralSurface";
+import { isMobileCapacitorRuntime } from "../mobile/platform";
+import { useMobileRuntimeStore } from "../mobile/runtime";
 
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
 }>()({
   beforeLoad: async () => {
+    if (isMobileCapacitorRuntime()) {
+      return {
+        authGateState: { status: "authenticated" as const },
+        isMobileRuntime: true,
+      };
+    }
+
     const [, authGateState] = await Promise.all([
       ensurePrimaryEnvironmentReady(),
       resolveInitialServerAuthGateState(),
     ]);
     return {
       authGateState,
+      isMobileRuntime: false,
     };
   },
   component: RootRouteView,
@@ -76,7 +88,7 @@ export const Route = createRootRouteWithContext<{
 
 function RootRouteView() {
   const pathname = useLocation({ select: (location) => location.pathname });
-  const { authGateState } = Route.useRouteContext();
+  const { authGateState, isMobileRuntime } = Route.useRouteContext();
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -91,6 +103,10 @@ function RootRouteView() {
     return <Outlet />;
   }
 
+  if (isMobileRuntime) {
+    return <MobileRootRouteView />;
+  }
+
   if (authGateState.status !== "authenticated") {
     return <Outlet />;
   }
@@ -100,6 +116,40 @@ function RootRouteView() {
         <AuthenticatedTracingBootstrap />
         <ServerStateBootstrap />
         <EnvironmentConnectionManagerBootstrap />
+        <EventRouter />
+        <WebSocketConnectionCoordinator />
+        <SlowRpcAckToastCoordinator />
+        <WebSocketConnectionSurface>
+          <CommandPalette>
+            <AppSidebarLayout>
+              <Outlet />
+            </AppSidebarLayout>
+          </CommandPalette>
+        </WebSocketConnectionSurface>
+      </AnchoredToastProvider>
+    </ToastProvider>
+  );
+}
+
+function MobileRootRouteView() {
+  const activeEnvironmentId = useMobileRuntimeStore((state) => state.activeEnvironmentId);
+  const status = useMobileRuntimeStore((state) => state.status);
+
+  if (!activeEnvironmentId || status !== "connected") {
+    return (
+      <ToastProvider>
+        <AnchoredToastProvider>
+          <MobileNeutralSurface />
+        </AnchoredToastProvider>
+      </ToastProvider>
+    );
+  }
+
+  return (
+    <ToastProvider>
+      <AnchoredToastProvider>
+        <AuthenticatedTracingBootstrap />
+        <ServerStateBootstrap environmentId={activeEnvironmentId} />
         <EventRouter />
         <WebSocketConnectionCoordinator />
         <SlowRpcAckToastCoordinator />
@@ -186,8 +236,16 @@ function errorDetails(error: unknown): string {
   }
 }
 
-function ServerStateBootstrap() {
-  useEffect(() => startServerStateSync(getPrimaryEnvironmentConnection().client.server), []);
+function ServerStateBootstrap(input: { readonly environmentId?: EnvironmentId }) {
+  useEffect(() => {
+    const connection = input.environmentId
+      ? readEnvironmentConnection(input.environmentId)
+      : getPrimaryEnvironmentConnection();
+    if (!connection) {
+      return;
+    }
+    return startServerStateSync(connection.client.server);
+  }, [input.environmentId]);
 
   return null;
 }

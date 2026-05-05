@@ -119,9 +119,13 @@ function evictOldestPendingRpcRequestIfNeeded(): void {
   }
 }
 
-export function resetRequestLatencyStateForTests(): void {
+export function resetRequestLatencyState(): void {
   slowRpcAckThresholdMs = SLOW_RPC_ACK_THRESHOLD_MS;
   clearAllTrackedRpcRequests();
+}
+
+export function resetRequestLatencyStateForTests(): void {
+  resetRequestLatencyState();
 }
 
 export function setSlowRpcAckThresholdMsForTests(thresholdMs: number): void {

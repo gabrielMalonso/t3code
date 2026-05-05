@@ -28,6 +28,9 @@ import { collectActiveTerminalThreadIds } from "~/lib/terminalStateCleanup";
 import { deriveOrchestrationBatchEffects } from "~/orchestrationEventEffects";
 import { projectQueryKeys } from "~/lib/projectReactQuery";
 import { providerQueryKeys } from "~/lib/providerReactQuery";
+import { resetRequestLatencyState } from "~/rpc/requestLatencyState";
+import { resetServerState } from "~/rpc/serverState";
+import { resetWsConnectionState } from "~/rpc/wsConnectionState";
 import { getPrimaryKnownEnvironment } from "../primary";
 import {
   bootstrapRemoteBearerSession,
@@ -73,6 +76,13 @@ type EnvironmentServiceState = {
   refCount: number;
   stop: () => void;
 };
+
+export interface MobileEnvironmentConnectionRecord {
+  readonly environmentId: EnvironmentId;
+  readonly label: string;
+  readonly httpBaseUrl: string;
+  readonly wsBaseUrl: string;
+}
 
 type ThreadDetailSubscriptionEntry = {
   readonly environmentId: EnvironmentId;
@@ -837,6 +847,21 @@ function createSavedEnvironmentClient(
   );
 }
 
+function createMobileEnvironmentClient(
+  record: MobileEnvironmentConnectionRecord,
+  bearerToken: string,
+): WsRpcClient {
+  return createWsRpcClient(
+    new WsTransport(() =>
+      resolveRemoteWebSocketConnectionUrl({
+        wsBaseUrl: record.wsBaseUrl,
+        httpBaseUrl: record.httpBaseUrl,
+        bearerToken,
+      }),
+    ),
+  );
+}
+
 async function refreshSavedEnvironmentMetadata(
   record: SavedEnvironmentRecord,
   bearerToken: string,
@@ -984,6 +1009,48 @@ async function ensureSavedEnvironmentConnection(
   }
 }
 
+export async function activateMobileEnvironmentConnection(input: {
+  readonly record: MobileEnvironmentConnectionRecord;
+  readonly bearerToken: string;
+}): Promise<EnvironmentConnection> {
+  const existing = environmentConnections.get(input.record.environmentId);
+  if (existing) {
+    if (existing.kind !== "mobile") {
+      throw new Error("This environment already has an active non-mobile connection.");
+    }
+    return existing;
+  }
+
+  const client = createMobileEnvironmentClient(input.record, input.bearerToken);
+  const knownEnvironment = createKnownEnvironment({
+    id: input.record.environmentId,
+    label: input.record.label,
+    source: "manual",
+    target: {
+      httpBaseUrl: input.record.httpBaseUrl,
+      wsBaseUrl: input.record.wsBaseUrl,
+    },
+  });
+  const connection = createEnvironmentConnection({
+    kind: "mobile",
+    knownEnvironment: {
+      ...knownEnvironment,
+      environmentId: input.record.environmentId,
+    },
+    client,
+    ...createEnvironmentConnectionHandlers(),
+  });
+
+  registerConnection(connection);
+  try {
+    await connection.ensureBootstrapped();
+    return connection;
+  } catch (error) {
+    await removeConnection(input.record.environmentId).catch(() => false);
+    throw error;
+  }
+}
+
 async function syncSavedEnvironmentConnections(
   records: ReadonlyArray<SavedEnvironmentRecord>,
 ): Promise<void> {
@@ -1043,6 +1110,49 @@ export async function disconnectSavedEnvironment(environmentId: EnvironmentId): 
 
   useSavedEnvironmentRuntimeStore.getState().clear(environmentId);
   await removeConnection(environmentId).catch(() => false);
+}
+
+export async function resetRuntimeForClosedEnvironment(
+  environmentId?: EnvironmentId,
+): Promise<void> {
+  if (environmentId) {
+    await removeConnection(environmentId).catch(() => false);
+  } else {
+    await Promise.all(
+      [...environmentConnections.keys()].map((entryEnvironmentId) =>
+        removeConnection(entryEnvironmentId),
+      ),
+    );
+  }
+
+  const currentState = useStore.getState();
+  const nextEnvironmentStateById = environmentId
+    ? Object.fromEntries(
+        Object.entries(currentState.environmentStateById).filter(([key]) => key !== environmentId),
+      )
+    : {};
+  useStore.setState({
+    activeEnvironmentId:
+      environmentId && currentState.activeEnvironmentId !== environmentId
+        ? currentState.activeEnvironmentId
+        : null,
+    environmentStateById: nextEnvironmentStateById,
+  });
+  useTerminalStateStore.setState({
+    terminalStateByThreadKey: {},
+    terminalLaunchContextByThreadKey: {},
+    terminalEventEntriesByKey: {},
+    nextTerminalEventId: 1,
+  });
+  useUiStateStore.setState({
+    projectExpandedById: {},
+    projectOrder: [],
+    threadLastVisitedAtById: {},
+    threadChangedFilesExpandedById: {},
+  });
+  resetServerState();
+  resetRequestLatencyState();
+  resetWsConnectionState();
 }
 
 export async function reconnectSavedEnvironment(environmentId: EnvironmentId): Promise<void> {

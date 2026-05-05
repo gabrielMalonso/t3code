@@ -15,6 +15,7 @@ export {
 } from "./catalog";
 
 export {
+  activateMobileEnvironmentConnection,
   addSavedEnvironment,
   disconnectSavedEnvironment,
   ensureEnvironmentConnectionBootstrapped,
@@ -23,6 +24,7 @@ export {
   reconnectSavedEnvironment,
   removeSavedEnvironment,
   requireEnvironmentConnection,
+  resetRuntimeForClosedEnvironment,
   resetEnvironmentServiceForTests,
   startEnvironmentConnectionService,
   subscribeEnvironmentConnections,
