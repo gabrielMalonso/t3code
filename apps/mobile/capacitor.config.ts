@@ -1,7 +1,5 @@
-/// <reference types="@capacitor-community/safe-area" />
-/// <reference types="@capacitor/status-bar" />
-
 import type { CapacitorConfig } from "@capacitor/cli";
+import { SystemBarsStyle } from "@capacitor-community/safe-area";
 
 const config: CapacitorConfig = {
   appId: "tools.t3code.mobile",
@@ -14,9 +12,7 @@ const config: CapacitorConfig = {
   plugins: {
     SafeArea: {
       initialViewportFitCover: true,
-    },
-    StatusBar: {
-      style: "DARK",
+      statusBarStyle: SystemBarsStyle.Dark,
     },
     SystemBars: {
       insetsHandling: "disable",

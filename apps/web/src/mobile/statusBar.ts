@@ -11,10 +11,13 @@ export function syncMobileStatusBarTheme(theme: StatusBarTheme): void {
   }
 
   const generation = ++syncGeneration;
-  void import("@capacitor/status-bar")
-    .then(async ({ StatusBar, Style }) => {
+  void import("@capacitor-community/safe-area")
+    .then(async ({ SafeArea, SystemBarsStyle, SystemBarsType }) => {
       if (generation !== syncGeneration) return;
-      await StatusBar.setStyle({ style: theme === "dark" ? Style.Dark : Style.Light });
+      await SafeArea.setSystemBarsStyle({
+        style: theme === "dark" ? SystemBarsStyle.Dark : SystemBarsStyle.Light,
+        type: SystemBarsType.StatusBar,
+      });
       if (generation === syncGeneration) {
         currentStatusBarTheme = theme;
       }
