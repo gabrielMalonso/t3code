@@ -56,11 +56,12 @@ export const useMobileRuntimeStore = create<MobileRuntimeState>((set) => ({
       errorMessage: null,
     }),
   setError: (message) =>
-    set((state) => ({
-      ...state,
+    set({
+      activeProfileId: null,
+      activeEnvironmentId: null,
       status: "error",
       errorMessage: message,
-    })),
+    }),
 }));
 
 function assertSessionFresh(profile: MobileConnectionProfile): void {
@@ -118,6 +119,7 @@ export async function activateMobileProfile(profileId: string): Promise<void> {
     useMobileRuntimeStore.getState().setConnected(profile.profileId, profile.environmentId);
   } catch (error) {
     useMobileRuntimeStore.getState().setError(formatError(error));
+    clearLocalApiBinding();
     await resetRuntimeForClosedEnvironment(profile.environmentId);
     throw error;
   }
