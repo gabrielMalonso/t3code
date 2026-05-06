@@ -2084,6 +2084,23 @@ export default function ChatView(props: ChatViewProps) {
   }, [activeThread?.id]);
 
   useEffect(() => {
+    if (!activeThreadKey || !isMobileCapacitorRuntime()) return;
+    const blurActiveTextInput = () => {
+      const activeElement = document.activeElement;
+      if (!(activeElement instanceof HTMLElement)) return;
+      if (!activeElement.matches('input, textarea, [contenteditable="true"]')) return;
+      activeElement.blur();
+    };
+    blurActiveTextInput();
+    const frame = window.requestAnimationFrame(blurActiveTextInput);
+    const timeout = window.setTimeout(blurActiveTextInput, 0);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timeout);
+    };
+  }, [activeThreadKey]);
+
+  useEffect(() => {
     if (!activeThread?.id || terminalState.terminalOpen) return;
     const frame = window.requestAnimationFrame(() => {
       focusComposer();
