@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { resolveMobilePairingTarget } from "./pairingTarget";
+import {
+  inferMobileConnectionModeFromPairingInput,
+  resolveMobilePairingTarget,
+} from "./pairingTarget";
 
 beforeEach(() => {
   Object.defineProperty(globalThis, "window", {
@@ -35,5 +38,28 @@ describe("resolveMobilePairingTarget", () => {
         host: "",
       }),
     ).toThrow("Informe o host do backend.");
+  });
+});
+
+describe("inferMobileConnectionModeFromPairingInput", () => {
+  it("infers LAN for private LAN pairing urls", () => {
+    expect(
+      inferMobileConnectionModeFromPairingInput(
+        "http://192.168.15.12:3774/pair#token=EJTVFWLYUVKM",
+      ),
+    ).toBe("lan");
+  });
+
+  it("infers Tailscale for 100.x and ts.net pairing urls", () => {
+    expect(
+      inferMobileConnectionModeFromPairingInput(
+        "http://100.101.102.103:3774/pair#token=EJTVFWLYUVKM",
+      ),
+    ).toBe("tailscale");
+    expect(
+      inferMobileConnectionModeFromPairingInput(
+        "http://macbook.tailnet.ts.net:3774/pair#token=EJTVFWLYUVKM",
+      ),
+    ).toBe("tailscale");
   });
 });

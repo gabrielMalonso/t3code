@@ -1,5 +1,4 @@
 import {
-  ChevronDown,
   Clipboard,
   Globe2,
   Link,
@@ -7,6 +6,7 @@ import {
   PlugZap,
   QrCode,
   RefreshCw,
+  Trash2,
   Unplug,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -22,7 +22,6 @@ import {
   DialogTitle,
 } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
-import { Textarea } from "../components/ui/textarea";
 import {
   bootstrapRemoteBearerSession,
   fetchRemoteEnvironmentDescriptor,
@@ -34,9 +33,13 @@ import {
   useMobileProfileStore,
   type MobileConnectionProfile,
 } from "./profileStorage";
-import { resolveMobilePairingTarget, type MobileConnectionMode } from "./pairingTarget";
+import {
+  inferMobileConnectionModeFromPairingInput,
+  resolveMobilePairingTarget,
+  type MobileConnectionMode,
+} from "./pairingTarget";
 
-type BusyAction = "pair" | "connect" | "close" | "scan" | null;
+type BusyAction = "pair" | "connect" | "close" | "scan" | "remove" | null;
 type PairingPanel = "code" | "paste" | null;
 type NeutralView = "connections" | "pair";
 
@@ -113,10 +116,10 @@ export function MobileNeutralSurface() {
   const [host, setHost] = useState("");
   const [label, setLabel] = useState("");
   const [pairingPanel, setPairingPanel] = useState<PairingPanel>(null);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [neutralView, setNeutralView] = useState<NeutralView>("connections");
+  const [profileToRemove, setProfileToRemove] = useState<MobileConnectionProfile | null>(null);
 
   useEffect(() => {
     void profileStore.hydrate();
@@ -206,7 +209,6 @@ export function MobileNeutralSurface() {
       setHost(target.httpBaseUrl);
       await activateMobileProfile(profile.profileId);
       setPairingPanel(null);
-      setAdvancedOpen(false);
       setNeutralView("connections");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
@@ -224,7 +226,6 @@ export function MobileNeutralSurface() {
       return;
     }
     setPairingPanel(null);
-    setAdvancedOpen(false);
   }
 
   async function handleScan() {
@@ -239,8 +240,10 @@ export function MobileNeutralSurface() {
 
       setPairingInput(trimmed);
       if (isPairingUrl(trimmed)) {
-        setBusyAction(null);
-        await pairWithInput({ pairingInput: trimmed, host: "", mode });
+        setMode(inferMobileConnectionModeFromPairingInput(trimmed) ?? mode);
+        setHost("");
+        setLabel("");
+        setPairingPanel("paste");
         return;
       }
 
@@ -257,8 +260,10 @@ export function MobileNeutralSurface() {
     setErrorMessage(null);
     try {
       const clipboardText = await navigator.clipboard?.readText?.();
-      if (clipboardText?.trim()) {
-        setPairingInput(clipboardText.trim());
+      const trimmed = clipboardText?.trim() ?? "";
+      if (trimmed) {
+        setPairingInput(trimmed);
+        setMode(inferMobileConnectionModeFromPairingInput(trimmed) ?? mode);
       }
     } catch {
       // Clipboard permissions vary in WebViews. Keeping the input open is the useful fallback.
@@ -289,6 +294,26 @@ export function MobileNeutralSurface() {
     }
   }
 
+  async function handleRemoveProfile() {
+    if (!profileToRemove) {
+      return;
+    }
+
+    setBusyAction("remove");
+    setErrorMessage(null);
+    try {
+      if (runtime.activeProfileId === profileToRemove.profileId) {
+        await closeActiveMobileProfile();
+      }
+      await profileStore.remove(profileToRemove.profileId);
+      setProfileToRemove(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   const busy = busyAction !== null;
   const hasSavedProfiles = savedProfiles.length > 0;
   const showingConnections = neutralView === "connections" && hasSavedProfiles;
@@ -299,12 +324,12 @@ export function MobileNeutralSurface() {
         ? "Pareando"
         : busyAction === "connect"
           ? "Conectando"
-          : showingConnections
-            ? "Conexoes salvas"
-            : "Pronto para parear";
-  const inputLabel = pairingPanel === "code" ? "Codigo de pareamento" : "URL/token de pareamento";
-  const inputPlaceholder =
-    pairingPanel === "code" ? "Cole o codigo mostrado no desktop" : "Cole a URL ou token do QR";
+          : busyAction === "remove"
+            ? "Removendo conexao"
+            : showingConnections
+              ? "Conexoes salvas"
+              : "Pronto para parear";
+  const inputLabel = pairingPanel === "code" ? "Codigo de pareamento" : "Nova conexao";
   const heroTitle = busy
     ? "Conectando..."
     : showingConnections
@@ -319,8 +344,8 @@ export function MobileNeutralSurface() {
       : "Escaneie o QR do desktop ou cole a URL de pareamento para abrir seus projetos aqui.";
 
   return (
-    <main className="h-dvh overflow-y-auto overscroll-y-contain bg-background text-foreground">
-      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 pb-[max(2.5rem,calc(env(safe-area-inset-bottom)+2rem))] pt-[max(1.25rem,env(safe-area-inset-top))]">
+    <main className="h-dvh overflow-x-hidden overflow-y-auto overscroll-y-contain bg-background text-foreground">
+      <div className="mx-auto box-border flex min-h-dvh w-full max-w-md flex-col overflow-x-hidden px-5 pb-[max(2.5rem,calc(env(safe-area-inset-bottom)+2rem))] pt-[max(1.25rem,env(safe-area-inset-top))]">
         <header className="flex items-center gap-3">
           <div className="min-w-0">
             <h1 className="truncate text-xl font-semibold tracking-tight">Pareamento</h1>
@@ -366,7 +391,7 @@ export function MobileNeutralSurface() {
           </div>
 
           {showingConnections ? (
-            <section className="grid w-full gap-3 text-left">
+            <section className="grid w-full max-w-full min-w-0 gap-3 text-left">
               {savedProfiles.map((profile) => {
                 const isActive = runtime.activeProfileId === profile.profileId;
                 const isConnecting =
@@ -374,11 +399,11 @@ export function MobileNeutralSurface() {
                 return (
                   <div
                     key={profile.profileId}
-                    className={`grid gap-3 rounded-2xl border bg-card p-4 shadow-sm ${
+                    className={`grid w-full max-w-full min-w-0 gap-3 overflow-hidden rounded-2xl border bg-card p-4 shadow-sm ${
                       isActive ? "border-primary/50" : "border-border"
                     }`}
                   >
-                    <div className="flex items-start gap-3">
+                    <div className="flex min-w-0 items-start gap-3">
                       <div className="grid size-10 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground">
                         {profile.mode === "tailscale" ? (
                           <Globe2 className="size-5" />
@@ -387,8 +412,8 @@ export function MobileNeutralSurface() {
                         )}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="truncate text-sm font-semibold">{profile.label}</p>
+                        <div className="flex min-w-0 items-center gap-2">
+                          <p className="min-w-0 truncate text-sm font-semibold">{profile.label}</p>
                           <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                             {modeLabel(profile.mode)}
                           </span>
@@ -398,20 +423,31 @@ export function MobileNeutralSurface() {
                         </p>
                       </div>
                     </div>
-                    <Button
-                      className="h-11 rounded-full"
-                      onClick={() => handleConnect(profile.profileId)}
-                      disabled={busy || (runtime.activeProfileId !== null && !isActive)}
-                    >
-                      {busyAction === "connect" && !isActive ? (
-                        <RefreshCw className="animate-spin" />
-                      ) : isConnecting ? (
-                        <RefreshCw className="animate-spin" />
-                      ) : (
-                        <PlugZap />
-                      )}
-                      {isConnecting ? "Conectando" : isActive ? "Conectado" : "Conectar"}
-                    </Button>
+                    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_2.75rem] gap-2">
+                      <Button
+                        className="h-11 min-w-0 rounded-full"
+                        onClick={() => handleConnect(profile.profileId)}
+                        disabled={busy || (runtime.activeProfileId !== null && !isActive)}
+                      >
+                        {busyAction === "connect" && !isActive ? (
+                          <RefreshCw className="animate-spin" />
+                        ) : isConnecting ? (
+                          <RefreshCw className="animate-spin" />
+                        ) : (
+                          <PlugZap />
+                        )}
+                        {isConnecting ? "Conectando" : isActive ? "Conectado" : "Conectar"}
+                      </Button>
+                      <Button
+                        className="h-11 w-11 rounded-full text-destructive hover:text-destructive"
+                        variant="outline"
+                        aria-label={`Esquecer conexao ${profile.label}`}
+                        onClick={() => setProfileToRemove(profile)}
+                        disabled={busy}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
                   </div>
                 );
               })}
@@ -486,19 +522,19 @@ export function MobileNeutralSurface() {
         </section>
 
         <Dialog open={pairingPanel !== null} onOpenChange={closePairingPanel}>
-          <DialogPopup className="max-w-md data-ending-style:translate-y-8 data-starting-style:translate-y-10 max-sm:data-ending-style:translate-y-full max-sm:data-starting-style:translate-y-full">
+          <DialogPopup className="w-[calc(100vw-2rem)] max-w-md overflow-hidden data-ending-style:translate-y-8 data-starting-style:translate-y-10 max-sm:w-full max-sm:data-ending-style:translate-y-full max-sm:data-starting-style:translate-y-full">
             <DialogHeader>
               <DialogTitle>{inputLabel}</DialogTitle>
               <DialogDescription>
                 {pairingPanel === "code"
                   ? "Digite o codigo mostrado no desktop e confirme o host desta conexao."
-                  : "Cole a URL ou token do QR para salvar esta conexao no celular."}
+                  : "Escolha como voce quer reconhecer esta conexao no celular."}
               </DialogDescription>
             </DialogHeader>
 
-            <DialogPanel>
+            <DialogPanel className="min-w-0 overflow-hidden">
               <form
-                className="grid gap-4"
+                className="grid min-w-0 gap-4"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void handlePair();
@@ -514,18 +550,17 @@ export function MobileNeutralSurface() {
                     spellCheck={false}
                     value={pairingInput}
                     onChange={(event) => setPairingInput(event.target.value)}
-                    placeholder={inputPlaceholder}
+                    placeholder="Cole o codigo mostrado no desktop"
                     disabled={busy}
                     className="h-13 text-center font-mono text-base"
                   />
                 ) : (
-                  <Textarea
+                  <Input
                     autoFocus
-                    value={pairingInput}
-                    onChange={(event) => setPairingInput(event.target.value)}
-                    placeholder={inputPlaceholder}
+                    value={label}
+                    onChange={(event) => setLabel(event.target.value)}
+                    placeholder="Nome da conexao"
                     disabled={busy}
-                    className="min-h-28 resize-none"
                   />
                 )}
 
@@ -549,45 +584,7 @@ export function MobileNeutralSurface() {
                       disabled={busy}
                     />
                   </div>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-left text-sm text-muted-foreground"
-                      onClick={() => setAdvancedOpen((current) => !current)}
-                      disabled={busy}
-                    >
-                      <span>Host e nome do profile</span>
-                      <ChevronDown
-                        className={`size-4 transition-transform ${
-                          advancedOpen ? "rotate-180" : ""
-                        }`}
-                      />
-                    </button>
-
-                    {advancedOpen ? (
-                      <div className="grid gap-3">
-                        <Input
-                          value={host}
-                          onChange={(event) => setHost(event.target.value)}
-                          placeholder={
-                            mode === "tailscale"
-                              ? "100.x.y.z:3774 ou macbook.ts.net:3774"
-                              : "192.168.15.12:3774"
-                          }
-                          disabled={busy}
-                          inputMode="url"
-                        />
-                        <Input
-                          value={label}
-                          onChange={(event) => setLabel(event.target.value)}
-                          placeholder="Nome opcional do profile"
-                          disabled={busy}
-                        />
-                      </div>
-                    ) : null}
-                  </>
-                )}
+                ) : null}
               </form>
             </DialogPanel>
 
@@ -603,6 +600,56 @@ export function MobileNeutralSurface() {
               <Button className="h-11 rounded-full" onClick={handlePair} disabled={busy}>
                 {busyAction === "pair" ? <LoaderCircle className="animate-spin" /> : <PlugZap />}
                 Parear agora
+              </Button>
+            </DialogFooter>
+          </DialogPopup>
+        </Dialog>
+
+        <Dialog
+          open={profileToRemove !== null}
+          onOpenChange={(open) => {
+            if (!open && busyAction !== "remove") {
+              setProfileToRemove(null);
+            }
+          }}
+        >
+          <DialogPopup className="max-w-md data-ending-style:translate-y-8 data-starting-style:translate-y-10 max-sm:data-ending-style:translate-y-full max-sm:data-starting-style:translate-y-full">
+            <DialogHeader>
+              <DialogTitle>Esquecer conexao?</DialogTitle>
+              <DialogDescription>
+                Esta conexao sera removida deste celular. Para usar de novo, sera preciso parear
+                novamente pelo QR ou codigo.
+              </DialogDescription>
+            </DialogHeader>
+
+            {profileToRemove ? (
+              <DialogPanel>
+                <div className="min-w-0 rounded-2xl border border-border bg-card p-3">
+                  <p className="truncate text-sm font-medium">{profileToRemove.label}</p>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
+                    {profileToRemove.httpBaseUrl}
+                  </p>
+                </div>
+              </DialogPanel>
+            ) : null}
+
+            <DialogFooter>
+              <Button
+                className="h-11 rounded-full"
+                variant="outline"
+                onClick={() => setProfileToRemove(null)}
+                disabled={busyAction === "remove"}
+              >
+                Cancelar
+              </Button>
+              <Button
+                className="h-11 rounded-full"
+                variant="destructive"
+                onClick={handleRemoveProfile}
+                disabled={busyAction === "remove"}
+              >
+                {busyAction === "remove" ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
+                Esquecer conexao
               </Button>
             </DialogFooter>
           </DialogPopup>

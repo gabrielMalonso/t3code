@@ -24,6 +24,32 @@ function isPrivateOrTailscaleHost(hostname: string): boolean {
   );
 }
 
+export function inferMobileConnectionModeFromPairingInput(
+  rawValue: string,
+): MobileConnectionMode | null {
+  const trimmed = rawValue.trim();
+  if (!trimmed.includes("://") && !trimmed.startsWith("/")) {
+    return null;
+  }
+
+  try {
+    const hostname = new URL(trimmed, window.location.origin).hostname.toLowerCase();
+    if (hostname.startsWith("100.") || hostname.endsWith(".ts.net")) {
+      return "tailscale";
+    }
+    if (
+      hostname.startsWith("10.") ||
+      hostname.startsWith("192.168.") ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
+    ) {
+      return "lan";
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeMobileBaseUrl(rawValue: string): URL {
   const trimmed = rawValue.trim();
   if (!trimmed) {
