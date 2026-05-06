@@ -1,3 +1,5 @@
+/// <reference types="@capacitor-community/safe-area" />
+
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
@@ -9,8 +11,11 @@ const config: CapacitorConfig = {
     androidScheme: "http",
   },
   plugins: {
-    StatusBar: {
-      overlaysWebView: false,
+    SafeArea: {
+      initialViewportFitCover: true,
+    },
+    SystemBars: {
+      insetsHandling: "disable",
     },
     Keyboard: {
       resize: "body",
