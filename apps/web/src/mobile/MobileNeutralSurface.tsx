@@ -160,6 +160,41 @@ export function MobileNeutralSurface() {
     void profileStore.hydrate();
   }, [profileStore]);
 
+  useEffect(() => {
+    const root = document.getElementById("root");
+    const previous = {
+      bodyHeight: document.body.style.height,
+      bodyOverflow: document.body.style.overflow,
+      bodyOverflowY: document.body.style.overflowY,
+      htmlOverflowY: document.documentElement.style.overflowY,
+      rootHeight: root?.style.height ?? "",
+      rootMinHeight: root?.style.minHeight ?? "",
+      rootOverflowY: root?.style.overflowY ?? "",
+    };
+
+    document.documentElement.style.overflowY = "auto";
+    document.body.style.height = "auto";
+    document.body.style.overflow = "auto";
+    document.body.style.overflowY = "auto";
+    if (root) {
+      root.style.height = "auto";
+      root.style.minHeight = "100%";
+      root.style.overflowY = "visible";
+    }
+
+    return () => {
+      document.documentElement.style.overflowY = previous.htmlOverflowY;
+      document.body.style.height = previous.bodyHeight;
+      document.body.style.overflow = previous.bodyOverflow;
+      document.body.style.overflowY = previous.bodyOverflowY;
+      if (root) {
+        root.style.height = previous.rootHeight;
+        root.style.minHeight = previous.rootMinHeight;
+        root.style.overflowY = previous.rootOverflowY;
+      }
+    };
+  }, []);
+
   const savedProfiles = profileStore.profiles;
 
   useEffect(() => {
@@ -303,7 +338,7 @@ export function MobileNeutralSurface() {
     pairingPanel === "code" ? "Cole o codigo mostrado no desktop" : "Cole a URL ou token do QR";
 
   return (
-    <main className="min-h-dvh bg-background text-foreground">
+    <main className="h-dvh overflow-y-auto overscroll-y-contain bg-background text-foreground">
       <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 pb-[max(2.5rem,calc(env(safe-area-inset-bottom)+2rem))] pt-[max(1.25rem,env(safe-area-inset-top))]">
         <header className="flex items-center gap-3">
           <div className="min-w-0">
