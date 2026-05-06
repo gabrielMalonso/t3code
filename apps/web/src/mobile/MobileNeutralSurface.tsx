@@ -49,6 +49,36 @@ function defaultProfileLabel(input: {
   return `${input.backendLabel} (${modeLabel(input.mode)})`;
 }
 
+function PairingModeSelector(props: {
+  readonly mode: MobileConnectionMode;
+  readonly busy: boolean;
+  readonly onModeChange: (mode: MobileConnectionMode) => void;
+}) {
+  return (
+    <div className="relative grid grid-cols-2 gap-2 overflow-hidden rounded-full bg-muted p-1">
+      <span
+        aria-hidden="true"
+        className={`absolute bottom-1 top-1 w-[calc(50%-0.375rem)] rounded-full bg-primary shadow-sm transition-transform duration-300 ease-out motion-reduce:transition-none ${
+          props.mode === "lan" ? "translate-x-[calc(100%+0.5rem)]" : "translate-x-0"
+        } left-1`}
+      />
+      {(["tailscale", "lan"] as const).map((entry) => (
+        <button
+          key={entry}
+          type="button"
+          className={`relative z-10 h-8 rounded-full px-3 text-sm font-medium transition-colors duration-200 motion-reduce:transition-none ${
+            props.mode === entry ? "text-primary-foreground" : "text-muted-foreground"
+          }`}
+          onClick={() => props.onModeChange(entry)}
+          disabled={props.busy}
+        >
+          {modeLabel(entry)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 async function scanQrCode(): Promise<string> {
   const module = (await import("@capacitor/barcode-scanner")) as unknown as {
     CapacitorBarcodeScanner?: {
@@ -295,7 +325,7 @@ export function MobileNeutralSurface() {
         </section>
 
         <Dialog open={pairingPanel !== null} onOpenChange={closePairingPanel}>
-          <DialogPopup className="max-w-md">
+          <DialogPopup className="max-w-md data-ending-style:translate-y-8 data-starting-style:translate-y-10 max-sm:data-ending-style:translate-y-full max-sm:data-starting-style:translate-y-full">
             <DialogHeader>
               <DialogTitle>{inputLabel}</DialogTitle>
               <DialogDescription>
@@ -313,20 +343,7 @@ export function MobileNeutralSurface() {
                   void handlePair();
                 }}
               >
-                <div className="grid grid-cols-2 gap-2 rounded-full bg-muted p-1">
-                  {(["tailscale", "lan"] as const).map((entry) => (
-                    <Button
-                      key={entry}
-                      type="button"
-                      className="rounded-full"
-                      variant={mode === entry ? "default" : "ghost"}
-                      onClick={() => setMode(entry)}
-                      disabled={busy}
-                    >
-                      {modeLabel(entry)}
-                    </Button>
-                  ))}
-                </div>
+                <PairingModeSelector mode={mode} busy={busy} onModeChange={setMode} />
 
                 {pairingPanel === "code" ? (
                   <Input
