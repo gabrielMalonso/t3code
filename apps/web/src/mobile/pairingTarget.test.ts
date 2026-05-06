@@ -53,6 +53,20 @@ describe("resolveMobilePairingTarget", () => {
       wsBaseUrl: "ws://100.101.102.103:3774/",
     });
   });
+
+  it("inherits the pairing url port when an explicit host has no port", () => {
+    expect(
+      resolveMobilePairingTarget({
+        pairingUrlOrToken: "http://192.168.15.12:3773/pair#token=BJL68TGTBXAR",
+        host: "100.71.185.10",
+      }),
+    ).toEqual({
+      credential: "BJL68TGTBXAR",
+      suggestedHttpBaseUrl: "http://192.168.15.12:3773/",
+      httpBaseUrl: "http://100.71.185.10:3773/",
+      wsBaseUrl: "ws://100.71.185.10:3773/",
+    });
+  });
 });
 
 describe("inferMobileConnectionModeFromPairingInput", () => {

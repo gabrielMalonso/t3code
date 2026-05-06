@@ -105,6 +105,24 @@ function parsePairingUrl(rawValue: string): { credential: string; suggestedHttpB
   };
 }
 
+function inheritPortFromPairingUrl(input: {
+  readonly normalizedHost: URL;
+  readonly suggestedHttpBaseUrl: string | null | undefined;
+}): URL {
+  if (input.normalizedHost.port || !input.suggestedHttpBaseUrl) {
+    return input.normalizedHost;
+  }
+
+  const suggestedUrl = new URL(input.suggestedHttpBaseUrl, window.location.origin);
+  if (!suggestedUrl.port) {
+    return input.normalizedHost;
+  }
+
+  const next = new URL(input.normalizedHost.toString());
+  next.port = suggestedUrl.port;
+  return next;
+}
+
 export function resolveMobilePairingTarget(input: {
   readonly pairingUrlOrToken: string;
   readonly host: string;
@@ -127,7 +145,10 @@ export function resolveMobilePairingTarget(input: {
 
   const credential = fromPairingUrl?.credential ?? pairingInput;
   const host = input.host.trim() || fromPairingUrl?.suggestedHttpBaseUrl || "";
-  const normalizedHost = normalizeMobileBaseUrl(host);
+  const normalizedHost = inheritPortFromPairingUrl({
+    normalizedHost: normalizeMobileBaseUrl(host),
+    suggestedHttpBaseUrl: fromPairingUrl?.suggestedHttpBaseUrl,
+  });
 
   return {
     credential,
