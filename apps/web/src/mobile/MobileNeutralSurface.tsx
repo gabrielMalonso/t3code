@@ -3,7 +3,6 @@ import {
   Clipboard,
   Link,
   LoaderCircle,
-  Menu,
   PlugZap,
   QrCode,
   RefreshCw,
@@ -12,6 +11,15 @@ import {
 import { useEffect, useState } from "react";
 
 import { Button } from "../components/ui/button";
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import {
@@ -108,11 +116,21 @@ export function MobileNeutralSurface() {
       setLabel("");
       setHost(target.httpBaseUrl);
       await activateMobileProfile(profile.profileId);
+      setPairingPanel(null);
+      setAdvancedOpen(false);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setBusyAction(null);
     }
+  }
+
+  function closePairingPanel(open: boolean) {
+    if (open) {
+      return;
+    }
+    setPairingPanel(null);
+    setAdvancedOpen(false);
   }
 
   async function handleScan() {
@@ -188,17 +206,8 @@ export function MobileNeutralSurface() {
 
   return (
     <main className="min-h-dvh bg-background text-foreground">
-      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))]">
+      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 pb-[max(2.5rem,calc(env(safe-area-inset-bottom)+2rem))] pt-[max(1.25rem,env(safe-area-inset-top))]">
         <header className="flex items-center gap-3">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="-ml-2 shrink-0 text-muted-foreground"
-            aria-label="Menu"
-          >
-            <Menu className="size-5" />
-          </Button>
           <div className="min-w-0">
             <h1 className="truncate text-xl font-semibold tracking-tight">Pareamento</h1>
             <p className="truncate text-sm text-muted-foreground">
@@ -219,11 +228,11 @@ export function MobileNeutralSurface() {
           ) : null}
         </header>
 
-        <section className="flex flex-1 flex-col items-center justify-center gap-5 py-8 text-center">
+        <section className="flex flex-1 flex-col items-center justify-start gap-4 pb-7 pt-6 text-center">
           <img
             src="/t3-app-icon.png"
             alt="T3 Code"
-            className="size-28 rounded-[1.75rem] shadow-2xl shadow-black/35"
+            className="size-24 rounded-[1.5rem] shadow-2xl shadow-black/35"
           />
 
           <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-sm text-muted-foreground">
@@ -246,7 +255,7 @@ export function MobileNeutralSurface() {
 
           <button
             type="button"
-            className="group grid aspect-square w-full max-w-[17rem] place-items-center rounded-[2rem] border border-border bg-card/70 p-8 text-muted-foreground shadow-sm transition-colors hover:border-primary/60 hover:text-foreground disabled:opacity-60"
+            className="group grid aspect-square w-full max-w-56 place-items-center rounded-[2rem] border border-border bg-card/70 p-7 text-muted-foreground shadow-sm transition-colors hover:border-primary/60 hover:text-foreground disabled:opacity-60"
             onClick={handleScan}
             disabled={busy}
             aria-label="Escanear QR Code"
@@ -256,7 +265,7 @@ export function MobileNeutralSurface() {
             </div>
           </button>
 
-          <div className="grid w-full gap-3">
+          <div className="grid w-full gap-2 pb-4">
             <Button className="h-14 rounded-full text-base" onClick={handleScan} disabled={busy}>
               <QrCode className="size-5" />
               Escanear QR Code
@@ -264,7 +273,10 @@ export function MobileNeutralSurface() {
             <Button
               className="h-14 rounded-full text-base"
               variant="outline"
-              onClick={() => setPairingPanel((current) => (current === "code" ? null : "code"))}
+              onClick={() => {
+                setPairingPanel("code");
+                setErrorMessage(null);
+              }}
               disabled={busy}
             >
               <PlugZap className="size-5" />
@@ -282,92 +294,140 @@ export function MobileNeutralSurface() {
           </div>
         </section>
 
-        {pairingPanel ? (
-          <section className="mb-4 rounded-2xl border border-border bg-card p-4 shadow-sm">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-semibold">{inputLabel}</h3>
-                <p className="text-xs text-muted-foreground">
-                  O host pode vir dentro da URL do QR. Se nao vier, abra os detalhes.
-                </p>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setPairingPanel(null);
-                  setAdvancedOpen(false);
+        <Dialog open={pairingPanel !== null} onOpenChange={closePairingPanel}>
+          <DialogPopup className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>{inputLabel}</DialogTitle>
+              <DialogDescription>
+                {pairingPanel === "code"
+                  ? "Digite o codigo mostrado no desktop e confirme o host desta conexao."
+                  : "Cole a URL ou token do QR para salvar esta conexao no celular."}
+              </DialogDescription>
+            </DialogHeader>
+
+            <DialogPanel>
+              <form
+                className="grid gap-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handlePair();
                 }}
-                disabled={busy}
               >
-                Fechar
-              </Button>
-            </div>
-
-            <div className="grid gap-3">
-              <div className="grid grid-cols-2 gap-2 rounded-full bg-muted p-1">
-                {(["tailscale", "lan"] as const).map((entry) => (
-                  <Button
-                    key={entry}
-                    className="rounded-full"
-                    variant={mode === entry ? "default" : "ghost"}
-                    onClick={() => setMode(entry)}
-                    disabled={busy}
-                  >
-                    {modeLabel(entry)}
-                  </Button>
-                ))}
-              </div>
-
-              <Textarea
-                value={pairingInput}
-                onChange={(event) => setPairingInput(event.target.value)}
-                placeholder={inputPlaceholder}
-                disabled={busy}
-                className="min-h-24 resize-none"
-              />
-
-              <button
-                type="button"
-                className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-left text-sm text-muted-foreground"
-                onClick={() => setAdvancedOpen((current) => !current)}
-                disabled={busy}
-              >
-                <span>Host e nome do profile</span>
-                <ChevronDown
-                  className={`size-4 transition-transform ${advancedOpen ? "rotate-180" : ""}`}
-                />
-              </button>
-
-              {advancedOpen ? (
-                <div className="grid gap-3">
-                  <Input
-                    value={host}
-                    onChange={(event) => setHost(event.target.value)}
-                    placeholder={
-                      mode === "tailscale"
-                        ? "100.x.y.z:3774 ou macbook.ts.net:3774"
-                        : "192.168.15.12:3774"
-                    }
-                    disabled={busy}
-                  />
-                  <Input
-                    value={label}
-                    onChange={(event) => setLabel(event.target.value)}
-                    placeholder="Nome opcional do profile"
-                    disabled={busy}
-                  />
+                <div className="grid grid-cols-2 gap-2 rounded-full bg-muted p-1">
+                  {(["tailscale", "lan"] as const).map((entry) => (
+                    <Button
+                      key={entry}
+                      type="button"
+                      className="rounded-full"
+                      variant={mode === entry ? "default" : "ghost"}
+                      onClick={() => setMode(entry)}
+                      disabled={busy}
+                    >
+                      {modeLabel(entry)}
+                    </Button>
+                  ))}
                 </div>
-              ) : null}
 
-              <Button className="h-12 rounded-full" onClick={handlePair} disabled={busy}>
+                {pairingPanel === "code" ? (
+                  <Input
+                    autoFocus
+                    autoCapitalize="characters"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    value={pairingInput}
+                    onChange={(event) => setPairingInput(event.target.value)}
+                    placeholder={inputPlaceholder}
+                    disabled={busy}
+                    className="h-13 text-center font-mono text-lg tracking-[0.2em]"
+                  />
+                ) : (
+                  <Textarea
+                    autoFocus
+                    value={pairingInput}
+                    onChange={(event) => setPairingInput(event.target.value)}
+                    placeholder={inputPlaceholder}
+                    disabled={busy}
+                    className="min-h-28 resize-none"
+                  />
+                )}
+
+                {pairingPanel === "code" ? (
+                  <div className="grid gap-3">
+                    <Input
+                      value={host}
+                      onChange={(event) => setHost(event.target.value)}
+                      placeholder={
+                        mode === "tailscale"
+                          ? "100.x.y.z:3774 ou macbook.ts.net:3774"
+                          : "192.168.15.12:3774"
+                      }
+                      disabled={busy}
+                      inputMode="url"
+                    />
+                    <Input
+                      value={label}
+                      onChange={(event) => setLabel(event.target.value)}
+                      placeholder="Nome opcional do profile"
+                      disabled={busy}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-left text-sm text-muted-foreground"
+                      onClick={() => setAdvancedOpen((current) => !current)}
+                      disabled={busy}
+                    >
+                      <span>Host e nome do profile</span>
+                      <ChevronDown
+                        className={`size-4 transition-transform ${
+                          advancedOpen ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+
+                    {advancedOpen ? (
+                      <div className="grid gap-3">
+                        <Input
+                          value={host}
+                          onChange={(event) => setHost(event.target.value)}
+                          placeholder={
+                            mode === "tailscale"
+                              ? "100.x.y.z:3774 ou macbook.ts.net:3774"
+                              : "192.168.15.12:3774"
+                          }
+                          disabled={busy}
+                          inputMode="url"
+                        />
+                        <Input
+                          value={label}
+                          onChange={(event) => setLabel(event.target.value)}
+                          placeholder="Nome opcional do profile"
+                          disabled={busy}
+                        />
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </form>
+            </DialogPanel>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => closePairingPanel(false)}
+                disabled={busyAction === "pair"}
+              >
+                Cancelar
+              </Button>
+              <Button className="h-11 rounded-full" onClick={handlePair} disabled={busy}>
                 {busyAction === "pair" ? <LoaderCircle className="animate-spin" /> : <PlugZap />}
                 Parear agora
               </Button>
-            </div>
-          </section>
-        ) : null}
+            </DialogFooter>
+          </DialogPopup>
+        </Dialog>
 
         {(errorMessage ?? runtime.errorMessage) ? (
           <div className="mb-4 rounded-2xl border border-destructive/30 bg-destructive/8 p-3 text-sm text-destructive">
