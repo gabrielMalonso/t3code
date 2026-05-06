@@ -11,6 +11,7 @@ import { Cause, Effect, Layer, Stream } from "effect";
 import { ProjectionThreadLoopRepositoryLive } from "../../persistence/Layers/ProjectionThreadLoops.ts";
 import { ProjectionThreadLoopRepository } from "../../persistence/Services/ProjectionThreadLoops.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
+import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import {
   ThreadLoopScheduler,
   type ThreadLoopSchedulerShape,
@@ -31,6 +32,7 @@ const isThreadLoopBusy = (thread: {
 
 export const makeThreadLoopScheduler = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
+  const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const projectionThreadLoopRepository = yield* ProjectionThreadLoopRepository;
 
   const appendLoopActivity = (input: {
@@ -78,7 +80,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
   const pauseLoopForArchivedThread = Effect.fn("pauseLoopForArchivedThread")(function* (
     event: Extract<OrchestrationEvent, { type: "thread.archived" }>,
   ) {
-    const readModel = yield* orchestrationEngine.getReadModel();
+    const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
     const thread = readModel.threads.find((entry) => entry.id === event.payload.threadId);
     if (!thread?.loop?.enabled) {
       return;
@@ -122,7 +124,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         continue;
       }
 
-      const readModel = yield* orchestrationEngine.getReadModel();
+      const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
       const thread = readModel.threads.find((entry) => entry.id === loop.threadId);
       if (!thread) {
         yield* projectionThreadLoopRepository

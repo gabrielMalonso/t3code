@@ -3,7 +3,6 @@ import {
   ArrowUpDownIcon,
   ChevronRightIcon,
   CloudIcon,
-  GitPullRequestIcon,
   FolderPlusIcon,
   LogOutIcon,
   SearchIcon,
@@ -13,6 +12,7 @@ import {
   TriangleAlertIcon,
 } from "lucide-react";
 import {
+  ChangeRequestStatusIcon,
   prStatusIndicator,
   resolveThreadPr,
   terminalStatusFromRunningIds,
@@ -188,6 +188,7 @@ import {
   type SidebarProjectGroupMember,
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
+import { SidebarProviderUpdatePill } from "./sidebar/SidebarProviderUpdatePill";
 const THREAD_PREVIEW_LIMIT = 6;
 const SIDEBAR_SORT_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
@@ -370,7 +371,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     },
   });
   const pr = resolveThreadPr(thread.branch, gitStatus.data);
-  const prStatus = prStatusIndicator(pr);
+  const prStatus = prStatusIndicator(pr, gitStatus.data?.sourceControlProvider);
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
   const isConfirmingArchive = confirmingArchiveThreadKey === threadKey && !isThreadRunning;
   const threadMetaClassName = isConfirmingArchive
@@ -561,7 +562,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     className={`inline-flex items-center justify-center ${prStatus.colorClass} cursor-pointer rounded-sm outline-hidden focus-visible:ring-1 focus-visible:ring-ring`}
                     onClick={handlePrClick}
                   >
-                    <GitPullRequestIcon className="size-3" />
+                    <ChangeRequestStatusIcon className="size-3" />
                   </button>
                 }
               />
@@ -1005,7 +1006,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Unable to open PR link",
+          title: "Unable to open pull request link",
           description: error instanceof Error ? error.message : "An error occurred.",
         }),
       );
@@ -2455,6 +2456,7 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
 
   return (
     <SidebarFooter className="p-2">
+      <SidebarProviderUpdatePill />
       <SidebarUpdatePill />
       <SidebarMenu>
         <SidebarMenuItem>

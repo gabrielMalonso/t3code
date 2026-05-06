@@ -9,6 +9,7 @@ import {
   readDesktopSettings,
   resolveDefaultDesktopSettings,
   setDesktopServerExposurePreference,
+  setDesktopTailscaleServePreference,
   setDesktopUpdateChannelPreference,
   writeDesktopSettings,
 } from "./desktopSettings.ts";
@@ -36,6 +37,8 @@ describe("desktopSettings", () => {
   it("defaults packaged nightly builds to the nightly update channel", () => {
     expect(resolveDefaultDesktopSettings("0.0.17-nightly.20260415.1")).toEqual({
       serverExposureMode: "local-only",
+      tailscaleServeEnabled: false,
+      tailscaleServePort: 443,
       updateChannel: "nightly",
       updateChannelConfiguredByUser: false,
     });
@@ -55,12 +58,16 @@ describe("desktopSettings", () => {
 
     writeDesktopSettings(settingsPath, {
       serverExposureMode: "network-accessible",
+      tailscaleServeEnabled: true,
+      tailscaleServePort: 8443,
       updateChannel: "latest",
       updateChannelConfiguredByUser: true,
     });
 
     expect(readDesktopSettings(settingsPath, "0.0.17")).toEqual({
       serverExposureMode: "network-accessible",
+      tailscaleServeEnabled: true,
+      tailscaleServePort: 8443,
       updateChannel: "latest",
       updateChannelConfiguredByUser: true,
     });
@@ -71,6 +78,8 @@ describe("desktopSettings", () => {
       setDesktopServerExposurePreference(
         {
           serverExposureMode: "local-only",
+          tailscaleServeEnabled: false,
+          tailscaleServePort: 443,
           updateChannel: "latest",
           updateChannelConfiguredByUser: false,
         },
@@ -78,6 +87,50 @@ describe("desktopSettings", () => {
       ),
     ).toEqual({
       serverExposureMode: "network-accessible",
+      tailscaleServeEnabled: false,
+      tailscaleServePort: 443,
+      updateChannel: "latest",
+      updateChannelConfiguredByUser: false,
+    });
+  });
+
+  it("persists the requested Tailscale Serve preference", () => {
+    expect(
+      setDesktopTailscaleServePreference(
+        {
+          serverExposureMode: "local-only",
+          tailscaleServeEnabled: false,
+          tailscaleServePort: 443,
+          updateChannel: "latest",
+          updateChannelConfiguredByUser: false,
+        },
+        { enabled: true, port: 8443 },
+      ),
+    ).toEqual({
+      serverExposureMode: "local-only",
+      tailscaleServeEnabled: true,
+      tailscaleServePort: 8443,
+      updateChannel: "latest",
+      updateChannelConfiguredByUser: false,
+    });
+  });
+
+  it("preserves the configured Tailscale Serve port when no new port is requested", () => {
+    expect(
+      setDesktopTailscaleServePreference(
+        {
+          serverExposureMode: "local-only",
+          tailscaleServeEnabled: false,
+          tailscaleServePort: 8443,
+          updateChannel: "latest",
+          updateChannelConfiguredByUser: false,
+        },
+        { enabled: true },
+      ),
+    ).toEqual({
+      serverExposureMode: "local-only",
+      tailscaleServeEnabled: true,
+      tailscaleServePort: 8443,
       updateChannel: "latest",
       updateChannelConfiguredByUser: false,
     });
@@ -88,6 +141,8 @@ describe("desktopSettings", () => {
       setDesktopUpdateChannelPreference(
         {
           serverExposureMode: "local-only",
+          tailscaleServeEnabled: false,
+          tailscaleServePort: 443,
           updateChannel: "latest",
           updateChannelConfiguredByUser: false,
         },
@@ -95,6 +150,8 @@ describe("desktopSettings", () => {
       ),
     ).toEqual({
       serverExposureMode: "local-only",
+      tailscaleServeEnabled: false,
+      tailscaleServePort: 443,
       updateChannel: "nightly",
       updateChannelConfiguredByUser: true,
     });
@@ -113,6 +170,8 @@ describe("desktopSettings", () => {
 
     expect(readDesktopSettings(settingsPath, "0.0.17-nightly.20260415.1")).toEqual({
       serverExposureMode: "local-only",
+      tailscaleServeEnabled: false,
+      tailscaleServePort: 443,
       updateChannel: "nightly",
       updateChannelConfiguredByUser: false,
     });
@@ -131,6 +190,8 @@ describe("desktopSettings", () => {
 
     expect(readDesktopSettings(settingsPath, "0.0.17-nightly.20260415.1")).toEqual({
       serverExposureMode: "local-only",
+      tailscaleServeEnabled: false,
+      tailscaleServePort: 443,
       updateChannel: "nightly",
       updateChannelConfiguredByUser: false,
     });
@@ -150,6 +211,8 @@ describe("desktopSettings", () => {
 
     expect(readDesktopSettings(settingsPath, "0.0.17-nightly.20260415.1")).toEqual({
       serverExposureMode: "local-only",
+      tailscaleServeEnabled: false,
+      tailscaleServePort: 443,
       updateChannel: "latest",
       updateChannelConfiguredByUser: true,
     });
@@ -158,7 +221,29 @@ describe("desktopSettings", () => {
   it("uses the provided build defaults when no settings file exists", () => {
     expect(readDesktopSettings(makeSettingsPath(), "0.0.17-nightly.20260415.45")).toEqual({
       serverExposureMode: "local-only",
+      tailscaleServeEnabled: false,
+      tailscaleServePort: 443,
       updateChannel: "nightly",
+      updateChannelConfiguredByUser: false,
+    });
+  });
+
+  it("falls back to the default Tailscale Serve port when the persisted port is invalid", () => {
+    const settingsPath = makeSettingsPath();
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        tailscaleServeEnabled: true,
+        tailscaleServePort: 0,
+      }),
+      "utf8",
+    );
+
+    expect(readDesktopSettings(settingsPath, "0.0.17")).toEqual({
+      serverExposureMode: "local-only",
+      tailscaleServeEnabled: true,
+      tailscaleServePort: 443,
+      updateChannel: "latest",
       updateChannelConfiguredByUser: false,
     });
   });

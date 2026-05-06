@@ -12,18 +12,29 @@ export function ProjectFavicon(input: {
   cwd: string;
   className?: string;
 }) {
-  const src = resolveEnvironmentHttpUrl({
-    environmentId: input.environmentId,
-    pathname: "/api/project-favicon",
-    searchParams: { cwd: input.cwd },
-  });
+  const src = (() => {
+    try {
+      return resolveEnvironmentHttpUrl({
+        environmentId: input.environmentId,
+        pathname: "/api/project-favicon",
+        searchParams: { cwd: input.cwd },
+      });
+    } catch {
+      return null;
+    }
+  })();
   const [status, setStatus] = useState<"loading" | "loaded" | "error">(() =>
-    loadedProjectFaviconSrcs.has(src) ? "loaded" : "loading",
+    src && loadedProjectFaviconSrcs.has(src) ? "loaded" : "loading",
   );
-  const [resolvedSrc, setResolvedSrc] = useState(src);
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(src);
 
   useEffect(() => {
     let disposed = false;
+    if (!src) {
+      setStatus("error");
+      setResolvedSrc(null);
+      return;
+    }
     setStatus(loadedProjectFaviconSrcs.has(src) ? "loaded" : "loading");
     if (!isMobileCapacitorRuntime() || !isMobileBearerAssetUrl(src)) {
       setResolvedSrc(src);
@@ -48,6 +59,14 @@ export function ProjectFavicon(input: {
     };
   }, [input.environmentId, src]);
 
+  if (!src) {
+    return (
+      <FolderIcon
+        className={`size-3.5 shrink-0 text-muted-foreground/50 ${input.className ?? ""}`}
+      />
+    );
+  }
+
   return (
     <>
       {status !== "loaded" ? (
@@ -56,7 +75,7 @@ export function ProjectFavicon(input: {
         />
       ) : null}
       <img
-        src={resolvedSrc}
+        src={resolvedSrc ?? src}
         alt=""
         className={`size-3.5 shrink-0 rounded-sm object-contain ${status === "loaded" ? "" : "hidden"} ${input.className ?? ""}`}
         onLoad={() => {

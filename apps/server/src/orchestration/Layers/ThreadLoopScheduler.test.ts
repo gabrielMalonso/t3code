@@ -28,6 +28,7 @@ import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
+import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ThreadLoopScheduler } from "../Services/ThreadLoopScheduler.ts";
 import { makeThreadLoopScheduler, ThreadLoopSchedulerLive } from "./ThreadLoopScheduler.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -205,8 +206,12 @@ describe("ThreadLoopScheduler", () => {
           }),
         ),
         Layer.provideMerge(
+          Layer.mock(ProjectionSnapshotQuery)({
+            getCommandReadModel: () => Ref.get(readModelRef),
+          }),
+        ),
+        Layer.provideMerge(
           Layer.succeed(OrchestrationEngineService, {
-            getReadModel: () => Ref.get(readModelRef),
             readEvents: () => Stream.empty,
             dispatch: (command: OrchestrationCommand) =>
               Effect.gen(function* () {
@@ -417,8 +422,12 @@ describe("ThreadLoopScheduler", () => {
         Layer.provideMerge(serverConfigLayer),
         Layer.provideMerge(NodeServices.layer),
       );
+      const projectionSnapshotLayer = OrchestrationProjectionSnapshotQueryLive.pipe(
+        Layer.provide(RepositoryIdentityResolverLive),
+        Layer.provide(sqliteLayer),
+      );
       const orchestrationLayer = OrchestrationEngineLive.pipe(
-        Layer.provide(OrchestrationProjectionSnapshotQueryLive),
+        Layer.provide(projectionSnapshotLayer),
         Layer.provide(OrchestrationProjectionPipelineLive),
         Layer.provide(OrchestrationEventStoreLive),
         Layer.provide(OrchestrationCommandReceiptRepositoryLive),
@@ -431,6 +440,7 @@ describe("ThreadLoopScheduler", () => {
         ThreadLoopSchedulerLive.pipe(
           Layer.provide(sqliteLayer),
           Layer.provideMerge(orchestrationLayer),
+          Layer.provideMerge(projectionSnapshotLayer),
           Layer.provideMerge(RepositoryIdentityResolverLive),
         ),
       );
@@ -501,7 +511,7 @@ describe("ThreadLoopScheduler", () => {
           'default',
           NULL,
           NULL,
-          NULL,
+          'turn-zombie-restart',
           '2026-04-07T11:00:02.000Z',
           '2026-04-07T11:00:03.000Z',
           NULL,
@@ -594,10 +604,14 @@ describe("ThreadLoopScheduler", () => {
     const scope = await Effect.runPromise(Scope.make("sequential"));
 
     try {
-      const engine = await restartRuntime.runPromise(Effect.service(OrchestrationEngineService));
+      const projectionSnapshotQuery = await restartRuntime.runPromise(
+        Effect.service(ProjectionSnapshotQuery),
+      );
       const scheduler = await restartRuntime.runPromise(Effect.service(ThreadLoopScheduler));
 
-      const bootReadModel = await restartRuntime.runPromise(engine.getReadModel());
+      const bootReadModel = await restartRuntime.runPromise(
+        projectionSnapshotQuery.getCommandReadModel(),
+      );
       const bootThread = bootReadModel.threads.find(
         (thread) => thread.id === asThreadId("thread-restart"),
       );
@@ -609,7 +623,7 @@ describe("ThreadLoopScheduler", () => {
       await restartRuntime.runPromise(scheduler.start().pipe(Scope.provide(scope)));
 
       await waitFor(async () => {
-        const readModel = await restartRuntime.runPromise(engine.getReadModel());
+        const readModel = await restartRuntime.runPromise(projectionSnapshotQuery.getSnapshot());
         const thread = readModel.threads.find((entry) => entry.id === asThreadId("thread-restart"));
         return Boolean(
           thread?.activities.some((activity) => activity.kind === "loop.tick.started") &&
@@ -617,7 +631,7 @@ describe("ThreadLoopScheduler", () => {
         );
       });
 
-      const readModel = await restartRuntime.runPromise(engine.getReadModel());
+      const readModel = await restartRuntime.runPromise(projectionSnapshotQuery.getSnapshot());
       const thread = readModel.threads.find((entry) => entry.id === asThreadId("thread-restart"));
       assert.isTrue(
         thread?.activities.some((activity) => activity.kind === "loop.tick.started") ?? false,

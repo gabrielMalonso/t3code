@@ -42,6 +42,17 @@ export const EDITORS = [
     macAppName: "Ghostty",
     launchStyle: "direct-path",
   },
+  { id: "aqua", label: "Aqua", commands: ["aqua"], launchStyle: "line-column" },
+  { id: "clion", label: "CLion", commands: ["clion"], launchStyle: "line-column" },
+  { id: "datagrip", label: "DataGrip", commands: ["datagrip"], launchStyle: "line-column" },
+  { id: "dataspell", label: "DataSpell", commands: ["dataspell"], launchStyle: "line-column" },
+  { id: "goland", label: "GoLand", commands: ["goland"], launchStyle: "line-column" },
+  { id: "phpstorm", label: "PhpStorm", commands: ["phpstorm"], launchStyle: "line-column" },
+  { id: "pycharm", label: "PyCharm", commands: ["pycharm"], launchStyle: "line-column" },
+  { id: "rider", label: "Rider", commands: ["rider"], launchStyle: "line-column" },
+  { id: "rubymine", label: "RubyMine", commands: ["rubymine"], launchStyle: "line-column" },
+  { id: "rustrover", label: "RustRover", commands: ["rustrover"], launchStyle: "line-column" },
+  { id: "webstorm", label: "WebStorm", commands: ["webstorm"], launchStyle: "line-column" },
   { id: "file-manager", label: "File Manager", commands: null, launchStyle: "direct-path" },
 ] as const satisfies ReadonlyArray<EditorDefinition>;
 

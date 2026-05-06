@@ -17,6 +17,8 @@ import { QueryClient, useQueryClient } from "@tanstack/react-query";
 import { APP_DISPLAY_NAME } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
+import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
+import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
 import {
   SlowRpcAckToastCoordinator,
   WebSocketConnectionCoordinator,
@@ -51,26 +53,50 @@ import {
   ensureEnvironmentConnectionBootstrapped,
   getPrimaryEnvironmentConnection,
   readEnvironmentConnection,
+  listSavedEnvironmentRecords,
+  waitForSavedEnvironmentRegistryHydration,
   startEnvironmentConnectionService,
+  useSavedEnvironmentRegistryStore,
 } from "../environments/runtime";
 import { configureClientTracing } from "../observability/clientTracing";
 import {
   ensurePrimaryEnvironmentReady,
+  getPrimaryKnownEnvironment,
   resolveInitialServerAuthGateState,
   updatePrimaryEnvironmentDescriptor,
 } from "../environments/primary";
 import { MobileNeutralSurface } from "../mobile/MobileNeutralSurface";
 import { isMobileCapacitorRuntime } from "../mobile/platform";
 import { reconnectActiveMobileProfile, useMobileRuntimeStore } from "../mobile/runtime";
+import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
 
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
 }>()({
-  beforeLoad: async () => {
+  beforeLoad: async ({ location }) => {
     if (isMobileCapacitorRuntime()) {
       return {
         authGateState: { status: "authenticated" as const },
         isMobileRuntime: true,
+      };
+    }
+
+    if (location.pathname === "/pair" && hasHostedPairingRequest(new URL(window.location.href))) {
+      return {
+        authGateState: {
+          status: "hosted-pairing",
+        } as const,
+        isMobileRuntime: false,
+      };
+    }
+
+    if (isHostedStaticApp(new URL(window.location.href))) {
+      await waitForSavedEnvironmentRegistryHydration();
+      return {
+        authGateState: {
+          status: "hosted-static",
+        } as const,
+        isMobileRuntime: false,
       };
     }
 
@@ -93,6 +119,7 @@ export const Route = createRootRouteWithContext<{
 function RootRouteView() {
   const pathname = useLocation({ select: (location) => location.pathname });
   const { authGateState, isMobileRuntime } = Route.useRouteContext();
+  const primaryEnvironmentAuthenticated = authGateState.status === "authenticated";
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -111,25 +138,35 @@ function RootRouteView() {
     return <MobileRootRouteView />;
   }
 
-  if (authGateState.status !== "authenticated") {
+  if (authGateState.status !== "authenticated" && authGateState.status !== "hosted-static") {
     return <Outlet />;
   }
+
+  const appShell = (
+    <CommandPalette>
+      <AppSidebarLayout>
+        <Outlet />
+      </AppSidebarLayout>
+    </CommandPalette>
+  );
+
   return (
     <ToastProvider>
       <AnchoredToastProvider>
-        <AuthenticatedTracingBootstrap />
-        <ServerStateBootstrap />
+        {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
+        {primaryEnvironmentAuthenticated ? <ServerStateBootstrap /> : null}
         <EnvironmentConnectionManagerBootstrap />
-        <EventRouter />
-        <WebSocketConnectionCoordinator />
-        <SlowRpcAckToastCoordinator />
-        <WebSocketConnectionSurface>
-          <CommandPalette>
-            <AppSidebarLayout>
-              <Outlet />
-            </AppSidebarLayout>
-          </CommandPalette>
-        </WebSocketConnectionSurface>
+        <SshPasswordPromptDialog />
+        <HostedStaticEnvironmentBootstrap />
+        {primaryEnvironmentAuthenticated ? <EventRouter /> : null}
+        {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
+        {primaryEnvironmentAuthenticated ? <WebSocketConnectionCoordinator /> : null}
+        {primaryEnvironmentAuthenticated ? <SlowRpcAckToastCoordinator /> : null}
+        {primaryEnvironmentAuthenticated ? (
+          <WebSocketConnectionSurface>{appShell}</WebSocketConnectionSurface>
+        ) : (
+          appShell
+        )}
       </AnchoredToastProvider>
     </ToastProvider>
   );
@@ -167,6 +204,32 @@ function MobileRootRouteView() {
       </AnchoredToastProvider>
     </ToastProvider>
   );
+}
+
+function HostedStaticEnvironmentBootstrap() {
+  const savedEnvironmentCount = useSavedEnvironmentRegistryStore(
+    (state) => Object.keys(state.byId).length,
+  );
+
+  useEffect(() => {
+    if (getPrimaryKnownEnvironment()) {
+      return;
+    }
+
+    const currentActiveEnvironmentId = useStore.getState().activeEnvironmentId;
+    if (currentActiveEnvironmentId) {
+      return;
+    }
+
+    const firstSavedEnvironment = listSavedEnvironmentRecords()[0];
+    if (!firstSavedEnvironment) {
+      return;
+    }
+
+    useStore.getState().setActiveEnvironmentId(firstSavedEnvironment.environmentId);
+  }, [savedEnvironmentCount]);
+
+  return null;
 }
 
 function RootRouteErrorView({ error, reset }: ErrorComponentProps) {
@@ -284,6 +347,7 @@ function EventRouter(input: { readonly syncPrimaryDescriptor?: boolean }) {
   const readPathname = useEffectEvent(() => pathname);
   const handledBootstrapThreadIdRef = useRef<string | null>(null);
   const seenServerConfigUpdateIdRef = useRef(getServerConfigUpdatedNotification()?.id ?? 0);
+  const lastKeybindingsSuccessToastAtRef = useRef(0);
   const disposedRef = useRef(false);
   const serverConfig = useServerConfig();
 
@@ -356,6 +420,11 @@ function EventRouter(input: { readonly syncPrimaryDescriptor?: boolean }) {
 
       const issue = payload.issues.find((entry) => entry.kind.startsWith("keybindings."));
       if (!issue) {
+        const now = Date.now();
+        if (now - lastKeybindingsSuccessToastAtRef.current < 2_000) {
+          return;
+        }
+        lastKeybindingsSuccessToastAtRef.current = now;
         toastManager.add({
           type: "success",
           title: "Keybindings updated",
