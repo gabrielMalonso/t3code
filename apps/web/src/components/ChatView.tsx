@@ -3411,7 +3411,7 @@ export default function ChatView(props: ChatViewProps) {
             className={cn(
               "pl-[calc(env(safe-area-inset-left)+0.75rem)] pr-[calc(env(safe-area-inset-right)+0.75rem)] pt-1.5 sm:pl-[calc(env(safe-area-inset-left)+1.25rem)] sm:pr-[calc(env(safe-area-inset-right)+1.25rem)] sm:pt-2",
               isGitRepo
-                ? "pb-[max(2.25rem,calc(env(safe-area-inset-bottom)+0.75rem))] sm:pb-[calc(env(safe-area-inset-bottom)+0.25rem)]"
+                ? "pb-[max(3rem,calc(env(safe-area-inset-bottom)+1.5rem))] sm:pb-[calc(env(safe-area-inset-bottom)+1rem)]"
                 : "pb-[max(1.25rem,calc(env(safe-area-inset-bottom)+0.75rem))] sm:pb-[calc(env(safe-area-inset-bottom)+1rem)]",
             )}
           >
