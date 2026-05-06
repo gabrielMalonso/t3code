@@ -149,8 +149,12 @@ export function resetWsReconnectBackoff(): WsConnectionStatus {
   }));
 }
 
-export function resetWsConnectionStateForTests(): void {
+export function resetWsConnectionState(): void {
   appAtomRegistry.set(wsConnectionStatusAtom, INITIAL_WS_CONNECTION_STATUS);
+}
+
+export function resetWsConnectionStateForTests(): void {
+  resetWsConnectionState();
 }
 
 export function useWsConnectionStatus(): WsConnectionStatus {

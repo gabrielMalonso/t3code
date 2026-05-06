@@ -1049,7 +1049,7 @@ const worker = setupWorker(
     client.addEventListener("message", (event) => {
       const rawData = event.data;
       if (typeof rawData !== "string") return;
-      void rpcHarness.onMessage(rawData);
+      void rpcHarness.onMessage(client, rawData);
     });
   }),
   ...createAuthenticatedSessionHandlers(() => fixture.serverConfig.auth),
@@ -1356,16 +1356,6 @@ async function waitForButtonContainingText(text: string): Promise<HTMLButtonElem
   );
 }
 
-async function waitForSelectItemContainingText(text: string): Promise<HTMLElement> {
-  return waitForElement(
-    () =>
-      Array.from(document.querySelectorAll<HTMLElement>('[data-slot="select-item"]')).find((item) =>
-        item.textContent?.includes(text),
-      ) ?? null,
-    `Unable to find select item containing "${text}".`,
-  );
-}
-
 async function expectComposerActionsContained(): Promise<void> {
   const footer = await waitForElement(
     () => document.querySelector<HTMLElement>('[data-chat-composer-footer="true"]'),
@@ -1395,15 +1385,10 @@ async function expectComposerActionsContained(): Promise<void> {
   );
 }
 
-async function waitForInteractionModeButton(
-  expectedLabel: "Build" | "Plan",
-): Promise<HTMLButtonElement> {
+async function waitForCompactComposerControlsButton(): Promise<HTMLButtonElement> {
   return waitForElement(
-    () =>
-      Array.from(document.querySelectorAll("button")).find(
-        (button) => button.textContent?.trim() === expectedLabel,
-      ) as HTMLButtonElement | null,
-    `Unable to find ${expectedLabel} interaction mode button.`,
+    () => document.querySelector<HTMLButtonElement>('button[aria-label="More composer controls"]'),
+    "Unable to find compact composer controls button.",
   );
 }
 
@@ -1963,7 +1948,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       configureFixture: (nextFixture) => {
         nextFixture.serverConfig = {
           ...nextFixture.serverConfig,
-          availableEditors: ["kiro"],
+          availableEditors: ["vscode", "kiro"],
         };
       },
     });
@@ -1971,7 +1956,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     try {
       await waitForServerConfigToApply();
       const menuButton = await waitForElement(
-        () => document.querySelector('button[aria-label="Copy options"]'),
+        () => document.querySelector('button[aria-label="Open options"]'),
         "Unable to find Open picker button.",
       );
       (menuButton as HTMLButtonElement).click();
@@ -2020,7 +2005,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     try {
       await waitForServerConfigToApply();
       const menuButton = await waitForElement(
-        () => document.querySelector('button[aria-label="Copy options"]'),
+        () => document.querySelector('button[aria-label="Open options"]'),
         "Unable to find Open picker button.",
       );
       (menuButton as HTMLButtonElement).click();
@@ -2969,8 +2954,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     });
 
     try {
-      const initialModeButton = await waitForInteractionModeButton("Build");
-      expect(initialModeButton.title).toContain("enter plan mode");
+      expect(composerDraftFor(THREAD_KEY)?.interactionMode ?? "default").toBe("default");
 
       window.dispatchEvent(
         new KeyboardEvent("keydown", {
@@ -2982,7 +2966,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
       await waitForLayout();
 
-      expect((await waitForInteractionModeButton("Build")).title).toContain("enter plan mode");
+      expect(composerDraftFor(THREAD_KEY)?.interactionMode ?? "default").toBe("default");
 
       const composerEditor = await waitForComposerEditor();
       composerEditor.focus();
@@ -2996,10 +2980,8 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
 
       await vi.waitFor(
-        async () => {
-          expect((await waitForInteractionModeButton("Plan")).title).toContain(
-            "return to normal build mode",
-          );
+        () => {
+          expect(composerDraftFor(THREAD_KEY)?.interactionMode).toBe("plan");
         },
         { timeout: 8_000, interval: 16 },
       );
@@ -3014,8 +2996,8 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
 
       await vi.waitFor(
-        async () => {
-          expect((await waitForInteractionModeButton("Build")).title).toContain("enter plan mode");
+        () => {
+          expect(composerDraftFor(THREAD_KEY)?.interactionMode ?? "default").toBe("default");
         },
         { timeout: 8_000, interval: 16 },
       );
@@ -3435,7 +3417,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
-  it("shows runtime mode descriptions in the desktop composer access select", async () => {
+  it("shows runtime mode options in the compact composer controls menu", async () => {
     setDraftThreadWithoutWorktree();
 
     const mounted = await mountChatView({
@@ -3444,17 +3426,31 @@ describe("ChatView timeline estimator parity (full app)", () => {
     });
 
     try {
-      const runtimeModeSelect = await waitForButtonByText("Full access");
-      runtimeModeSelect.click();
+      const controlsButton = await waitForCompactComposerControlsButton();
+      controlsButton.click();
 
-      expect((await waitForSelectItemContainingText("Supervised")).textContent).toContain(
-        "Ask before commands and file changes",
+      await waitForElement(
+        () =>
+          Array.from(document.querySelectorAll('[data-slot="menu-radio-item"]')).find((item) =>
+            item.textContent?.includes("Supervised"),
+          ) ?? null,
+        "Unable to find Supervised runtime mode item.",
       );
 
-      const autoAcceptItem = await waitForSelectItemContainingText("Auto-accept edits");
-      expect(autoAcceptItem.textContent).toContain("Auto-approve edits");
-      expect((await waitForSelectItemContainingText("Full access")).textContent).toContain(
-        "Allow commands and edits without prompts",
+      expect(document.body.textContent).toContain("Access");
+      expect(document.body.textContent).toContain("Auto-accept edits");
+      expect(document.body.textContent).toContain("Full access");
+      (
+        Array.from(document.querySelectorAll('[data-slot="menu-radio-item"]')).find((item) =>
+          item.textContent?.includes("Supervised"),
+        ) as HTMLElement | undefined
+      )?.click();
+
+      await vi.waitFor(
+        () => {
+          expect(composerDraftFor(THREAD_KEY)?.runtimeMode).toBe("approval-required");
+        },
+        { timeout: 8_000, interval: 16 },
       );
     } finally {
       await mounted.cleanup();
@@ -5644,7 +5640,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
-  it("keeps the wide desktop follow-up layout expanded when the footer still fits", async () => {
+  it("keeps wide desktop follow-up primary actions expanded when they still fit", async () => {
     const mounted = await mountChatView({
       viewport: WIDE_FOOTER_VIEWPORT,
       snapshot: createSnapshotWithPlanFollowUpPrompt({
@@ -5667,7 +5663,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
             '[data-chat-composer-actions="right"]',
           );
 
-          expect(footer?.dataset.chatComposerFooterCompact).toBe("false");
+          expect(footer?.dataset.chatComposerFooterCompact).toBe("true");
           expect(actions?.dataset.chatComposerPrimaryActionsCompact).toBe("false");
         },
         { timeout: 8_000, interval: 16 },

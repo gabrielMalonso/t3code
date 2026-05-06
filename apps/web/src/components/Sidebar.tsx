@@ -5,6 +5,7 @@ import {
   CloudIcon,
   GitPullRequestIcon,
   FolderPlusIcon,
+  LogOutIcon,
   SearchIcon,
   SettingsIcon,
   SquarePenIcon,
@@ -169,6 +170,7 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { CommandDialogTrigger } from "./ui/command";
 import { readEnvironmentApi } from "../environmentApi";
 import { useSettings, useUpdateSettings } from "~/hooks/useSettings";
+import { closeActiveMobileProfile, useMobileRuntimeStore } from "../mobile/runtime";
 import { useServerKeybindings } from "../rpc/serverState";
 import {
   derivePhysicalProjectKey,
@@ -2426,12 +2428,30 @@ const SidebarChromeHeader = memo(function SidebarChromeHeader({
 const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
+  const activeMobileEnvironmentId = useMobileRuntimeStore((state) => state.activeEnvironmentId);
+  const mobileRuntimeStatus = useMobileRuntimeStore((state) => state.status);
+  const showMobileCloseAction =
+    mobileRuntimeStatus === "connected" && activeMobileEnvironmentId !== null;
   const handleSettingsClick = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
     }
     void navigate({ to: "/settings" });
   }, [isMobile, navigate, setOpenMobile]);
+  const handleMobileCloseClick = useCallback(() => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+    void closeActiveMobileProfile().catch((error) => {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not close mobile connection",
+          description: error instanceof Error ? error.message : "An unexpected error occurred.",
+        }),
+      );
+    });
+  }, [isMobile, setOpenMobile]);
 
   return (
     <SidebarFooter className="p-2">
@@ -2447,6 +2467,18 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
             <span className="text-xs">Settings</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
+        {showMobileCloseAction ? (
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              size="sm"
+              className="gap-2 px-2 py-1.5 text-red-500/90 hover:bg-red-500/10 hover:text-red-500 focus-visible:ring-red-500/40"
+              onClick={handleMobileCloseClick}
+            >
+              <LogOutIcon className="size-3.5" />
+              <span className="text-xs">Close</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        ) : null}
       </SidebarMenu>
     </SidebarFooter>
   );

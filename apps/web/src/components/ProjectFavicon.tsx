@@ -1,7 +1,9 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { FolderIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { resolveEnvironmentHttpUrl } from "../environments/runtime";
+import { isMobileBearerAssetUrl, resolveMobileBearerAssetBlobUrl } from "../mobile/assets";
+import { isMobileCapacitorRuntime } from "../mobile/platform";
 
 const loadedProjectFaviconSrcs = new Set<string>();
 
@@ -18,6 +20,33 @@ export function ProjectFavicon(input: {
   const [status, setStatus] = useState<"loading" | "loaded" | "error">(() =>
     loadedProjectFaviconSrcs.has(src) ? "loaded" : "loading",
   );
+  const [resolvedSrc, setResolvedSrc] = useState(src);
+
+  useEffect(() => {
+    let disposed = false;
+    setStatus(loadedProjectFaviconSrcs.has(src) ? "loaded" : "loading");
+    if (!isMobileCapacitorRuntime() || !isMobileBearerAssetUrl(src)) {
+      setResolvedSrc(src);
+      return;
+    }
+    resolveMobileBearerAssetBlobUrl({
+      environmentId: input.environmentId,
+      url: src,
+    })
+      .then((nextSrc) => {
+        if (!disposed) {
+          setResolvedSrc(nextSrc);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setResolvedSrc(src);
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [input.environmentId, src]);
 
   return (
     <>
@@ -27,7 +56,7 @@ export function ProjectFavicon(input: {
         />
       ) : null}
       <img
-        src={src}
+        src={resolvedSrc}
         alt=""
         className={`size-3.5 shrink-0 rounded-sm object-contain ${status === "loaded" ? "" : "hidden"} ${input.className ?? ""}`}
         onLoad={() => {

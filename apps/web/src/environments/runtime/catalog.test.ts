@@ -8,14 +8,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   resetSavedEnvironmentRegistryStoreForTests,
   resetSavedEnvironmentRuntimeStoreForTests,
+  resolveEnvironmentHttpUrl,
   useSavedEnvironmentRegistryStore,
   useSavedEnvironmentRuntimeStore,
   waitForSavedEnvironmentRegistryHydration,
 } from "./catalog";
+import { useMobileProfileStore } from "../../mobile/profileStorage";
 
 describe("environment runtime catalog stores", () => {
   beforeEach(async () => {
     vi.stubGlobal("window", {
+      location: {
+        origin: "http://localhost",
+      },
       nativeApi: {
         persistence: {
           getClientSettings: async () => null,
@@ -35,6 +40,7 @@ describe("environment runtime catalog stores", () => {
   afterEach(async () => {
     resetSavedEnvironmentRegistryStoreForTests();
     resetSavedEnvironmentRuntimeStoreForTests();
+    useMobileProfileStore.setState({ hydrated: false, profiles: [] });
     const { __resetLocalApiForTests } = await import("../../localApi");
     await __resetLocalApiForTests();
     vi.unstubAllGlobals();
@@ -100,6 +106,9 @@ describe("environment runtime catalog stores", () => {
       | undefined;
 
     vi.stubGlobal("window", {
+      location: {
+        origin: "http://localhost",
+      },
       nativeApi: {
         persistence: {
           getClientSettings: async () => null,
@@ -138,5 +147,34 @@ describe("environment runtime catalog stores", () => {
     await hydrationPromise;
 
     expect(useSavedEnvironmentRegistryStore.getState().byId[environmentId]).toEqual(record);
+  });
+
+  it("resolves HTTP URLs from mobile-only profiles", () => {
+    const environmentId = EnvironmentId.make("environment-mobile");
+    useMobileProfileStore.setState({
+      hydrated: true,
+      profiles: [
+        {
+          profileId: "lan-profile",
+          environmentId,
+          label: "Tablet LAN",
+          mode: "lan",
+          httpBaseUrl: "http://192.168.15.12:3774/",
+          wsBaseUrl: "ws://192.168.15.12:3774/",
+          bearerToken: "bearer-token",
+          sessionExpiresAt: "2026-04-09T01:00:00.000Z",
+          createdAt: "2026-04-09T00:00:00.000Z",
+          lastConnectedAt: null,
+        },
+      ],
+    });
+
+    expect(
+      resolveEnvironmentHttpUrl({
+        environmentId,
+        pathname: "/api/project-favicon",
+        searchParams: { cwd: "/repo" },
+      }),
+    ).toBe("http://192.168.15.12:3774/api/project-favicon?cwd=%2Frepo");
   });
 });

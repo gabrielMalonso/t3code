@@ -22,3 +22,7 @@ apps/web/src/components/__screenshots__
 __screenshots__/
 .tanstack
 squashfs-root/
+.tmp/
+
+# Local agent/worktree state
+.Codex/progress/

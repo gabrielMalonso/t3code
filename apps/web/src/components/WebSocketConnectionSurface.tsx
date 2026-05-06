@@ -15,6 +15,7 @@ import { getPrimaryEnvironmentConnection } from "../environments/runtime";
 
 const FORCED_WS_RECONNECT_DEBOUNCE_MS = 5_000;
 type WsAutoReconnectTrigger = "focus" | "online";
+type WebSocketReconnectHandler = () => Promise<void>;
 
 const connectionTimeFormatter = new Intl.DateTimeFormat(undefined, {
   day: "numeric",
@@ -55,6 +56,10 @@ function describeExhaustedToast(): string {
 
 function buildReconnectTitle(_status: WsConnectionStatus): string {
   return "Disconnected from T3 Server";
+}
+
+function reconnectPrimaryEnvironment(): Promise<void> {
+  return getPrimaryEnvironmentConnection().reconnect();
 }
 
 function describeRecoveredToast(
@@ -137,7 +142,11 @@ export function shouldRestartStalledReconnect(
   );
 }
 
-export function WebSocketConnectionCoordinator() {
+export function WebSocketConnectionCoordinator({
+  reconnect = reconnectPrimaryEnvironment,
+}: {
+  readonly reconnect?: WebSocketReconnectHandler;
+}) {
   const status = useWsConnectionStatus();
   const [nowMs, setNowMs] = useState(() => Date.now());
   const lastForcedReconnectAtRef = useRef(0);
@@ -152,8 +161,8 @@ export function WebSocketConnectionCoordinator() {
       toastResetTimerRef.current = null;
     }
     lastForcedReconnectAtRef.current = Date.now();
-    void getPrimaryEnvironmentConnection()
-      .reconnect()
+    void Promise.resolve()
+      .then(reconnect)
       .catch((error) => {
         if (!showFailureToast) {
           console.warn("Automatic WebSocket reconnect failed", { error });

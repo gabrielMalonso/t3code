@@ -54,7 +54,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   }, [navigate]);
 
   return (
-    <SidebarProvider className="h-dvh! min-h-0!" defaultOpen>
+    <SidebarProvider className="h-full! min-h-0!" defaultOpen>
       <Sidebar
         side="left"
         collapsible="offcanvas"

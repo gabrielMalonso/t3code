@@ -169,6 +169,7 @@ import type { ComposerFileReference } from "../t3code-custom/file-references";
 import { useComposerSendExtension } from "../t3code-custom/hooks";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useComposerHandleContext } from "../composerHandleContext";
+import { isMobileCapacitorRuntime } from "../mobile/platform";
 import {
   useServerAvailableEditors,
   useServerConfig,
@@ -1591,6 +1592,7 @@ export default function ChatView(props: ChatViewProps) {
   );
 
   const focusComposer = useCallback(() => {
+    if (isMobileCapacitorRuntime()) return;
     composerRef.current?.focusAtEnd();
   }, []);
   const scheduleComposerFocus = useCallback(() => {
@@ -2080,6 +2082,23 @@ export default function ChatView(props: ChatViewProps) {
   useEffect(() => {
     setIsRevertingCheckpoint(false);
   }, [activeThread?.id]);
+
+  useEffect(() => {
+    if (!activeThreadKey || !isMobileCapacitorRuntime()) return;
+    const blurActiveTextInput = () => {
+      const activeElement = document.activeElement;
+      if (!(activeElement instanceof HTMLElement)) return;
+      if (!activeElement.matches('input, textarea, [contenteditable="true"]')) return;
+      activeElement.blur();
+    };
+    blurActiveTextInput();
+    const frame = window.requestAnimationFrame(blurActiveTextInput);
+    const timeout = window.setTimeout(blurActiveTextInput, 0);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timeout);
+    };
+  }, [activeThreadKey]);
 
   useEffect(() => {
     if (!activeThread?.id || terminalState.terminalOpen) return;
@@ -3411,8 +3430,8 @@ export default function ChatView(props: ChatViewProps) {
             className={cn(
               "pl-[calc(env(safe-area-inset-left)+0.75rem)] pr-[calc(env(safe-area-inset-right)+0.75rem)] pt-1.5 sm:pl-[calc(env(safe-area-inset-left)+1.25rem)] sm:pr-[calc(env(safe-area-inset-right)+1.25rem)] sm:pt-2",
               isGitRepo
-                ? "pb-[calc(env(safe-area-inset-bottom)+0.25rem)]"
-                : "pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:pb-[calc(env(safe-area-inset-bottom)+1rem)]",
+                ? "pb-[max(3rem,calc(env(safe-area-inset-bottom)+1.5rem))] sm:pb-[calc(env(safe-area-inset-bottom)+1rem)]"
+                : "pb-[max(1.25rem,calc(env(safe-area-inset-bottom)+0.75rem))] sm:pb-[calc(env(safe-area-inset-bottom)+1rem)]",
             )}
           >
             <ChatComposer

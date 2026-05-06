@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import type { DesktopTheme } from "@t3tools/contracts";
+import { syncMobileStatusBarTheme } from "../mobile/statusBar";
 
 export type Theme =
   | "light"
@@ -141,6 +142,7 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
   document.documentElement.classList.toggle("theme-dracula", theme === "dracula");
   document.documentElement.classList.toggle("theme-ayu-black", theme === "ayuBlack");
   syncBrowserChromeTheme();
+  syncMobileStatusBarTheme(isDark ? "dark" : "light");
   syncDesktopTheme(theme === "system" ? "system" : resolveTheme(theme));
   if (suppressTransitions) {
     // Force a reflow so the no-transitions class takes effect before removal

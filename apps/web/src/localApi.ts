@@ -137,6 +137,14 @@ export function readLocalApi(): LocalApi | undefined {
   return cachedApi;
 }
 
+export function bindLocalApiToRpcClient(rpcClient: WsRpcClient): void {
+  cachedApi = createLocalApi(rpcClient);
+}
+
+export function clearLocalApiBinding(): void {
+  cachedApi = undefined;
+}
+
 export function ensureLocalApi(): LocalApi {
   const api = readLocalApi();
   if (!api) {

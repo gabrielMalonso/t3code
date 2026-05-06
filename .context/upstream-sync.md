@@ -17,6 +17,7 @@
 - `t3code-custom/hooks/useComposerFileReferenceSend.ts`: serializacao custom no envio
 - `apps/server/src/t3code-custom/workspace/internalArtifacts.ts`: artefatos internos de workspace, como `.t3code/.gitignore`
 - `apps/web/src/t3code-custom/terminal/fontFamily.ts`: policy local da fonte monoespacada no terminal e blocos de codigo
+- `apps/mobile` + `apps/web/src/mobile`: app mobile Capacitor Android-first/iOS-compatible como cliente nativo do `apps/web`, com pareamento LAN/Tailscale e runtime mobile de um environment ativo por vez
 
 ## Refatoracoes feitas para sair da frente do upstream
 
@@ -46,6 +47,8 @@
   O upstream agora roteia providers por `ProviderInstanceId`; qualquer custom de skills precisa usar `ProviderDriverKind` so como metadata, nao como identidade de sessao
 - `apps/server/src/persistence/Migrations.ts`
   Continua sensivel porque o fork ja ocupou IDs que o upstream tenta usar em waves futuras
+- `apps/web/src/routes/__root.tsx`, `apps/web/src/environments/runtime/service.ts`, `apps/web/src/components/ChatView.tsx`, `apps/web/src/components/chat/ChatHeader.tsx` e `apps/web/src/components/chat/MessagesTimeline.tsx`
+  O app mobile Capacitor depende de bypass de bootstrap neutro, conexao mobile bearer-only, safe-area/keyboard behavior e assets autenticados; qualquer sync aqui deve aceitar upstream primeiro e reaplicar so o diferencial mobile real
 
 ## Regra pratica para o proximo sync
 
@@ -53,7 +56,41 @@
 - Se a mudanca for UX de skill/slash command, absorver o fluxo nativo do upstream e reaplicar so a descoberta/serializacao local que ainda for diferencial real
 - Se a mudanca for Multi-Provider/provider instances, aceitar o roteamento por `instanceId` e reaplicar skills do workspace apenas como overlay de Codex
 - Se a mudanca for regra de negocio local, empurrar para `t3code-custom/*`
+- Se a mudanca for mobile/root/runtime/header/composer, preservar o fluxo upstream e reaplicar o app mobile como `apps/mobile/*`, `apps/web/src/mobile/*` e guards pequenos atras de `isMobileCapacitorRuntime()`
 - Se precisar tocar `ChatComposer` ou `ComposerPromptEditor`, fazer o minimo e deixar a adaptacao visivel
+
+## 2026-05-06 — Registro do app mobile Capacitor
+
+- Branch analisada: `t3code/capacitor-mobile-app`
+- Snapshot local registrado como referencia do custom vivo: `3a85aafb2` (`Fix mobile editor focus on thread switch`)
+- Decisao: manter o app mobile dentro do fork/monorepo e fazer PR para a `main`; nao extrair para projeto paralelo enquanto ele reutilizar `apps/web`, runtime remoto, contratos e auth do T3 Code
+- Forma do custom:
+  - `apps/mobile/*` e o wrapper nativo Capacitor ficam como `perimetro-custom`
+  - `apps/web/src/mobile/*` fica como `perimetro-custom` de runtime/UI mobile
+  - root/runtime/chat/header/timeline ficam como `adaptador-core` ou `hotspot-compartilhado`, nunca como novo fork do core
+- O que torna isso custom vivo:
+  - app Android-first com iOS compat correto por Capacitor
+  - tela mobile neutra que nao monta `LocalApi`, primary environment, server state ou WebSocket antes de um profile ativo
+  - profiles LAN/Tailscale separados, mesmo quando apontam para o mesmo backend
+  - pareamento por QR/token e troca para bearer session
+  - runtime mobile com um environment ativo por vez
+  - fechamento de environment limpando conexoes e estado volatil
+  - assets autenticados resolvidos com bearer fetch/blob URL
+- Hotspots novos registrados:
+  - `apps/web/src/routes/__root.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/environments/runtime/service.ts` — `hotspot-compartilhado`
+  - `apps/web/src/environments/runtime/catalog.ts` — `adaptador-core`
+  - `apps/web/src/components/ChatView.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/components/ComposerPromptEditor.tsx` — `adaptador-core`
+  - `apps/web/src/components/chat/ChatHeader.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/components/chat/MessagesTimeline.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/components/ProjectScriptsControl.tsx` — `adaptador-core`
+  - `apps/web/src/components/chat/OpenInPicker.tsx` — `adaptador-core`
+  - `apps/web/package.json` e `bun.lock` — `hotspot-compartilhado` por dependencias Capacitor no workspace web
+- Regra dominante para sync futuro:
+  - se o upstream mexer em runtime/root/header/chat, aceitar upstream primeiro e reaplicar apenas o gate mobile neutro ou o adaptador bearer necessario
+  - se o upstream trouxer suporte mobile nativo equivalente, deletar a duplicacao local e preservar so o diferencial Capacitor/Tailscale/Android que continuar real
+  - nao separar para outro repositorio antes de haver backend proprio, UI propria independente do `apps/web` ou release mobile com ciclo completamente separado
 
 ## 2026-05-01 — Sync ate `17b43960`
 
