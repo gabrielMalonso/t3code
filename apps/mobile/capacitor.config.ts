@@ -17,9 +17,6 @@ const config: CapacitorConfig = {
     SystemBars: {
       insetsHandling: "disable",
     },
-    Keyboard: {
-      resize: "body",
-    },
   },
   ios: {
     contentInset: "automatic",
