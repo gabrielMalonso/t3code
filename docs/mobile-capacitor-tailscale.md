@@ -24,6 +24,31 @@ Usuario fecha environment
 App limpa runtime e volta ao neutro
 ```
 
+## Decisao de Repositorio e Sync
+
+Manter o app mobile dentro deste fork/monorepo. Nao extrair para projeto paralelo enquanto ele for um cliente nativo do mesmo `apps/web`, usando o mesmo server, auth, contratos, runtime remoto e WebSocket.
+
+Separar agora parece limpo, mas cobra juros: duplicaria contratos, faria o bundle web atravessar fronteira artificial e tornaria cada sync com `upstream/main` mais manual. Monorepo e o lugar certo enquanto o app mobile for uma casca nativa do T3 Code, nao um produto autonomo.
+
+```text
+upstream/main
+  -> sua main sincronizada
+  -> apps/web + apps/server + contracts
+  -> apps/mobile como wrapper nativo
+```
+
+Classificacao para sync:
+
+| Area                              | Classificacao           | Regra de conflito                                                     |
+| --------------------------------- | ----------------------- | --------------------------------------------------------------------- |
+| `apps/mobile/*`                   | `perimetro-custom`      | preservar como wrapper nativo local                                   |
+| `apps/web/src/mobile/*`           | `perimetro-custom`      | preservar runtime/UI mobile e ajustar para o core atual               |
+| root/runtime/chat/header          | `hotspot-compartilhado` | aceitar upstream primeiro e reaplicar so o gate/adaptador mobile real |
+| dependencias Capacitor no web     | `hotspot-compartilhado` | manter apenas dependencias usadas pelo bundle web em runtime mobile   |
+| docs e configuracao de pareamento | `perimetro-custom`      | atualizar quando o fluxo LAN/Tailscale mudar                          |
+
+O app so deve sair para outro repositorio se passar a ter backend proprio, UI propria sem reaproveitar `apps/web`, release mobile independente o bastante para exigir outro ciclo, ou dependencias nativas que tornem o monorepo realmente doloroso. Antes disso, extrair e organizar bagunca em outra gaveta.
+
 ## Objetivo
 
 Criar um app iOS/Android que replique a experiencia mobile do T3 Code, com pareamento simples, suporte a Tailscale e LAN, e apenas um backend ativo por vez.
