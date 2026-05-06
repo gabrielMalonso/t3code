@@ -21,8 +21,19 @@ import {
 import { isMacPlatform, isWindowsPlatform } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 
-const resolveOptions = (platform: string, availableEditors: ReadonlyArray<EditorId>) => {
-  const baseOptions: ReadonlyArray<{ label: string; Icon: Icon; value: EditorId }> = [
+interface OpenInWorkspaceInput {
+  keybindings: ResolvedKeybindingsConfig;
+  availableEditors: ReadonlyArray<EditorId>;
+  openInCwd: string | null;
+}
+
+type OpenInOption = { label: string; Icon: Icon; value: EditorId };
+
+const resolveOptions = (
+  platform: string,
+  availableEditors: ReadonlyArray<EditorId>,
+): ReadonlyArray<OpenInOption> => {
+  const baseOptions: ReadonlyArray<OpenInOption> = [
     {
       label: "Cursor",
       Icon: CursorIcon,
@@ -86,15 +97,11 @@ const resolveOptions = (platform: string, availableEditors: ReadonlyArray<Editor
   return baseOptions.filter((option) => availableEditors.includes(option.value));
 };
 
-export const OpenInPicker = memo(function OpenInPicker({
+export function useOpenInWorkspace({
   keybindings,
   availableEditors,
   openInCwd,
-}: {
-  keybindings: ResolvedKeybindingsConfig;
-  availableEditors: ReadonlyArray<EditorId>;
-  openInCwd: string | null;
-}) {
+}: OpenInWorkspaceInput) {
   const [preferredEditor, setPreferredEditor] = usePreferredEditor(availableEditors);
   const options = useMemo(
     () => resolveOptions(navigator.platform, availableEditors),
@@ -121,10 +128,56 @@ export const OpenInPicker = memo(function OpenInPicker({
     [keybindings],
   );
 
+  return {
+    openFavoriteEditorShortcutLabel,
+    openInCwd,
+    openInEditor,
+    options,
+    preferredEditor,
+    primaryOption,
+  };
+}
+
+export function OpenInMenuItems({
+  openFavoriteEditorShortcutLabel,
+  openInCwd,
+  openInEditor,
+  options,
+  preferredEditor,
+}: ReturnType<typeof useOpenInWorkspace>) {
+  if (options.length === 0) {
+    return <MenuItem disabled>No installed editors found</MenuItem>;
+  }
+
+  return (
+    <>
+      {options.map(({ label, Icon, value }) => (
+        <MenuItem key={value} disabled={!openInCwd} onClick={() => openInEditor(value)}>
+          <Icon aria-hidden="true" className="text-muted-foreground" />
+          {label}
+          {value === preferredEditor && openFavoriteEditorShortcutLabel && (
+            <MenuShortcut>{openFavoriteEditorShortcutLabel}</MenuShortcut>
+          )}
+        </MenuItem>
+      ))}
+    </>
+  );
+}
+
+export const OpenInPicker = memo(function OpenInPicker(props: OpenInWorkspaceInput) {
+  const {
+    openFavoriteEditorShortcutLabel,
+    openInCwd,
+    openInEditor,
+    options,
+    preferredEditor,
+    primaryOption,
+  } = useOpenInWorkspace(props);
+
   useEffect(() => {
     const handler = (e: globalThis.KeyboardEvent) => {
       const api = readLocalApi();
-      if (!isOpenFavoriteEditorShortcut(e, keybindings)) return;
+      if (!isOpenFavoriteEditorShortcut(e, props.keybindings)) return;
       if (!api || !openInCwd) return;
       if (!preferredEditor) return;
 
@@ -133,7 +186,7 @@ export const OpenInPicker = memo(function OpenInPicker({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [preferredEditor, keybindings, openInCwd]);
+  }, [preferredEditor, props.keybindings, openInCwd]);
 
   return (
     <Group aria-label="Open workspace">
@@ -154,16 +207,14 @@ export const OpenInPicker = memo(function OpenInPicker({
           <ChevronDownIcon aria-hidden="true" className="size-4" />
         </MenuTrigger>
         <MenuPopup align="end">
-          {options.length === 0 && <MenuItem disabled>No installed editors found</MenuItem>}
-          {options.map(({ label, Icon, value }) => (
-            <MenuItem key={value} onClick={() => openInEditor(value)}>
-              <Icon aria-hidden="true" className="text-muted-foreground" />
-              {label}
-              {value === preferredEditor && openFavoriteEditorShortcutLabel && (
-                <MenuShortcut>{openFavoriteEditorShortcutLabel}</MenuShortcut>
-              )}
-            </MenuItem>
-          ))}
+          <OpenInMenuItems
+            openFavoriteEditorShortcutLabel={openFavoriteEditorShortcutLabel}
+            openInCwd={openInCwd}
+            openInEditor={openInEditor}
+            options={options}
+            preferredEditor={preferredEditor}
+            primaryOption={primaryOption}
+          />
         </MenuPopup>
       </Menu>
     </Group>
