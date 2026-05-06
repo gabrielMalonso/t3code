@@ -38,7 +38,7 @@ import { resolveMobilePairingTarget, type MobileConnectionMode } from "./pairing
 
 type BusyAction = "pair" | "connect" | "close" | "scan" | null;
 type PairingPanel = "code" | "paste" | null;
-type NeutralTab = "profiles" | "pair";
+type NeutralView = "connections" | "pair";
 
 function modeLabel(mode: MobileConnectionMode): string {
   return mode === "tailscale" ? "Tailscale" : "LAN";
@@ -86,44 +86,6 @@ function PairingModeSelector(props: {
   );
 }
 
-function NeutralTabSelector(props: {
-  readonly tab: NeutralTab;
-  readonly hasProfiles: boolean;
-  readonly busy: boolean;
-  readonly onTabChange: (tab: NeutralTab) => void;
-}) {
-  return (
-    <div className="relative grid grid-cols-2 gap-2 overflow-hidden rounded-full bg-muted p-1">
-      <span
-        aria-hidden="true"
-        className={`absolute bottom-1 top-1 w-[calc(50%-0.375rem)] rounded-full bg-primary shadow-sm transition-transform duration-300 ease-out motion-reduce:transition-none ${
-          props.tab === "pair" ? "translate-x-[calc(100%+0.5rem)]" : "translate-x-0"
-        } left-1`}
-      />
-      <button
-        type="button"
-        className={`relative z-10 h-9 rounded-full px-3 text-sm font-medium transition-colors duration-200 motion-reduce:transition-none ${
-          props.tab === "profiles" ? "text-primary-foreground" : "text-muted-foreground"
-        }`}
-        onClick={() => props.onTabChange("profiles")}
-        disabled={props.busy || !props.hasProfiles}
-      >
-        Conexoes
-      </button>
-      <button
-        type="button"
-        className={`relative z-10 h-9 rounded-full px-3 text-sm font-medium transition-colors duration-200 motion-reduce:transition-none ${
-          props.tab === "pair" ? "text-primary-foreground" : "text-muted-foreground"
-        }`}
-        onClick={() => props.onTabChange("pair")}
-        disabled={props.busy}
-      >
-        Novo pareamento
-      </button>
-    </div>
-  );
-}
-
 async function scanQrCode(): Promise<string> {
   const module = (await import("@capacitor/barcode-scanner")) as unknown as {
     CapacitorBarcodeScanner?: {
@@ -154,7 +116,7 @@ export function MobileNeutralSurface() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [selectedTab, setSelectedTab] = useState<NeutralTab>("pair");
+  const [neutralView, setNeutralView] = useState<NeutralView>("connections");
 
   useEffect(() => {
     void profileStore.hydrate();
@@ -198,8 +160,11 @@ export function MobileNeutralSurface() {
   const savedProfiles = profileStore.profiles;
 
   useEffect(() => {
-    if (profileStore.hydrated && savedProfiles.length > 0) {
-      setSelectedTab("profiles");
+    if (!profileStore.hydrated) {
+      return;
+    }
+    if (savedProfiles.length === 0) {
+      setNeutralView("pair");
     }
   }, [profileStore.hydrated, savedProfiles.length]);
 
@@ -242,7 +207,7 @@ export function MobileNeutralSurface() {
       await activateMobileProfile(profile.profileId);
       setPairingPanel(null);
       setAdvancedOpen(false);
-      setSelectedTab("profiles");
+      setNeutralView("connections");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -325,6 +290,8 @@ export function MobileNeutralSurface() {
   }
 
   const busy = busyAction !== null;
+  const hasSavedProfiles = savedProfiles.length > 0;
+  const showingConnections = neutralView === "connections" && hasSavedProfiles;
   const currentStatus =
     busyAction === "scan"
       ? "Abrindo scanner"
@@ -332,10 +299,24 @@ export function MobileNeutralSurface() {
         ? "Pareando"
         : busyAction === "connect"
           ? "Conectando"
-          : "Pronto para parear";
+          : showingConnections
+            ? "Conexoes salvas"
+            : "Pronto para parear";
   const inputLabel = pairingPanel === "code" ? "Codigo de pareamento" : "URL/token de pareamento";
   const inputPlaceholder =
     pairingPanel === "code" ? "Cole o codigo mostrado no desktop" : "Cole a URL ou token do QR";
+  const heroTitle = busy
+    ? "Conectando..."
+    : showingConnections
+      ? "Escolha uma conexao"
+      : hasSavedProfiles
+        ? "Adicionar conexao"
+        : "Conecte este celular";
+  const heroDescription = showingConnections
+    ? "Use LAN quando estiver na mesma rede, ou Tailscale quando estiver fora dela."
+    : hasSavedProfiles
+      ? "Escaneie outro QR ou cole uma URL para salvar mais uma rota de acesso neste celular."
+      : "Escaneie o QR do desktop ou cole a URL de pareamento para abrir seus projetos aqui.";
 
   return (
     <main className="h-dvh overflow-y-auto overscroll-y-contain bg-background text-foreground">
@@ -378,30 +359,13 @@ export function MobileNeutralSurface() {
           </div>
 
           <div>
-            <h2 className="text-3xl font-semibold tracking-tight">
-              {busy
-                ? "Conectando..."
-                : savedProfiles.length > 0
-                  ? "Escolha uma conexao"
-                  : "Conecte este celular"}
-            </h2>
+            <h2 className="text-3xl font-semibold tracking-tight">{heroTitle}</h2>
             <p className="mx-auto mt-2 max-w-xs text-base leading-relaxed text-muted-foreground">
-              {savedProfiles.length > 0
-                ? "Use LAN quando estiver na mesma rede, ou Tailscale quando estiver fora dela."
-                : "Escaneie o QR do desktop ou cole a URL de pareamento para abrir seus projetos aqui."}
+              {heroDescription}
             </p>
           </div>
 
-          <div className="w-full">
-            <NeutralTabSelector
-              tab={selectedTab}
-              hasProfiles={savedProfiles.length > 0}
-              busy={busy}
-              onTabChange={setSelectedTab}
-            />
-          </div>
-
-          {selectedTab === "profiles" && savedProfiles.length > 0 ? (
+          {showingConnections ? (
             <section className="grid w-full gap-3 text-left">
               {savedProfiles.map((profile) => {
                 const isActive = runtime.activeProfileId === profile.profileId;
@@ -454,11 +418,11 @@ export function MobileNeutralSurface() {
               <Button
                 className="h-11 rounded-full"
                 variant="outline"
-                onClick={() => setSelectedTab("pair")}
+                onClick={() => setNeutralView("pair")}
                 disabled={busy}
               >
                 <QrCode className="size-4" />
-                Adicionar outra conexao
+                Adicionar nova conexao
               </Button>
             </section>
           ) : (
@@ -505,6 +469,17 @@ export function MobileNeutralSurface() {
                   <Clipboard className="size-4" />
                   Colar URL/token
                 </Button>
+                {hasSavedProfiles ? (
+                  <Button
+                    className="h-11 rounded-full text-sm"
+                    variant="ghost"
+                    onClick={() => setNeutralView("connections")}
+                    disabled={busy}
+                  >
+                    <Link className="size-4" />
+                    Ver conexoes salvas
+                  </Button>
+                ) : null}
               </div>
             </div>
           )}
@@ -637,42 +612,6 @@ export function MobileNeutralSurface() {
           <div className="mb-4 rounded-2xl border border-destructive/30 bg-destructive/8 p-3 text-sm text-destructive">
             {errorMessage ?? runtime.errorMessage}
           </div>
-        ) : null}
-
-        {selectedTab === "pair" ? (
-          <section className="grid gap-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-muted-foreground">Profiles salvos</h2>
-              <span className="text-xs text-muted-foreground">{savedProfiles.length} profiles</span>
-            </div>
-            {savedProfiles.length === 0 ? (
-              <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
-                Nenhum profile salvo ainda.
-              </div>
-            ) : (
-              savedProfiles.map((profile) => (
-                <div
-                  key={profile.profileId}
-                  className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card p-3"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{profile.label}</p>
-                    <p className="truncate text-xs text-muted-foreground">{profile.httpBaseUrl}</p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="shrink-0 rounded-full"
-                    onClick={() => handleConnect(profile.profileId)}
-                    disabled={busy || runtime.activeProfileId !== null}
-                  >
-                    {busyAction === "connect" ? <RefreshCw className="animate-spin" /> : <Link />}
-                    Conectar
-                  </Button>
-                </div>
-              ))
-            )}
-          </section>
         ) : null}
       </div>
     </main>
