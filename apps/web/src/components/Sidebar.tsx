@@ -2475,7 +2475,7 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
               onClick={handleMobileCloseClick}
             >
               <LogOutIcon className="size-3.5" />
-              <span className="text-xs">Fechar</span>
+              <span className="text-xs">Close</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         ) : null}
