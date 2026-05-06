@@ -58,10 +58,15 @@ Regra pratica:
   - `apps/web/src/t3code-custom/hooks/useThreadLoopActions.ts`
 - Hotspots compartilhados:
   - `apps/web/src/store.ts:1285-1292`
-  - `apps/server/src/orchestration/Layers/ThreadLoopScheduler.ts:71,142,157`
+  - `apps/server/src/orchestration/Layers/ThreadLoopScheduler.ts`
+  - `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts`
   - `apps/server/src/orchestration/decider.ts:344-381,604-624`
   - `apps/server/src/orchestration/projector.ts:363-374`
   - `packages/contracts/src/orchestration.ts:420-430,654,698-699,971-976`
+- Regra pos VCS/source-control upstream:
+  - `ThreadLoopScheduler` deve ler estado por `ProjectionSnapshotQuery.getCommandReadModel()`
+  - `getCommandReadModel()` precisa hidratar `thread.loop` e sanitizar boot session/latest turn do mesmo jeito relevante para comandos
+  - se esse contrato quebrar, loops de thread podem ficar presos em turn antigo ou ser apagados como stale; isso nao e detalhe de teste, e bug de produto
 
 ### Visibilidade da Plan sidebar
 
@@ -104,6 +109,7 @@ Regra pratica:
 - Regra adicional:
   - se o upstream mexer no runtime do Codex, aceitar o fluxo novo e reaplicar so a passagem de `skills` como item do protocolo, sem recriar manager paralelo
   - se o upstream mexer em provider instances, manter `listProviderSkills` como RPC local pequeno, sem criar registry paralelo
+  - se o upstream mexer em `ws.ts` junto com VCS/source-control, preservar `listProviderSkills` dentro do RPC atual e seguir `GitWorkflowService`/`VcsStatusBroadcaster` em vez de restaurar servicos Git antigos
 
 ### Artefatos internos do workspace
 

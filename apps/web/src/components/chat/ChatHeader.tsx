@@ -45,6 +45,18 @@ interface ChatHeaderProps {
   onToggleDiff: () => void;
 }
 
+export function shouldShowOpenInPicker(input: {
+  readonly activeProjectName: string | undefined;
+  readonly activeThreadEnvironmentId: EnvironmentId;
+  readonly primaryEnvironmentId: EnvironmentId | null;
+}): boolean {
+  return (
+    Boolean(input.activeProjectName) &&
+    input.primaryEnvironmentId !== null &&
+    input.activeThreadEnvironmentId === input.primaryEnvironmentId
+  );
+}
+
 export const ChatHeader = memo(function ChatHeader({
   activeThreadEnvironmentId,
   activeThreadId,
@@ -71,8 +83,13 @@ export const ChatHeader = memo(function ChatHeader({
   onToggleDiff,
 }: ChatHeaderProps) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const showOpenInPicker = shouldShowOpenInPicker({
+    activeProjectName,
+    activeThreadEnvironmentId,
+    primaryEnvironmentId,
+  });
   const isRemoteEnvironment =
-    primaryEnvironmentId !== null && activeThreadEnvironmentId !== primaryEnvironmentId;
+    primaryEnvironmentId === null || activeThreadEnvironmentId !== primaryEnvironmentId;
 
   return (
     <div className="@container/header-actions flex min-w-0 flex-1 items-center gap-2">
@@ -115,7 +132,7 @@ export const ChatHeader = memo(function ChatHeader({
               onDeleteScript={onDeleteProjectScript}
             />
           )}
-          {activeProjectName && !isRemoteEnvironment && (
+          {showOpenInPicker && (
             <OpenInPicker
               keybindings={keybindings}
               availableEditors={availableEditors}

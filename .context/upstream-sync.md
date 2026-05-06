@@ -2,10 +2,10 @@
 
 ## Status atual
 
-- Data: 2026-05-01
-- Branch de trabalho: `sync/upstream-2026-05-01`
-- Upstream integrado nesta wave: `17b43960` (`upstream/main`)
-- Estado: merge aplicado e validado localmente com `thread loop`, `file references`, `showPlanSidebar` e `skills de workspace` preservados sobre o novo Multi-Provider upstream
+- Data: 2026-05-06
+- Branch de trabalho: `main`
+- Upstream integrado nesta wave: `6c79039ce` (`upstream/main`)
+- Estado: merge aplicado e validado localmente com `thread loop`, `file references`, `showPlanSidebar`, `skills de workspace` e mobile Capacitor preservados sobre VCS/source-control/hosted static upstream
 - Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
 ## Features locais vivas
@@ -47,6 +47,12 @@
   O upstream agora roteia providers por `ProviderInstanceId`; qualquer custom de skills precisa usar `ProviderDriverKind` so como metadata, nao como identidade de sessao
 - `apps/server/src/persistence/Migrations.ts`
   Continua sensivel porque o fork ja ocupou IDs que o upstream tenta usar em waves futuras
+- `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts`
+  O `getCommandReadModel()` precisa continuar sanitizando boot session/latest turn e hidratando `thread.loop`; se esquecer disso, scheduler e command guards ficam cegos
+- `apps/server/src/orchestration/Layers/ThreadLoopScheduler.ts`
+  Agora le estado por `ProjectionSnapshotQuery.getCommandReadModel()`, nao por `OrchestrationEngine.getReadModel()`; isso e intencional porque o engine nao expoe mais read model direto
+- `apps/server/src/ws.ts`
+  O upstream migrou de `GitCore/GitStatusBroadcaster` para `GitWorkflowService`, `VcsStatusBroadcaster` e `VcsProvisioningService`; custom local deve seguir VCS, nao ressuscitar os servicos antigos
 - `apps/web/src/routes/__root.tsx`, `apps/web/src/environments/runtime/service.ts`, `apps/web/src/components/ChatView.tsx`, `apps/web/src/components/chat/ChatHeader.tsx` e `apps/web/src/components/chat/MessagesTimeline.tsx`
   O app mobile Capacitor depende de bypass de bootstrap neutro, conexao mobile bearer-only, safe-area/keyboard behavior e assets autenticados; qualquer sync aqui deve aceitar upstream primeiro e reaplicar so o diferencial mobile real
 
@@ -55,9 +61,62 @@
 - Ler `.context/customizations.md` antes de abrir diff sensivel do fork
 - Se a mudanca for UX de skill/slash command, absorver o fluxo nativo do upstream e reaplicar so a descoberta/serializacao local que ainda for diferencial real
 - Se a mudanca for Multi-Provider/provider instances, aceitar o roteamento por `instanceId` e reaplicar skills do workspace apenas como overlay de Codex
+- Se a mudanca for Git/source-control/VCS, aceitar o modelo novo de VCS e reaplicar custom so nos pontos de UX/RPC ainda vivos
 - Se a mudanca for regra de negocio local, empurrar para `t3code-custom/*`
 - Se a mudanca for mobile/root/runtime/header/composer, preservar o fluxo upstream e reaplicar o app mobile como `apps/mobile/*`, `apps/web/src/mobile/*` e guards pequenos atras de `isMobileCapacitorRuntime()`
 - Se precisar tocar `ChatComposer` ou `ComposerPromptEditor`, fazer o minimo e deixar a adaptacao visivel
+
+## 2026-05-06 — Sync ate `6c79039ce`
+
+- Branch de sync: `main`
+- Donor local usado para replay seletivo: `eceb030a` (`Add settings modal access from mobile neutral surface`)
+- Upstream absorvido:
+  - hosted static/remote endpoints e pairing
+  - base VCS/source-control providers, incluindo GitHub/GitLab/Bitbucket/Azure DevOps
+  - `GitWorkflowService`, `VcsStatusBroadcaster`, `VcsProvisioningService` e drivers VCS
+  - provider update/maintenance, diagnostics, SSH/Tailscale packages e keybindings/settings novos
+  - JetBrains editors, diff whitespace setting, remote docs/workflows e ajustes de release
+- Conflitos reais do merge:
+  - `.gitignore`
+  - `apps/desktop/src/desktopSettings.test.ts`
+  - `apps/desktop/src/main.ts`
+  - `apps/desktop/src/preload.ts`
+  - `apps/server/src/open.test.ts`
+  - `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts`
+  - `apps/server/src/persistence/Migrations.ts`
+  - `apps/server/src/ws.ts`
+  - `apps/web/src/components/ChatView.tsx`
+  - `apps/web/src/components/ProjectFavicon.tsx`
+  - `apps/web/src/components/chat/ChatComposer.tsx`
+  - `apps/web/src/components/chat/ChatHeader.tsx`
+  - `apps/web/src/components/chat/MessagesTimeline.tsx`
+  - `apps/web/src/components/chat/OpenInPicker.tsx`
+  - `apps/web/src/components/settings/SettingsPanels.browser.tsx`
+  - `apps/web/src/components/settings/SettingsPanels.tsx`
+  - `apps/web/src/localApi.ts`
+  - `apps/web/src/routes/__root.tsx`
+  - `apps/web/src/store.test.ts`
+  - `packages/contracts/src/editor.ts`
+  - `packages/contracts/src/ipc.ts`
+  - `packages/contracts/src/rpc.ts`
+- O que foi reaplicado do custom vivo:
+  - file references no composer/timeline, agora encaixados no refactor novo de `MessagesTimeline`
+  - thread loop e scheduler, migrados para `ProjectionSnapshotQuery.getCommandReadModel()`
+  - `showPlanSidebar` junto do novo `diffIgnoreWhitespace`
+  - `listProviderSkills`, skills de workspace e extensoes de envio do composer
+  - mobile Capacitor em `__root`, runtime mobile, header/timeline bearer-aware e favicons autenticados
+  - Ghostty preservado junto dos novos editores JetBrains
+- Decisoes importantes:
+  - migration upstream `029_ProjectionThreadDetailOrderingIndexes` entrou como ID `31`, porque o fork ja ocupava `23` para loops e o upstream ocupou `29/30` depois
+  - `getCommandReadModel()` agora tambem sanitiza boot session/latest turn e hidrata `thread.loop`; sem isso, loops de thread reiniciados podem ser apagados como stale
+  - `ws.ts` segue o novo mundo VCS; nao trazer `GitCore`/`GitStatusBroadcaster` antigos de volta
+  - no mobile/root, o fluxo hosted static upstream foi aceito e o bypass Capacitor ficou como gate pequeno
+- Validacao final:
+  - `bun fmt`
+  - `bun lint`
+  - `bun typecheck`
+  - `bun run --cwd apps/server test src/orchestration/Layers/ThreadLoopScheduler.test.ts src/orchestration/Layers/ProviderRuntimeIngestion.test.ts src/orchestration/Layers/CheckpointReactor.test.ts src/server.test.ts`
+  - `bun run --cwd apps/web test src/components/GitActionsControl.logic.test.ts src/components/chat/ChatHeader.test.ts src/providerSkillSelections.test.ts src/t3code-custom/file-references/paste.test.ts src/t3code-custom/file-references/serialization.test.ts`
 
 ## 2026-05-06 — Registro do app mobile Capacitor
 
