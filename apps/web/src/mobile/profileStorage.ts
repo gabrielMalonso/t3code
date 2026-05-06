@@ -174,6 +174,12 @@ export function getMobileProfile(profileId: string): MobileConnectionProfile | n
   return listMobileProfiles().find((profile) => profile.profileId === profileId) ?? null;
 }
 
+export function getMobileProfileByEnvironmentId(
+  environmentId: EnvironmentId,
+): MobileConnectionProfile | null {
+  return listMobileProfiles().find((profile) => profile.environmentId === environmentId) ?? null;
+}
+
 export function createMobileProfileId(mode: MobileConnectionMode): string {
   return `${mode}-${crypto.randomUUID()}`;
 }
