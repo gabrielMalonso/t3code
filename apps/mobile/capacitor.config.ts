@@ -1,4 +1,5 @@
 /// <reference types="@capacitor-community/safe-area" />
+/// <reference types="@capacitor/status-bar" />
 
 import type { CapacitorConfig } from "@capacitor/cli";
 
@@ -13,6 +14,9 @@ const config: CapacitorConfig = {
   plugins: {
     SafeArea: {
       initialViewportFitCover: true,
+    },
+    StatusBar: {
+      style: "DARK",
     },
     SystemBars: {
       insetsHandling: "disable",

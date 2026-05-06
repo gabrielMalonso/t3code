@@ -29,3 +29,8 @@ export function isMobileCapacitorRuntime(): boolean {
 export function getMobilePlatformLabel(): string {
   return readCapacitorGlobal()?.getPlatform?.() ?? "web";
 }
+
+export function isNativeAndroidCapacitorRuntime(): boolean {
+  const capacitor = readCapacitorGlobal();
+  return capacitor?.isNativePlatform?.() === true && capacitor.getPlatform?.() === "android";
+}
