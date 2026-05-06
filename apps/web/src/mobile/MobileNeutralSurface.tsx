@@ -9,6 +9,7 @@ import {
   Trash2,
   Unplug,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 import { Button } from "../components/ui/button";
@@ -90,6 +91,28 @@ function PairingModeSelector(props: {
         </button>
       ))}
     </div>
+  );
+}
+
+function PairingFieldGroup(props: {
+  readonly label: string;
+  readonly description?: string;
+  readonly action?: ReactNode;
+  readonly children: ReactNode;
+}) {
+  return (
+    <section className="grid min-w-0 gap-2">
+      <div className="flex min-w-0 items-end justify-between gap-3 px-1">
+        <div className="min-w-0 text-left">
+          <p className="text-xs font-medium text-foreground">{props.label}</p>
+          {props.description ? (
+            <p className="mt-0.5 text-xs leading-4 text-muted-foreground">{props.description}</p>
+          ) : null}
+        </div>
+        {props.action ? <div className="shrink-0">{props.action}</div> : null}
+      </div>
+      {props.children}
+    </section>
   );
 }
 
@@ -553,24 +576,52 @@ export function MobileNeutralSurface() {
 
             <DialogPanel className="min-w-0 overflow-hidden">
               <form
-                className="grid min-w-0 gap-5"
+                className="grid min-w-0 gap-6"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void handlePair();
                 }}
               >
-                <Input
-                  autoFocus
-                  value={label}
-                  onChange={(event) => setLabel(event.target.value)}
-                  placeholder="Nome opcional da conexao"
-                  disabled={busy}
-                />
+                <PairingFieldGroup label="Nome" description="Ajuda a reconhecer esta rota depois.">
+                  <Input
+                    autoFocus
+                    value={label}
+                    onChange={(event) => setLabel(event.target.value)}
+                    placeholder="Nome opcional da conexao"
+                    disabled={busy}
+                  />
+                </PairingFieldGroup>
 
-                <PairingModeSelector mode={mode} busy={busy} onModeChange={setMode} />
+                <div className="grid gap-3">
+                  <PairingFieldGroup
+                    label="Tipo de conexao"
+                    description="LAN usa o link local. Tailscale usa o token com outro endereco."
+                  >
+                    <PairingModeSelector mode={mode} busy={busy} onModeChange={setMode} />
+                  </PairingFieldGroup>
+                </div>
 
                 {pairingPanel === "code" ? (
-                  <div className="grid gap-2">
+                  <PairingFieldGroup
+                    label={mode === "lan" ? "Link local" : "Token ou link"}
+                    description={
+                      mode === "lan"
+                        ? "Cole o link completo copiado no desktop."
+                        : "O link fornece o token; o endereco Tailscale vem abaixo."
+                    }
+                    action={
+                      <Button
+                        type="button"
+                        className="h-8 rounded-full px-2.5 text-xs text-muted-foreground"
+                        variant="ghost"
+                        onClick={handlePastePairingLink}
+                        disabled={busy}
+                      >
+                        <Clipboard className="size-3.5" />
+                        Colar link
+                      </Button>
+                    }
+                  >
                     <Input
                       autoCapitalize="characters"
                       autoCorrect="off"
@@ -583,28 +634,16 @@ export function MobileNeutralSurface() {
                       disabled={busy}
                       className="h-13 text-center font-mono text-base"
                     />
-                    <Button
-                      type="button"
-                      className="h-9 justify-start rounded-full px-3 text-xs text-muted-foreground"
-                      variant="ghost"
-                      onClick={handlePastePairingLink}
-                      disabled={busy}
-                    >
-                      <Clipboard className="size-3.5" />
-                      Colar link completo
-                    </Button>
-                    <p className="px-1 text-xs leading-5 text-muted-foreground">
-                      {mode === "lan"
-                        ? "Na LAN, use o link completo copiado no desktop."
-                        : "O link fornece o token; o endereco Tailscale fica no campo abaixo."}
-                    </p>
-                  </div>
+                  </PairingFieldGroup>
                 ) : null}
 
                 {pairingPanel === "code" ? (
-                  <div className="grid gap-3">
+                  <>
                     {showTailscaleHost ? (
-                      <>
+                      <PairingFieldGroup
+                        label="Endereco Tailscale"
+                        description="Obrigatorio para nao salvar uma rota LAN como Tailscale."
+                      >
                         <Input
                           value={host}
                           onChange={(event) => setHost(event.target.value)}
@@ -612,14 +651,14 @@ export function MobileNeutralSurface() {
                           disabled={busy}
                           inputMode="url"
                         />
-                        <p className="px-1 text-xs leading-5 text-muted-foreground">
-                          Obrigatorio quando voce quer salvar esta conexao como Tailscale.
-                        </p>
-                      </>
+                      </PairingFieldGroup>
                     ) : null}
-                  </div>
+                  </>
                 ) : showTailscaleHost ? (
-                  <div className="grid gap-2">
+                  <PairingFieldGroup
+                    label="Endereco Tailscale"
+                    description="Informe o endereco que este celular deve usar."
+                  >
                     <Input
                       value={host}
                       onChange={(event) => setHost(event.target.value)}
@@ -627,10 +666,7 @@ export function MobileNeutralSurface() {
                       disabled={busy}
                       inputMode="url"
                     />
-                    <p className="px-1 text-xs leading-5 text-muted-foreground">
-                      Informe o endereco Tailscale que este celular deve usar.
-                    </p>
-                  </div>
+                  </PairingFieldGroup>
                 ) : null}
               </form>
             </DialogPanel>
