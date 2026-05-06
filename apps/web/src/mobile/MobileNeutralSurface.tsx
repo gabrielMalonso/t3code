@@ -1,5 +1,15 @@
-import { Link, PlugZap, QrCode, RefreshCw, Unplug } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import {
+  ChevronDown,
+  Clipboard,
+  Link,
+  LoaderCircle,
+  Menu,
+  PlugZap,
+  QrCode,
+  RefreshCw,
+  Unplug,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -18,6 +28,7 @@ import {
 import { resolveMobilePairingTarget, type MobileConnectionMode } from "./pairingTarget";
 
 type BusyAction = "pair" | "connect" | "close" | "scan" | null;
+type PairingPanel = "code" | "paste" | null;
 
 function modeLabel(mode: MobileConnectionMode): string {
   return mode === "tailscale" ? "Tailscale" : "LAN";
@@ -56,20 +67,14 @@ export function MobileNeutralSurface() {
   const [pairingInput, setPairingInput] = useState("");
   const [host, setHost] = useState("");
   const [label, setLabel] = useState("");
+  const [pairingPanel, setPairingPanel] = useState<PairingPanel>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     void profileStore.hydrate();
   }, [profileStore]);
-
-  const profilesByMode = useMemo(
-    () => ({
-      tailscale: profileStore.profiles.filter((profile) => profile.mode === "tailscale"),
-      lan: profileStore.profiles.filter((profile) => profile.mode === "lan"),
-    }),
-    [profileStore.profiles],
-  );
 
   async function handlePair() {
     setBusyAction("pair");
@@ -130,6 +135,19 @@ export function MobileNeutralSurface() {
     }
   }
 
+  async function handlePastePairingInput() {
+    setPairingPanel("paste");
+    setErrorMessage(null);
+    try {
+      const clipboardText = await navigator.clipboard?.readText?.();
+      if (clipboardText?.trim()) {
+        setPairingInput(clipboardText.trim());
+      }
+    } catch {
+      // Clipboard permissions vary in WebViews. Keeping the input open is the useful fallback.
+    }
+  }
+
   async function handleConnect(profileId: string) {
     setBusyAction("connect");
     setErrorMessage(null);
@@ -155,120 +173,240 @@ export function MobileNeutralSurface() {
   }
 
   const busy = busyAction !== null;
+  const savedProfiles = profileStore.profiles;
+  const currentStatus =
+    busyAction === "scan"
+      ? "Abrindo scanner"
+      : busyAction === "pair"
+        ? "Pareando"
+        : busyAction === "connect"
+          ? "Conectando"
+          : "Pronto para parear";
+  const inputLabel = pairingPanel === "code" ? "Codigo de pareamento" : "URL/token de pareamento";
+  const inputPlaceholder =
+    pairingPanel === "code" ? "Cole o codigo mostrado no desktop" : "Cole a URL ou token do QR";
 
   return (
-    <main className="min-h-dvh bg-background px-4 py-5 text-foreground">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
-        <header className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-medium text-muted-foreground">
-              Mobile {getMobilePlatformLabel()}
+    <main className="min-h-dvh bg-background text-foreground">
+      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))]">
+        <header className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="-ml-2 shrink-0 text-muted-foreground"
+            aria-label="Menu"
+          >
+            <Menu className="size-5" />
+          </Button>
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-semibold tracking-tight">Pareamento</h1>
+            <p className="truncate text-sm text-muted-foreground">
+              T3 Code mobile em {getMobilePlatformLabel()}
             </p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight">T3 Code</h1>
           </div>
           {runtime.activeProfileId ? (
-            <Button variant="outline" size="sm" onClick={handleClose} disabled={busy}>
+            <Button
+              className="ml-auto"
+              variant="outline"
+              size="sm"
+              onClick={handleClose}
+              disabled={busy}
+            >
               <Unplug />
               Fechar
             </Button>
           ) : null}
         </header>
 
-        <section className="rounded-lg border border-border bg-card p-3">
-          <div className="grid grid-cols-2 gap-2">
-            {(["tailscale", "lan"] as const).map((entry) => (
-              <Button
-                key={entry}
-                variant={mode === entry ? "default" : "outline"}
-                onClick={() => setMode(entry)}
-                disabled={busy}
-              >
-                {modeLabel(entry)}
-              </Button>
-            ))}
+        <section className="flex flex-1 flex-col items-center justify-center gap-5 py-8 text-center">
+          <img
+            src="/t3-app-icon.png"
+            alt="T3 Code"
+            className="size-28 rounded-[1.75rem] shadow-2xl shadow-black/35"
+          />
+
+          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-sm text-muted-foreground">
+            {busy ? (
+              <LoaderCircle className="size-4 animate-spin text-primary" />
+            ) : (
+              <span className="size-2 rounded-full bg-emerald-400" />
+            )}
+            <span>{currentStatus}</span>
           </div>
 
-          <div className="mt-4 grid gap-3">
-            <Input
-              value={host}
-              onChange={(event) => setHost(event.target.value)}
-              placeholder={
-                mode === "tailscale"
-                  ? "100.x.y.z:3774 ou macbook.ts.net:3774"
-                  : "192.168.15.12:3774"
-              }
-              disabled={busy}
-            />
-            <Textarea
-              value={pairingInput}
-              onChange={(event) => setPairingInput(event.target.value)}
-              placeholder="URL de pareamento ou token"
-              disabled={busy}
-            />
-            <Input
-              value={label}
-              onChange={(event) => setLabel(event.target.value)}
-              placeholder="Nome opcional do profile"
-              disabled={busy}
-            />
-            <div className="flex gap-2">
-              <Button className="flex-1" onClick={handlePair} disabled={busy}>
-                <PlugZap />
-                Parear
-              </Button>
-              <Button variant="outline" onClick={handleScan} disabled={busy}>
-                <QrCode />
-                QR
-              </Button>
+          <div>
+            <h2 className="text-3xl font-semibold tracking-tight">
+              {busy ? "Conectando..." : "Conecte este celular"}
+            </h2>
+            <p className="mx-auto mt-2 max-w-xs text-base leading-relaxed text-muted-foreground">
+              Escaneie o QR do desktop ou cole a URL de pareamento para abrir seus projetos aqui.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            className="group grid aspect-square w-full max-w-[17rem] place-items-center rounded-[2rem] border border-border bg-card/70 p-8 text-muted-foreground shadow-sm transition-colors hover:border-primary/60 hover:text-foreground disabled:opacity-60"
+            onClick={handleScan}
+            disabled={busy}
+            aria-label="Escanear QR Code"
+          >
+            <div className="grid size-full place-items-center rounded-2xl border border-border/80 bg-background/45 transition-colors group-hover:border-primary/50">
+              <QrCode className="size-16" />
             </div>
+          </button>
+
+          <div className="grid w-full gap-3">
+            <Button className="h-14 rounded-full text-base" onClick={handleScan} disabled={busy}>
+              <QrCode className="size-5" />
+              Escanear QR Code
+            </Button>
+            <Button
+              className="h-14 rounded-full text-base"
+              variant="outline"
+              onClick={() => setPairingPanel((current) => (current === "code" ? null : "code"))}
+              disabled={busy}
+            >
+              <PlugZap className="size-5" />
+              Parear com codigo
+            </Button>
+            <Button
+              className="h-11 rounded-full text-sm text-muted-foreground"
+              variant="ghost"
+              onClick={handlePastePairingInput}
+              disabled={busy}
+            >
+              <Clipboard className="size-4" />
+              Colar URL/token
+            </Button>
           </div>
         </section>
 
+        {pairingPanel ? (
+          <section className="mb-4 rounded-2xl border border-border bg-card p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold">{inputLabel}</h3>
+                <p className="text-xs text-muted-foreground">
+                  O host pode vir dentro da URL do QR. Se nao vier, abra os detalhes.
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setPairingPanel(null);
+                  setAdvancedOpen(false);
+                }}
+                disabled={busy}
+              >
+                Fechar
+              </Button>
+            </div>
+
+            <div className="grid gap-3">
+              <div className="grid grid-cols-2 gap-2 rounded-full bg-muted p-1">
+                {(["tailscale", "lan"] as const).map((entry) => (
+                  <Button
+                    key={entry}
+                    className="rounded-full"
+                    variant={mode === entry ? "default" : "ghost"}
+                    onClick={() => setMode(entry)}
+                    disabled={busy}
+                  >
+                    {modeLabel(entry)}
+                  </Button>
+                ))}
+              </div>
+
+              <Textarea
+                value={pairingInput}
+                onChange={(event) => setPairingInput(event.target.value)}
+                placeholder={inputPlaceholder}
+                disabled={busy}
+                className="min-h-24 resize-none"
+              />
+
+              <button
+                type="button"
+                className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-left text-sm text-muted-foreground"
+                onClick={() => setAdvancedOpen((current) => !current)}
+                disabled={busy}
+              >
+                <span>Host e nome do profile</span>
+                <ChevronDown
+                  className={`size-4 transition-transform ${advancedOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+
+              {advancedOpen ? (
+                <div className="grid gap-3">
+                  <Input
+                    value={host}
+                    onChange={(event) => setHost(event.target.value)}
+                    placeholder={
+                      mode === "tailscale"
+                        ? "100.x.y.z:3774 ou macbook.ts.net:3774"
+                        : "192.168.15.12:3774"
+                    }
+                    disabled={busy}
+                  />
+                  <Input
+                    value={label}
+                    onChange={(event) => setLabel(event.target.value)}
+                    placeholder="Nome opcional do profile"
+                    disabled={busy}
+                  />
+                </div>
+              ) : null}
+
+              <Button className="h-12 rounded-full" onClick={handlePair} disabled={busy}>
+                {busyAction === "pair" ? <LoaderCircle className="animate-spin" /> : <PlugZap />}
+                Parear agora
+              </Button>
+            </div>
+          </section>
+        ) : null}
+
         {(errorMessage ?? runtime.errorMessage) ? (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/8 p-3 text-sm text-destructive">
+          <div className="mb-4 rounded-2xl border border-destructive/30 bg-destructive/8 p-3 text-sm text-destructive">
             {errorMessage ?? runtime.errorMessage}
           </div>
         ) : null}
 
         <section className="grid gap-3">
-          {(["tailscale", "lan"] as const).map((entry) => (
-            <div key={entry} className="rounded-lg border border-border bg-card p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <h2 className="text-sm font-semibold">{modeLabel(entry)}</h2>
-                <span className="text-xs text-muted-foreground">
-                  {profilesByMode[entry].length} profiles
-                </span>
-              </div>
-              <div className="grid gap-2">
-                {profilesByMode[entry].length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Nenhum profile salvo.</p>
-                ) : (
-                  profilesByMode[entry].map((profile) => (
-                    <div
-                      key={profile.profileId}
-                      className="flex items-center justify-between gap-3 rounded-md border border-border/70 p-2"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{profile.label}</p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {profile.httpBaseUrl}
-                        </p>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleConnect(profile.profileId)}
-                        disabled={busy || runtime.activeProfileId !== null}
-                      >
-                        {busyAction === "connect" ? <RefreshCw /> : <Link />}
-                        Conectar
-                      </Button>
-                    </div>
-                  ))
-                )}
-              </div>
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-muted-foreground">Profiles salvos</h2>
+            <span className="text-xs text-muted-foreground">{savedProfiles.length} profiles</span>
+          </div>
+          {savedProfiles.length === 0 ? (
+            <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
+              Nenhum profile salvo ainda.
             </div>
-          ))}
+          ) : (
+            savedProfiles.map((profile) => (
+              <div
+                key={profile.profileId}
+                className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card p-3"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{profile.label}</p>
+                  <p className="truncate text-xs text-muted-foreground">{profile.httpBaseUrl}</p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0 rounded-full"
+                  onClick={() => handleConnect(profile.profileId)}
+                  disabled={busy || runtime.activeProfileId !== null}
+                >
+                  {busyAction === "connect" ? <RefreshCw className="animate-spin" /> : <Link />}
+                  Conectar
+                </Button>
+              </div>
+            ))
+          )}
         </section>
       </div>
     </main>

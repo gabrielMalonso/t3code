@@ -200,12 +200,16 @@ export function startServerStateSync(client: ServerStateClient): () => void {
 }
 
 export function resetServerState() {
-  resetAppAtomRegistryForTests();
+  appAtomRegistry.set(welcomeAtom, null);
+  appAtomRegistry.set(serverConfigAtom, null);
+  appAtomRegistry.set(serverConfigUpdatedAtom, null);
+  appAtomRegistry.set(providersUpdatedAtom, null);
   nextServerConfigUpdatedNotificationId = 1;
 }
 
 export function resetServerStateForTests() {
-  resetServerState();
+  resetAppAtomRegistryForTests();
+  nextServerConfigUpdatedNotificationId = 1;
 }
 
 let nextServerConfigUpdatedNotificationId = 1;
