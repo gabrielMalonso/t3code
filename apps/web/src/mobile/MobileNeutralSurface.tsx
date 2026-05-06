@@ -658,12 +658,12 @@ export function MobileNeutralSurface() {
                     {showTailscaleHost ? (
                       <PairingFieldGroup
                         label="Endereco Tailscale"
-                        description="Obrigatorio para nao salvar uma rota LAN como Tailscale."
+                        description="Digite o IP 100.x ou nome .ts.net. Se faltar porta, usamos a porta do link colado."
                       >
                         <Input
                           value={host}
                           onChange={(event) => setHost(event.target.value)}
-                          placeholder="100.x.y.z:3774 ou macbook.ts.net:3774"
+                          placeholder="100.x.y.z ou macbook.ts.net"
                           disabled={busy}
                           inputMode="url"
                         />
@@ -673,12 +673,12 @@ export function MobileNeutralSurface() {
                 ) : showTailscaleHost ? (
                   <PairingFieldGroup
                     label="Endereco Tailscale"
-                    description="Informe o endereco que este celular deve usar."
+                    description="Digite o IP 100.x ou nome .ts.net. Se faltar porta, usamos a porta do link colado."
                   >
                     <Input
                       value={host}
                       onChange={(event) => setHost(event.target.value)}
-                      placeholder="100.x.y.z:3774 ou macbook.ts.net:3774"
+                      placeholder="100.x.y.z ou macbook.ts.net"
                       disabled={busy}
                       inputMode="url"
                     />
