@@ -1,6 +1,7 @@
 import {
   ChevronDown,
   Clipboard,
+  Globe2,
   Link,
   LoaderCircle,
   PlugZap,
@@ -37,6 +38,7 @@ import { resolveMobilePairingTarget, type MobileConnectionMode } from "./pairing
 
 type BusyAction = "pair" | "connect" | "close" | "scan" | null;
 type PairingPanel = "code" | "paste" | null;
+type NeutralTab = "profiles" | "pair";
 
 function modeLabel(mode: MobileConnectionMode): string {
   return mode === "tailscale" ? "Tailscale" : "LAN";
@@ -84,6 +86,44 @@ function PairingModeSelector(props: {
   );
 }
 
+function NeutralTabSelector(props: {
+  readonly tab: NeutralTab;
+  readonly hasProfiles: boolean;
+  readonly busy: boolean;
+  readonly onTabChange: (tab: NeutralTab) => void;
+}) {
+  return (
+    <div className="relative grid grid-cols-2 gap-2 overflow-hidden rounded-full bg-muted p-1">
+      <span
+        aria-hidden="true"
+        className={`absolute bottom-1 top-1 w-[calc(50%-0.375rem)] rounded-full bg-primary shadow-sm transition-transform duration-300 ease-out motion-reduce:transition-none ${
+          props.tab === "pair" ? "translate-x-[calc(100%+0.5rem)]" : "translate-x-0"
+        } left-1`}
+      />
+      <button
+        type="button"
+        className={`relative z-10 h-9 rounded-full px-3 text-sm font-medium transition-colors duration-200 motion-reduce:transition-none ${
+          props.tab === "profiles" ? "text-primary-foreground" : "text-muted-foreground"
+        }`}
+        onClick={() => props.onTabChange("profiles")}
+        disabled={props.busy || !props.hasProfiles}
+      >
+        Conexoes
+      </button>
+      <button
+        type="button"
+        className={`relative z-10 h-9 rounded-full px-3 text-sm font-medium transition-colors duration-200 motion-reduce:transition-none ${
+          props.tab === "pair" ? "text-primary-foreground" : "text-muted-foreground"
+        }`}
+        onClick={() => props.onTabChange("pair")}
+        disabled={props.busy}
+      >
+        Novo pareamento
+      </button>
+    </div>
+  );
+}
+
 async function scanQrCode(): Promise<string> {
   const module = (await import("@capacitor/barcode-scanner")) as unknown as {
     CapacitorBarcodeScanner?: {
@@ -114,10 +154,19 @@ export function MobileNeutralSurface() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [selectedTab, setSelectedTab] = useState<NeutralTab>("pair");
 
   useEffect(() => {
     void profileStore.hydrate();
   }, [profileStore]);
+
+  const savedProfiles = profileStore.profiles;
+
+  useEffect(() => {
+    if (profileStore.hydrated && savedProfiles.length > 0) {
+      setSelectedTab("profiles");
+    }
+  }, [profileStore.hydrated, savedProfiles.length]);
 
   async function pairWithInput(input: {
     readonly pairingInput: string;
@@ -158,6 +207,7 @@ export function MobileNeutralSurface() {
       await activateMobileProfile(profile.profileId);
       setPairingPanel(null);
       setAdvancedOpen(false);
+      setSelectedTab("profiles");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -240,7 +290,6 @@ export function MobileNeutralSurface() {
   }
 
   const busy = busyAction !== null;
-  const savedProfiles = profileStore.profiles;
   const currentStatus =
     busyAction === "scan"
       ? "Abrindo scanner"
@@ -295,52 +344,135 @@ export function MobileNeutralSurface() {
 
           <div>
             <h2 className="text-3xl font-semibold tracking-tight">
-              {busy ? "Conectando..." : "Conecte este celular"}
+              {busy
+                ? "Conectando..."
+                : savedProfiles.length > 0
+                  ? "Escolha uma conexao"
+                  : "Conecte este celular"}
             </h2>
             <p className="mx-auto mt-2 max-w-xs text-base leading-relaxed text-muted-foreground">
-              Escaneie o QR do desktop ou cole a URL de pareamento para abrir seus projetos aqui.
+              {savedProfiles.length > 0
+                ? "Use LAN quando estiver na mesma rede, ou Tailscale quando estiver fora dela."
+                : "Escaneie o QR do desktop ou cole a URL de pareamento para abrir seus projetos aqui."}
             </p>
           </div>
 
-          <button
-            type="button"
-            className="group grid aspect-square w-full max-w-56 place-items-center rounded-[2rem] border border-border bg-card/70 p-7 text-muted-foreground shadow-sm transition-colors hover:border-primary/60 hover:text-foreground disabled:opacity-60"
-            onClick={handleScan}
-            disabled={busy}
-            aria-label="Escanear QR Code"
-          >
-            <div className="grid size-full place-items-center rounded-2xl border border-border/80 bg-background/45 transition-colors group-hover:border-primary/50">
-              <QrCode className="size-16" />
-            </div>
-          </button>
-
-          <div className="grid w-full gap-2 pb-4">
-            <Button className="h-14 rounded-full text-base" onClick={handleScan} disabled={busy}>
-              <QrCode className="size-5" />
-              Escanear QR Code
-            </Button>
-            <Button
-              className="h-14 rounded-full text-base"
-              variant="outline"
-              onClick={() => {
-                setPairingPanel("code");
-                setErrorMessage(null);
-              }}
-              disabled={busy}
-            >
-              <PlugZap className="size-5" />
-              Parear com codigo
-            </Button>
-            <Button
-              className="h-11 rounded-full text-sm text-muted-foreground"
-              variant="ghost"
-              onClick={handlePastePairingInput}
-              disabled={busy}
-            >
-              <Clipboard className="size-4" />
-              Colar URL/token
-            </Button>
+          <div className="w-full">
+            <NeutralTabSelector
+              tab={selectedTab}
+              hasProfiles={savedProfiles.length > 0}
+              busy={busy}
+              onTabChange={setSelectedTab}
+            />
           </div>
+
+          {selectedTab === "profiles" && savedProfiles.length > 0 ? (
+            <section className="grid w-full gap-3 text-left">
+              {savedProfiles.map((profile) => {
+                const isActive = runtime.activeProfileId === profile.profileId;
+                const isConnecting =
+                  busyAction === "connect" && isActive && runtime.status === "connecting";
+                return (
+                  <div
+                    key={profile.profileId}
+                    className={`grid gap-3 rounded-2xl border bg-card p-4 shadow-sm ${
+                      isActive ? "border-primary/50" : "border-border"
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="grid size-10 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground">
+                        {profile.mode === "tailscale" ? (
+                          <Globe2 className="size-5" />
+                        ) : (
+                          <Link className="size-5" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-sm font-semibold">{profile.label}</p>
+                          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                            {modeLabel(profile.mode)}
+                          </span>
+                        </div>
+                        <p className="mt-1 truncate text-xs text-muted-foreground">
+                          {profile.httpBaseUrl}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      className="h-11 rounded-full"
+                      onClick={() => handleConnect(profile.profileId)}
+                      disabled={busy || (runtime.activeProfileId !== null && !isActive)}
+                    >
+                      {busyAction === "connect" && !isActive ? (
+                        <RefreshCw className="animate-spin" />
+                      ) : isConnecting ? (
+                        <RefreshCw className="animate-spin" />
+                      ) : (
+                        <PlugZap />
+                      )}
+                      {isConnecting ? "Conectando" : isActive ? "Conectado" : "Conectar"}
+                    </Button>
+                  </div>
+                );
+              })}
+              <Button
+                className="h-11 rounded-full"
+                variant="outline"
+                onClick={() => setSelectedTab("pair")}
+                disabled={busy}
+              >
+                <QrCode className="size-4" />
+                Adicionar outra conexao
+              </Button>
+            </section>
+          ) : (
+            <div className="grid w-full gap-4">
+              <button
+                type="button"
+                className="group mx-auto grid aspect-square w-full max-w-56 place-items-center rounded-[2rem] border border-border bg-card/70 p-7 text-muted-foreground shadow-sm transition-colors hover:border-primary/60 hover:text-foreground disabled:opacity-60"
+                onClick={handleScan}
+                disabled={busy}
+                aria-label="Escanear QR Code"
+              >
+                <div className="grid size-full place-items-center rounded-2xl border border-border/80 bg-background/45 transition-colors group-hover:border-primary/50">
+                  <QrCode className="size-16" />
+                </div>
+              </button>
+
+              <div className="grid w-full gap-2 pb-4">
+                <Button
+                  className="h-14 rounded-full text-base"
+                  onClick={handleScan}
+                  disabled={busy}
+                >
+                  <QrCode className="size-5" />
+                  Escanear QR Code
+                </Button>
+                <Button
+                  className="h-14 rounded-full text-base"
+                  variant="outline"
+                  onClick={() => {
+                    setPairingPanel("code");
+                    setErrorMessage(null);
+                  }}
+                  disabled={busy}
+                >
+                  <PlugZap className="size-5" />
+                  Parear com codigo
+                </Button>
+                <Button
+                  className="h-11 rounded-full text-sm text-muted-foreground"
+                  variant="ghost"
+                  onClick={handlePastePairingInput}
+                  disabled={busy}
+                >
+                  <Clipboard className="size-4" />
+                  Colar URL/token
+                </Button>
+              </div>
+            </div>
+          )}
         </section>
 
         <Dialog open={pairingPanel !== null} onOpenChange={closePairingPanel}>
@@ -472,39 +604,41 @@ export function MobileNeutralSurface() {
           </div>
         ) : null}
 
-        <section className="grid gap-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-muted-foreground">Profiles salvos</h2>
-            <span className="text-xs text-muted-foreground">{savedProfiles.length} profiles</span>
-          </div>
-          {savedProfiles.length === 0 ? (
-            <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
-              Nenhum profile salvo ainda.
+        {selectedTab === "pair" ? (
+          <section className="grid gap-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-muted-foreground">Profiles salvos</h2>
+              <span className="text-xs text-muted-foreground">{savedProfiles.length} profiles</span>
             </div>
-          ) : (
-            savedProfiles.map((profile) => (
-              <div
-                key={profile.profileId}
-                className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card p-3"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{profile.label}</p>
-                  <p className="truncate text-xs text-muted-foreground">{profile.httpBaseUrl}</p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="shrink-0 rounded-full"
-                  onClick={() => handleConnect(profile.profileId)}
-                  disabled={busy || runtime.activeProfileId !== null}
-                >
-                  {busyAction === "connect" ? <RefreshCw className="animate-spin" /> : <Link />}
-                  Conectar
-                </Button>
+            {savedProfiles.length === 0 ? (
+              <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
+                Nenhum profile salvo ainda.
               </div>
-            ))
-          )}
-        </section>
+            ) : (
+              savedProfiles.map((profile) => (
+                <div
+                  key={profile.profileId}
+                  className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card p-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{profile.label}</p>
+                    <p className="truncate text-xs text-muted-foreground">{profile.httpBaseUrl}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0 rounded-full"
+                    onClick={() => handleConnect(profile.profileId)}
+                    disabled={busy || runtime.activeProfileId !== null}
+                  >
+                    {busyAction === "connect" ? <RefreshCw className="animate-spin" /> : <Link />}
+                    Conectar
+                  </Button>
+                </div>
+              ))
+            )}
+          </section>
+        ) : null}
       </div>
     </main>
   );
