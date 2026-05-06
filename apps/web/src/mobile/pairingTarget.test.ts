@@ -39,6 +39,20 @@ describe("resolveMobilePairingTarget", () => {
       }),
     ).toThrow("Informe o host do backend.");
   });
+
+  it("uses an explicit host while extracting the credential from a pairing url", () => {
+    expect(
+      resolveMobilePairingTarget({
+        pairingUrlOrToken: "http://192.168.15.12:3774/pair#token=EJTVFWLYUVKM",
+        host: "100.101.102.103:3774",
+      }),
+    ).toEqual({
+      credential: "EJTVFWLYUVKM",
+      suggestedHttpBaseUrl: "http://192.168.15.12:3774/",
+      httpBaseUrl: "http://100.101.102.103:3774/",
+      wsBaseUrl: "ws://100.101.102.103:3774/",
+    });
+  });
 });
 
 describe("inferMobileConnectionModeFromPairingInput", () => {

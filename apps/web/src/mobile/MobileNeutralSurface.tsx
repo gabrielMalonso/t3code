@@ -135,6 +135,23 @@ async function scanQrCode(): Promise<string> {
   return result.ScanResult ?? "";
 }
 
+async function readClipboardText(): Promise<string> {
+  try {
+    const module = (await import("@capacitor/clipboard")) as unknown as {
+      Clipboard?: {
+        read: () => Promise<{ value?: string }>;
+      };
+    };
+    const value = await module.Clipboard?.read();
+    if (value?.value) {
+      return value.value;
+    }
+  } catch {
+    // Web fallback below.
+  }
+  return (await navigator.clipboard?.readText?.()) ?? "";
+}
+
 export function MobileNeutralSurface() {
   const profileStore = useMobileProfileStore();
   const runtime = useMobileRuntimeStore();
@@ -298,23 +315,22 @@ export function MobileNeutralSurface() {
 
   function applyPairingInput(value: string) {
     setPairingInput(value);
-    const inferredMode = inferMobileConnectionModeFromPairingInput(value);
-    if (inferredMode) {
-      setMode(inferredMode);
-      setHost("");
-    }
   }
 
   async function handlePastePairingLink() {
     setErrorMessage(null);
     try {
-      const clipboardText = await navigator.clipboard?.readText?.();
+      const clipboardText = await readClipboardText();
       const trimmed = clipboardText?.trim() ?? "";
       if (trimmed) {
         applyPairingInput(trimmed);
+      } else {
+        setErrorMessage("A area de transferencia esta vazia.");
       }
-    } catch {
-      // Clipboard permissions vary in WebViews. Keeping the input open is the useful fallback.
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Nao foi possivel ler a area de transferencia.",
+      );
     }
   }
 
@@ -667,6 +683,12 @@ export function MobileNeutralSurface() {
                       inputMode="url"
                     />
                   </PairingFieldGroup>
+                ) : null}
+
+                {errorMessage ? (
+                  <div className="rounded-xl border border-destructive/30 bg-destructive/8 px-3 py-2 text-left text-sm leading-5 text-destructive">
+                    {errorMessage}
+                  </div>
                 ) : null}
               </form>
             </DialogPanel>
