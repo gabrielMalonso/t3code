@@ -67,7 +67,7 @@ export const useMobileRuntimeStore = create<MobileRuntimeState>((set) => ({
 function assertSessionFresh(profile: MobileConnectionProfile): void {
   const expiresAtMs = Date.parse(profile.sessionExpiresAt);
   if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
-    throw new Error("Sessao expirada. Pareie este profile de novo.");
+    throw new Error("Session expired. Pair this profile again.");
   }
 }
 
@@ -83,12 +83,12 @@ export function getActiveMobileProfile(): MobileConnectionProfile | null {
 export async function activateMobileProfile(profileId: string): Promise<void> {
   const runtime = useMobileRuntimeStore.getState();
   if (runtime.activeProfileId && runtime.activeProfileId !== profileId) {
-    throw new Error("Feche o environment atual antes de ativar outro.");
+    throw new Error("Close the current environment before activating another one.");
   }
 
   const profile = getMobileProfile(profileId);
   if (!profile) {
-    throw new Error("Profile mobile nao encontrado.");
+    throw new Error("Mobile profile not found.");
   }
 
   assertSessionFresh(profile);
@@ -99,7 +99,7 @@ export async function activateMobileProfile(profileId: string): Promise<void> {
       bearerToken: profile.bearerToken,
     });
     if (!sessionState.authenticated) {
-      throw new Error("Sessao invalida. Pareie este profile de novo.");
+      throw new Error("Invalid session. Pair this profile again.");
     }
 
     const connection = await activateMobileEnvironmentConnection({
@@ -139,7 +139,7 @@ export async function closeActiveMobileProfile(): Promise<void> {
 export async function reconnectActiveMobileProfile(): Promise<void> {
   const profile = getActiveMobileProfile();
   if (!profile) {
-    throw new Error("Nenhum profile ativo.");
+    throw new Error("No active profile.");
   }
   assertSessionFresh(profile);
   const connection = readEnvironmentConnection(profile.environmentId);
