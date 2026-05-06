@@ -1,4 +1,4 @@
-package com.getcapacitor.myapp;
+package tools.t3code.mobile;
 
 import static org.junit.Assert.*;
 
