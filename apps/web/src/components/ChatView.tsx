@@ -169,6 +169,7 @@ import type { ComposerFileReference } from "../t3code-custom/file-references";
 import { useComposerSendExtension } from "../t3code-custom/hooks";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useComposerHandleContext } from "../composerHandleContext";
+import { isMobileCapacitorRuntime } from "../mobile/platform";
 import {
   useServerAvailableEditors,
   useServerConfig,
@@ -1591,6 +1592,7 @@ export default function ChatView(props: ChatViewProps) {
   );
 
   const focusComposer = useCallback(() => {
+    if (isMobileCapacitorRuntime()) return;
     composerRef.current?.focusAtEnd();
   }, []);
   const scheduleComposerFocus = useCallback(() => {
