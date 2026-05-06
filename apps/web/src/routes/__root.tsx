@@ -1,4 +1,8 @@
-import { type EnvironmentId, type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  type ExecutionEnvironmentDescriptor,
+  type ServerLifecycleWelcomePayload,
+} from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime";
 import {
   Outlet,
@@ -57,7 +61,7 @@ import {
 } from "../environments/primary";
 import { MobileNeutralSurface } from "../mobile/MobileNeutralSurface";
 import { isMobileCapacitorRuntime } from "../mobile/platform";
-import { useMobileRuntimeStore } from "../mobile/runtime";
+import { reconnectActiveMobileProfile, useMobileRuntimeStore } from "../mobile/runtime";
 
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
@@ -150,8 +154,8 @@ function MobileRootRouteView() {
       <AnchoredToastProvider>
         <AuthenticatedTracingBootstrap />
         <ServerStateBootstrap environmentId={activeEnvironmentId} />
-        <EventRouter />
-        <WebSocketConnectionCoordinator />
+        <EventRouter syncPrimaryDescriptor={false} />
+        <WebSocketConnectionCoordinator reconnect={reconnectActiveMobileProfile} />
         <SlowRpcAckToastCoordinator />
         <WebSocketConnectionSurface>
           <CommandPalette>
@@ -268,7 +272,8 @@ function EnvironmentConnectionManagerBootstrap() {
   return null;
 }
 
-function EventRouter() {
+function EventRouter(input: { readonly syncPrimaryDescriptor?: boolean }) {
+  const syncPrimaryDescriptor = input.syncPrimaryDescriptor ?? true;
   const setActiveEnvironmentId = useStore((store) => store.setActiveEnvironmentId);
   const navigate = useNavigate();
   const pathname = useLocation({ select: (loc) => loc.pathname });
@@ -282,11 +287,17 @@ function EventRouter() {
   const disposedRef = useRef(false);
   const serverConfig = useServerConfig();
 
+  const routeEnvironment = useEffectEvent((environment: ExecutionEnvironmentDescriptor) => {
+    if (syncPrimaryDescriptor) {
+      updatePrimaryEnvironmentDescriptor(environment);
+    }
+    setActiveEnvironmentId(environment.environmentId);
+  });
+
   const handleWelcome = useEffectEvent((payload: ServerLifecycleWelcomePayload | null) => {
     if (!payload) return;
 
-    updatePrimaryEnvironmentDescriptor(payload.environment);
-    setActiveEnvironmentId(payload.environment.environmentId);
+    routeEnvironment(payload.environment);
     void (async () => {
       await ensureEnvironmentConnectionBootstrapped(payload.environment.environmentId);
       if (disposedRef.current) {
@@ -397,9 +408,8 @@ function EventRouter() {
       return;
     }
 
-    updatePrimaryEnvironmentDescriptor(serverConfig.environment);
-    setActiveEnvironmentId(serverConfig.environment.environmentId);
-  }, [serverConfig, setActiveEnvironmentId]);
+    routeEnvironment(serverConfig.environment);
+  }, [serverConfig]);
 
   useEffect(() => {
     disposedRef.current = false;
