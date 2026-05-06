@@ -355,7 +355,7 @@ export function MobileNeutralSurface() {
                     onChange={(event) => setPairingInput(event.target.value)}
                     placeholder={inputPlaceholder}
                     disabled={busy}
-                    className="h-13 text-center font-mono text-lg tracking-[0.2em]"
+                    className="h-13 text-center font-mono text-base"
                   />
                 ) : (
                   <Textarea
@@ -432,6 +432,7 @@ export function MobileNeutralSurface() {
 
             <DialogFooter>
               <Button
+                className="h-11 rounded-full"
                 variant="outline"
                 onClick={() => closePairingPanel(false)}
                 disabled={busyAction === "pair"}
