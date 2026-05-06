@@ -59,6 +59,10 @@ function isPairingUrl(value: string): boolean {
   return trimmed.includes("://") || trimmed.startsWith("/");
 }
 
+function requiresTailscaleHost(input: { readonly mode: MobileConnectionMode }): boolean {
+  return input.mode === "tailscale";
+}
+
 function PairingModeSelector(props: {
   readonly mode: MobileConnectionMode;
   readonly busy: boolean;
@@ -179,9 +183,23 @@ export function MobileNeutralSurface() {
     setBusyAction("pair");
     setErrorMessage(null);
     try {
+      const pairingInputValue = input.pairingInput.trim();
+      const hostValue = input.host.trim();
+      if (input.mode === "lan" && !isPairingUrl(pairingInputValue)) {
+        throw new Error("Para LAN, cole o link completo de pareamento.");
+      }
+      if (
+        requiresTailscaleHost({
+          mode: input.mode,
+        }) &&
+        !hostValue
+      ) {
+        throw new Error("Informe o IP 100.x ou endereco .ts.net do desktop no Tailscale.");
+      }
+
       const target = resolveMobilePairingTarget({
-        pairingUrlOrToken: input.pairingInput,
-        host: input.host,
+        pairingUrlOrToken: pairingInputValue,
+        host: input.mode === "lan" ? "" : hostValue,
       });
       const descriptor = await fetchRemoteEnvironmentDescriptor({
         httpBaseUrl: target.httpBaseUrl,
@@ -255,15 +273,22 @@ export function MobileNeutralSurface() {
     }
   }
 
-  async function handlePastePairingInput() {
-    setPairingPanel("paste");
+  function applyPairingInput(value: string) {
+    setPairingInput(value);
+    const inferredMode = inferMobileConnectionModeFromPairingInput(value);
+    if (inferredMode) {
+      setMode(inferredMode);
+      setHost("");
+    }
+  }
+
+  async function handlePastePairingLink() {
     setErrorMessage(null);
     try {
       const clipboardText = await navigator.clipboard?.readText?.();
       const trimmed = clipboardText?.trim() ?? "";
       if (trimmed) {
-        setPairingInput(trimmed);
-        setMode(inferMobileConnectionModeFromPairingInput(trimmed) ?? mode);
+        applyPairingInput(trimmed);
       }
     } catch {
       // Clipboard permissions vary in WebViews. Keeping the input open is the useful fallback.
@@ -315,6 +340,9 @@ export function MobileNeutralSurface() {
   }
 
   const busy = busyAction !== null;
+  const pairingInputIsUrl = pairingInput.trim() ? isPairingUrl(pairingInput) : false;
+  const mustFillTailscaleHost = requiresTailscaleHost({ mode });
+  const showTailscaleHost = mode === "tailscale";
   const hasSavedProfiles = savedProfiles.length > 0;
   const showingConnections = neutralView === "connections" && hasSavedProfiles;
   const currentStatus =
@@ -340,8 +368,8 @@ export function MobileNeutralSurface() {
   const heroDescription = showingConnections
     ? "Use LAN quando estiver na mesma rede, ou Tailscale quando estiver fora dela."
     : hasSavedProfiles
-      ? "Escaneie outro QR ou cole uma URL para salvar mais uma rota de acesso neste celular."
-      : "Escaneie o QR do desktop ou cole a URL de pareamento para abrir seus projetos aqui.";
+      ? "Escaneie outro QR ou use um codigo para salvar mais uma rota de acesso neste celular."
+      : "Escaneie o QR do desktop ou use o codigo de pareamento para abrir seus projetos aqui.";
 
   return (
     <main className="h-dvh overflow-x-hidden overflow-y-auto overscroll-y-contain bg-background text-foreground">
@@ -496,15 +524,6 @@ export function MobileNeutralSurface() {
                   <PlugZap className="size-5" />
                   Parear com codigo
                 </Button>
-                <Button
-                  className="h-11 rounded-full text-sm text-muted-foreground"
-                  variant="ghost"
-                  onClick={handlePastePairingInput}
-                  disabled={busy}
-                >
-                  <Clipboard className="size-4" />
-                  Colar URL/token
-                </Button>
                 {hasSavedProfiles ? (
                   <Button
                     className="h-11 rounded-full text-sm"
@@ -522,67 +541,95 @@ export function MobileNeutralSurface() {
         </section>
 
         <Dialog open={pairingPanel !== null} onOpenChange={closePairingPanel}>
-          <DialogPopup className="w-[calc(100vw-2rem)] max-w-md overflow-hidden data-ending-style:translate-y-8 data-starting-style:translate-y-10 max-sm:w-full max-sm:data-ending-style:translate-y-full max-sm:data-starting-style:translate-y-full">
+          <DialogPopup className="w-[calc(100vw-2rem)] max-w-md overflow-hidden data-ending-style:translate-y-8 data-starting-style:translate-y-10 max-sm:min-h-[72dvh] max-sm:w-full max-sm:data-ending-style:translate-y-full max-sm:data-starting-style:translate-y-full">
             <DialogHeader>
               <DialogTitle>{inputLabel}</DialogTitle>
               <DialogDescription>
                 {pairingPanel === "code"
-                  ? "Digite o codigo mostrado no desktop e confirme o host desta conexao."
+                  ? "Na LAN, cole o link completo. No Tailscale, cole o link ou codigo e informe o endereco Tailscale."
                   : "Escolha como voce quer reconhecer esta conexao no celular."}
               </DialogDescription>
             </DialogHeader>
 
             <DialogPanel className="min-w-0 overflow-hidden">
               <form
-                className="grid min-w-0 gap-4"
+                className="grid min-w-0 gap-5"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void handlePair();
                 }}
               >
+                <Input
+                  autoFocus
+                  value={label}
+                  onChange={(event) => setLabel(event.target.value)}
+                  placeholder="Nome opcional da conexao"
+                  disabled={busy}
+                />
+
                 <PairingModeSelector mode={mode} busy={busy} onModeChange={setMode} />
 
                 {pairingPanel === "code" ? (
-                  <Input
-                    autoFocus
-                    autoCapitalize="characters"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    value={pairingInput}
-                    onChange={(event) => setPairingInput(event.target.value)}
-                    placeholder="Cole o codigo mostrado no desktop"
-                    disabled={busy}
-                    className="h-13 text-center font-mono text-base"
-                  />
-                ) : (
-                  <Input
-                    autoFocus
-                    value={label}
-                    onChange={(event) => setLabel(event.target.value)}
-                    placeholder="Nome da conexao"
-                    disabled={busy}
-                  />
-                )}
+                  <div className="grid gap-2">
+                    <Input
+                      autoCapitalize="characters"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      value={pairingInput}
+                      onChange={(event) => applyPairingInput(event.target.value)}
+                      placeholder={
+                        mode === "lan" ? "Link completo de pareamento" : "Link ou codigo"
+                      }
+                      disabled={busy}
+                      className="h-13 text-center font-mono text-base"
+                    />
+                    <Button
+                      type="button"
+                      className="h-9 justify-start rounded-full px-3 text-xs text-muted-foreground"
+                      variant="ghost"
+                      onClick={handlePastePairingLink}
+                      disabled={busy}
+                    >
+                      <Clipboard className="size-3.5" />
+                      Colar link completo
+                    </Button>
+                    <p className="px-1 text-xs leading-5 text-muted-foreground">
+                      {mode === "lan"
+                        ? "Na LAN, use o link completo copiado no desktop."
+                        : "O link fornece o token; o endereco Tailscale fica no campo abaixo."}
+                    </p>
+                  </div>
+                ) : null}
 
                 {pairingPanel === "code" ? (
                   <div className="grid gap-3">
+                    {showTailscaleHost ? (
+                      <>
+                        <Input
+                          value={host}
+                          onChange={(event) => setHost(event.target.value)}
+                          placeholder="100.x.y.z:3774 ou macbook.ts.net:3774"
+                          disabled={busy}
+                          inputMode="url"
+                        />
+                        <p className="px-1 text-xs leading-5 text-muted-foreground">
+                          Obrigatorio quando voce quer salvar esta conexao como Tailscale.
+                        </p>
+                      </>
+                    ) : null}
+                  </div>
+                ) : showTailscaleHost ? (
+                  <div className="grid gap-2">
                     <Input
                       value={host}
                       onChange={(event) => setHost(event.target.value)}
-                      placeholder={
-                        mode === "tailscale"
-                          ? "100.x.y.z:3774 ou macbook.ts.net:3774"
-                          : "192.168.15.12:3774"
-                      }
+                      placeholder="100.x.y.z:3774 ou macbook.ts.net:3774"
                       disabled={busy}
                       inputMode="url"
                     />
-                    <Input
-                      value={label}
-                      onChange={(event) => setLabel(event.target.value)}
-                      placeholder="Nome opcional do profile"
-                      disabled={busy}
-                    />
+                    <p className="px-1 text-xs leading-5 text-muted-foreground">
+                      Informe o endereco Tailscale que este celular deve usar.
+                    </p>
                   </div>
                 ) : null}
               </form>
@@ -597,7 +644,16 @@ export function MobileNeutralSurface() {
               >
                 Cancelar
               </Button>
-              <Button className="h-11 rounded-full" onClick={handlePair} disabled={busy}>
+              <Button
+                className="h-11 rounded-full"
+                onClick={handlePair}
+                disabled={
+                  busy ||
+                  (pairingPanel === "code" && !pairingInput.trim()) ||
+                  (pairingPanel === "code" && mode === "lan" && !pairingInputIsUrl) ||
+                  (mustFillTailscaleHost && !host.trim())
+                }
+              >
                 {busyAction === "pair" ? <LoaderCircle className="animate-spin" /> : <PlugZap />}
                 Parear agora
               </Button>
