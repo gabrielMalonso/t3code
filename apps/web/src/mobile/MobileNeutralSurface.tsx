@@ -49,6 +49,11 @@ function defaultProfileLabel(input: {
   return `${input.backendLabel} (${modeLabel(input.mode)})`;
 }
 
+function isPairingUrl(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.includes("://") || trimmed.startsWith("/");
+}
+
 function PairingModeSelector(props: {
   readonly mode: MobileConnectionMode;
   readonly busy: boolean;
@@ -114,13 +119,17 @@ export function MobileNeutralSurface() {
     void profileStore.hydrate();
   }, [profileStore]);
 
-  async function handlePair() {
+  async function pairWithInput(input: {
+    readonly pairingInput: string;
+    readonly host: string;
+    readonly mode: MobileConnectionMode;
+  }) {
     setBusyAction("pair");
     setErrorMessage(null);
     try {
       const target = resolveMobilePairingTarget({
-        pairingUrlOrToken: pairingInput,
-        host,
+        pairingUrlOrToken: input.pairingInput,
+        host: input.host,
       });
       const descriptor = await fetchRemoteEnvironmentDescriptor({
         httpBaseUrl: target.httpBaseUrl,
@@ -130,10 +139,11 @@ export function MobileNeutralSurface() {
         credential: target.credential,
       });
       const profile: MobileConnectionProfile = {
-        profileId: createMobileProfileId(mode),
+        profileId: createMobileProfileId(input.mode),
         environmentId: descriptor.environmentId,
-        label: label.trim() || defaultProfileLabel({ backendLabel: descriptor.label, mode }),
-        mode,
+        label:
+          label.trim() || defaultProfileLabel({ backendLabel: descriptor.label, mode: input.mode }),
+        mode: input.mode,
         httpBaseUrl: target.httpBaseUrl,
         wsBaseUrl: target.wsBaseUrl,
         bearerToken: bearerSession.sessionToken,
@@ -155,6 +165,10 @@ export function MobileNeutralSurface() {
     }
   }
 
+  async function handlePair() {
+    await pairWithInput({ pairingInput, host, mode });
+  }
+
   function closePairingPanel(open: boolean) {
     if (open) {
       return;
@@ -168,14 +182,19 @@ export function MobileNeutralSurface() {
     setErrorMessage(null);
     try {
       const scanned = await scanQrCode();
-      if (scanned) {
-        setPairingInput(scanned);
-        const resolved = resolveMobilePairingTarget({
-          pairingUrlOrToken: scanned,
-          host,
-        });
-        setHost((current) => current || resolved.suggestedHttpBaseUrl || "");
+      const trimmed = scanned.trim();
+      if (!trimmed) {
+        return;
       }
+
+      setPairingInput(trimmed);
+      if (isPairingUrl(trimmed)) {
+        setBusyAction(null);
+        await pairWithInput({ pairingInput: trimmed, host: "", mode });
+        return;
+      }
+
+      setPairingPanel("code");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
     } finally {
