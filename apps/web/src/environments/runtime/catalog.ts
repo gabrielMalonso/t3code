@@ -9,6 +9,7 @@ import type {
 import { create } from "zustand";
 
 import { ensureLocalApi } from "../../localApi";
+import { getMobileProfileByEnvironmentId } from "../../mobile/profileStorage";
 import { getPrimaryKnownEnvironment } from "../primary";
 
 export interface SavedEnvironmentRecord {
@@ -186,7 +187,11 @@ export function getEnvironmentHttpBaseUrl(environmentId: EnvironmentId): string 
     return getKnownEnvironmentHttpBaseUrl(primaryEnvironment);
   }
 
-  return getSavedEnvironmentRecord(environmentId)?.httpBaseUrl ?? null;
+  return (
+    getSavedEnvironmentRecord(environmentId)?.httpBaseUrl ??
+    getMobileProfileByEnvironmentId(environmentId)?.httpBaseUrl ??
+    null
+  );
 }
 
 export function resolveEnvironmentHttpUrl(input: {

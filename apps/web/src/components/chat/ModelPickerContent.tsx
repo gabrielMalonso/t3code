@@ -23,6 +23,7 @@ import { cn } from "~/lib/utils";
 import { TooltipProvider } from "../ui/tooltip";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
+import { isMobileCapacitorRuntime } from "../../mobile/platform";
 
 type ModelPickerItem = {
   slug: string;
@@ -111,6 +112,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const { updateSettings } = useUpdateSettings();
 
   const focusSearchInput = useCallback(() => {
+    if (isMobileCapacitorRuntime()) return;
     searchInputRef.current?.focus({ preventScroll: true });
   }, []);
 

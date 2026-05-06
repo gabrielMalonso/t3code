@@ -149,6 +149,7 @@ vi.mock("../../environments/runtime", () => {
     resolveEnvironmentHttpUrl: (_environmentId: unknown, path: string) =>
       new URL(path, "http://localhost:3000").toString(),
     waitForSavedEnvironmentRegistryHydration: async () => undefined,
+    activateMobileEnvironmentConnection: vi.fn(),
     addSavedEnvironment: vi.fn(),
     disconnectSavedEnvironment: vi.fn(),
     ensureEnvironmentConnectionBootstrapped: async () => undefined,
@@ -157,6 +158,7 @@ vi.mock("../../environments/runtime", () => {
     reconnectSavedEnvironment: vi.fn(),
     removeSavedEnvironment: vi.fn(),
     requireEnvironmentConnection: () => primaryConnection,
+    resetRuntimeForClosedEnvironment: vi.fn(),
     resetEnvironmentServiceForTests: () => undefined,
     startEnvironmentConnectionService: () => undefined,
     subscribeEnvironmentConnections: () => () => {},

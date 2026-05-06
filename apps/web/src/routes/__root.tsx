@@ -1,4 +1,8 @@
-import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  type ExecutionEnvironmentDescriptor,
+  type ServerLifecycleWelcomePayload,
+} from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime";
 import {
   Outlet,
@@ -46,6 +50,7 @@ import { syncBrowserChromeTheme } from "../hooks/useTheme";
 import {
   ensureEnvironmentConnectionBootstrapped,
   getPrimaryEnvironmentConnection,
+  readEnvironmentConnection,
   startEnvironmentConnectionService,
 } from "../environments/runtime";
 import { configureClientTracing } from "../observability/clientTracing";
@@ -54,17 +59,28 @@ import {
   resolveInitialServerAuthGateState,
   updatePrimaryEnvironmentDescriptor,
 } from "../environments/primary";
+import { MobileNeutralSurface } from "../mobile/MobileNeutralSurface";
+import { isMobileCapacitorRuntime } from "../mobile/platform";
+import { reconnectActiveMobileProfile, useMobileRuntimeStore } from "../mobile/runtime";
 
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
 }>()({
   beforeLoad: async () => {
+    if (isMobileCapacitorRuntime()) {
+      return {
+        authGateState: { status: "authenticated" as const },
+        isMobileRuntime: true,
+      };
+    }
+
     const [, authGateState] = await Promise.all([
       ensurePrimaryEnvironmentReady(),
       resolveInitialServerAuthGateState(),
     ]);
     return {
       authGateState,
+      isMobileRuntime: false,
     };
   },
   component: RootRouteView,
@@ -76,7 +92,7 @@ export const Route = createRootRouteWithContext<{
 
 function RootRouteView() {
   const pathname = useLocation({ select: (location) => location.pathname });
-  const { authGateState } = Route.useRouteContext();
+  const { authGateState, isMobileRuntime } = Route.useRouteContext();
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -91,6 +107,10 @@ function RootRouteView() {
     return <Outlet />;
   }
 
+  if (isMobileRuntime) {
+    return <MobileRootRouteView />;
+  }
+
   if (authGateState.status !== "authenticated") {
     return <Outlet />;
   }
@@ -102,6 +122,40 @@ function RootRouteView() {
         <EnvironmentConnectionManagerBootstrap />
         <EventRouter />
         <WebSocketConnectionCoordinator />
+        <SlowRpcAckToastCoordinator />
+        <WebSocketConnectionSurface>
+          <CommandPalette>
+            <AppSidebarLayout>
+              <Outlet />
+            </AppSidebarLayout>
+          </CommandPalette>
+        </WebSocketConnectionSurface>
+      </AnchoredToastProvider>
+    </ToastProvider>
+  );
+}
+
+function MobileRootRouteView() {
+  const activeEnvironmentId = useMobileRuntimeStore((state) => state.activeEnvironmentId);
+  const status = useMobileRuntimeStore((state) => state.status);
+
+  if (!activeEnvironmentId || status !== "connected") {
+    return (
+      <ToastProvider>
+        <AnchoredToastProvider>
+          <MobileNeutralSurface />
+        </AnchoredToastProvider>
+      </ToastProvider>
+    );
+  }
+
+  return (
+    <ToastProvider>
+      <AnchoredToastProvider>
+        <AuthenticatedTracingBootstrap />
+        <ServerStateBootstrap environmentId={activeEnvironmentId} />
+        <EventRouter syncPrimaryDescriptor={false} />
+        <WebSocketConnectionCoordinator reconnect={reconnectActiveMobileProfile} />
         <SlowRpcAckToastCoordinator />
         <WebSocketConnectionSurface>
           <CommandPalette>
@@ -186,8 +240,16 @@ function errorDetails(error: unknown): string {
   }
 }
 
-function ServerStateBootstrap() {
-  useEffect(() => startServerStateSync(getPrimaryEnvironmentConnection().client.server), []);
+function ServerStateBootstrap(input: { readonly environmentId?: EnvironmentId }) {
+  useEffect(() => {
+    const connection = input.environmentId
+      ? readEnvironmentConnection(input.environmentId)
+      : getPrimaryEnvironmentConnection();
+    if (!connection) {
+      return;
+    }
+    return startServerStateSync(connection.client.server);
+  }, [input.environmentId]);
 
   return null;
 }
@@ -210,7 +272,8 @@ function EnvironmentConnectionManagerBootstrap() {
   return null;
 }
 
-function EventRouter() {
+function EventRouter(input: { readonly syncPrimaryDescriptor?: boolean }) {
+  const syncPrimaryDescriptor = input.syncPrimaryDescriptor ?? true;
   const setActiveEnvironmentId = useStore((store) => store.setActiveEnvironmentId);
   const navigate = useNavigate();
   const pathname = useLocation({ select: (loc) => loc.pathname });
@@ -224,11 +287,17 @@ function EventRouter() {
   const disposedRef = useRef(false);
   const serverConfig = useServerConfig();
 
+  const routeEnvironment = useEffectEvent((environment: ExecutionEnvironmentDescriptor) => {
+    if (syncPrimaryDescriptor) {
+      updatePrimaryEnvironmentDescriptor(environment);
+    }
+    setActiveEnvironmentId(environment.environmentId);
+  });
+
   const handleWelcome = useEffectEvent((payload: ServerLifecycleWelcomePayload | null) => {
     if (!payload) return;
 
-    updatePrimaryEnvironmentDescriptor(payload.environment);
-    setActiveEnvironmentId(payload.environment.environmentId);
+    routeEnvironment(payload.environment);
     void (async () => {
       await ensureEnvironmentConnectionBootstrapped(payload.environment.environmentId);
       if (disposedRef.current) {
@@ -339,9 +408,8 @@ function EventRouter() {
       return;
     }
 
-    updatePrimaryEnvironmentDescriptor(serverConfig.environment);
-    setActiveEnvironmentId(serverConfig.environment.environmentId);
-  }, [serverConfig, setActiveEnvironmentId]);
+    routeEnvironment(serverConfig.environment);
+  }, [serverConfig]);
 
   useEffect(() => {
     disposedRef.current = false;
