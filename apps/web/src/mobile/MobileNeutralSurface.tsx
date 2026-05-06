@@ -125,11 +125,11 @@ async function scanQrCode(): Promise<string> {
   };
   const scanner = module.CapacitorBarcodeScanner;
   if (!scanner) {
-    throw new Error("Scanner QR indisponivel neste ambiente.");
+    throw new Error("QR scanning is not available in this environment.");
   }
   const result = await scanner.scanBarcode({
     hint: module.CapacitorBarcodeScannerTypeHint?.QR_CODE ?? 17,
-    scanInstructions: "Aponte para o QR de pareamento do T3 Code.",
+    scanInstructions: "Point your camera at the T3 Code pairing QR.",
     scanButton: false,
   });
   return result.ScanResult ?? "";
@@ -226,7 +226,7 @@ export function MobileNeutralSurface() {
       const pairingInputValue = input.pairingInput.trim();
       const hostValue = input.host.trim();
       if (input.mode === "lan" && !isPairingUrl(pairingInputValue)) {
-        throw new Error("Para LAN, cole o link completo de pareamento.");
+        throw new Error("For LAN, paste the full pairing link.");
       }
       if (
         requiresTailscaleHost({
@@ -234,7 +234,7 @@ export function MobileNeutralSurface() {
         }) &&
         !hostValue
       ) {
-        throw new Error("Informe o IP 100.x ou endereco .ts.net do desktop no Tailscale.");
+        throw new Error("Enter the desktop's 100.x IP or .ts.net address.");
       }
 
       const target = resolveMobilePairingTarget({
@@ -325,11 +325,11 @@ export function MobileNeutralSurface() {
       if (trimmed) {
         applyPairingInput(trimmed);
       } else {
-        setErrorMessage("A area de transferencia esta vazia.");
+        setErrorMessage("Your clipboard is empty.");
       }
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Nao foi possivel ler a area de transferencia.",
+        error instanceof Error ? error.message : "Could not read from the clipboard.",
       );
     }
   }
@@ -386,38 +386,38 @@ export function MobileNeutralSurface() {
   const showingConnections = neutralView === "connections" && hasSavedProfiles;
   const currentStatus =
     busyAction === "scan"
-      ? "Abrindo scanner"
+      ? "Opening scanner"
       : busyAction === "pair"
-        ? "Pareando"
+        ? "Pairing"
         : busyAction === "connect"
-          ? "Conectando"
+          ? "Connecting"
           : busyAction === "remove"
-            ? "Removendo conexao"
+            ? "Removing connection"
             : showingConnections
-              ? "Conexoes salvas"
-              : "Pronto para parear";
-  const inputLabel = pairingPanel === "code" ? "Codigo de pareamento" : "Nova conexao";
+              ? "Saved connections"
+              : "Ready to pair";
+  const inputLabel = pairingPanel === "code" ? "Pair with code" : "New connection";
   const heroTitle = busy
-    ? "Conectando..."
+    ? "Connecting..."
     : showingConnections
-      ? "Escolha uma conexao"
+      ? "Choose a connection"
       : hasSavedProfiles
-        ? "Adicionar conexao"
-        : "Conecte este celular";
+        ? "Add a connection"
+        : "Connect this phone";
   const heroDescription = showingConnections
-    ? "Use LAN quando estiver na mesma rede, ou Tailscale quando estiver fora dela."
+    ? "Use LAN on the same network, or Tailscale when you are away."
     : hasSavedProfiles
-      ? "Escaneie outro QR ou use um codigo para salvar mais uma rota de acesso neste celular."
-      : "Escaneie o QR do desktop ou use o codigo de pareamento para abrir seus projetos aqui.";
+      ? "Scan another QR code or enter a pairing code to save another connection."
+      : "Scan the desktop QR code or enter a pairing code to open your projects here.";
 
   return (
     <main className="h-dvh overflow-x-hidden overflow-y-auto overscroll-y-contain bg-background text-foreground">
       <div className="mx-auto box-border flex min-h-dvh w-full max-w-md flex-col overflow-x-hidden px-5 pb-[max(2.5rem,calc(env(safe-area-inset-bottom)+2rem))] pt-[max(1.25rem,env(safe-area-inset-top))]">
         <header className="flex items-center gap-3">
           <div className="min-w-0">
-            <h1 className="truncate text-xl font-semibold tracking-tight">Pareamento</h1>
+            <h1 className="truncate text-xl font-semibold tracking-tight">Pairing</h1>
             <p className="truncate text-sm text-muted-foreground">
-              T3 Code mobile em {getMobilePlatformLabel()}
+              T3 Code mobile on {getMobilePlatformLabel()}
             </p>
           </div>
           {runtime.activeProfileId ? (
@@ -429,7 +429,7 @@ export function MobileNeutralSurface() {
               disabled={busy}
             >
               <Unplug />
-              Fechar
+              Close
             </Button>
           ) : null}
         </header>
@@ -503,12 +503,12 @@ export function MobileNeutralSurface() {
                         ) : (
                           <PlugZap />
                         )}
-                        {isConnecting ? "Conectando" : isActive ? "Conectado" : "Conectar"}
+                        {isConnecting ? "Connecting" : isActive ? "Connected" : "Connect"}
                       </Button>
                       <Button
                         className="h-11 w-11 rounded-full text-destructive hover:text-destructive"
                         variant="outline"
-                        aria-label={`Esquecer conexao ${profile.label}`}
+                        aria-label={`Forget connection ${profile.label}`}
                         onClick={() => setProfileToRemove(profile)}
                         disabled={busy}
                       >
@@ -525,7 +525,7 @@ export function MobileNeutralSurface() {
                 disabled={busy}
               >
                 <QrCode className="size-4" />
-                Adicionar nova conexao
+                Add new connection
               </Button>
             </section>
           ) : (
@@ -535,7 +535,7 @@ export function MobileNeutralSurface() {
                 className="group mx-auto grid aspect-square w-full max-w-56 place-items-center rounded-[2rem] border border-border bg-card/70 p-7 text-muted-foreground shadow-sm transition-colors hover:border-primary/60 hover:text-foreground disabled:opacity-60"
                 onClick={handleScan}
                 disabled={busy}
-                aria-label="Escanear QR Code"
+                aria-label="Scan QR code"
               >
                 <div className="grid size-full place-items-center rounded-2xl border border-border/80 bg-background/45 transition-colors group-hover:border-primary/50">
                   <QrCode className="size-16" />
@@ -549,7 +549,7 @@ export function MobileNeutralSurface() {
                   disabled={busy}
                 >
                   <QrCode className="size-5" />
-                  Escanear QR Code
+                  Scan QR code
                 </Button>
                 <Button
                   className="h-14 rounded-full text-base"
@@ -561,7 +561,7 @@ export function MobileNeutralSurface() {
                   disabled={busy}
                 >
                   <PlugZap className="size-5" />
-                  Parear com codigo
+                  Pair with code
                 </Button>
                 {hasSavedProfiles ? (
                   <Button
@@ -571,7 +571,7 @@ export function MobileNeutralSurface() {
                     disabled={busy}
                   >
                     <Link className="size-4" />
-                    Ver conexoes salvas
+                    View saved connections
                   </Button>
                 ) : null}
               </div>
@@ -585,8 +585,8 @@ export function MobileNeutralSurface() {
               <DialogTitle>{inputLabel}</DialogTitle>
               <DialogDescription>
                 {pairingPanel === "code"
-                  ? "Na LAN, cole o link completo. No Tailscale, cole o link ou codigo e informe o endereco Tailscale."
-                  : "Escolha como voce quer reconhecer esta conexao no celular."}
+                  ? "For LAN, paste the full link. For Tailscale, add its address below."
+                  : "Name this connection and choose how it should connect."}
               </DialogDescription>
             </DialogHeader>
 
@@ -598,20 +598,23 @@ export function MobileNeutralSurface() {
                   void handlePair();
                 }}
               >
-                <PairingFieldGroup label="Nome" description="Ajuda a reconhecer esta rota depois.">
+                <PairingFieldGroup
+                  label="Name"
+                  description="Helps you recognize this connection later."
+                >
                   <Input
                     autoFocus
                     value={label}
                     onChange={(event) => setLabel(event.target.value)}
-                    placeholder="Nome opcional da conexao"
+                    placeholder="Optional connection name"
                     disabled={busy}
                   />
                 </PairingFieldGroup>
 
                 <div className="grid gap-3">
                   <PairingFieldGroup
-                    label="Tipo de conexao"
-                    description="LAN usa o link local. Tailscale usa o token com outro endereco."
+                    label="Connection type"
+                    description="LAN uses the local link. Tailscale needs its own address."
                   >
                     <PairingModeSelector mode={mode} busy={busy} onModeChange={setMode} />
                   </PairingFieldGroup>
@@ -619,11 +622,11 @@ export function MobileNeutralSurface() {
 
                 {pairingPanel === "code" ? (
                   <PairingFieldGroup
-                    label={mode === "lan" ? "Link local" : "Token ou link"}
+                    label={mode === "lan" ? "Local link" : "Token or link"}
                     description={
                       mode === "lan"
-                        ? "Cole o link completo copiado no desktop."
-                        : "O link fornece o token; o endereco Tailscale vem abaixo."
+                        ? "Paste the full link from the desktop."
+                        : "The link provides the token. Add the Tailscale address below."
                     }
                     action={
                       <Button
@@ -634,7 +637,7 @@ export function MobileNeutralSurface() {
                         disabled={busy}
                       >
                         <Clipboard className="size-3.5" />
-                        Colar link
+                        Paste link
                       </Button>
                     }
                   >
@@ -644,9 +647,7 @@ export function MobileNeutralSurface() {
                       spellCheck={false}
                       value={pairingInput}
                       onChange={(event) => applyPairingInput(event.target.value)}
-                      placeholder={
-                        mode === "lan" ? "Link completo de pareamento" : "Link ou codigo"
-                      }
+                      placeholder={mode === "lan" ? "Full pairing link" : "Link or code"}
                       disabled={busy}
                       className="h-13 text-center font-mono text-base"
                     />
@@ -657,13 +658,13 @@ export function MobileNeutralSurface() {
                   <>
                     {showTailscaleHost ? (
                       <PairingFieldGroup
-                        label="Endereco Tailscale"
-                        description="Digite o IP 100.x ou nome .ts.net. Se faltar porta, usamos a porta do link colado."
+                        label="Tailscale address"
+                        description="Enter a 100.x IP or .ts.net name. We'll reuse the port from the pasted link."
                       >
                         <Input
                           value={host}
                           onChange={(event) => setHost(event.target.value)}
-                          placeholder="100.x.y.z ou macbook.ts.net"
+                          placeholder="100.x.y.z or macbook.ts.net"
                           disabled={busy}
                           inputMode="url"
                         />
@@ -672,13 +673,13 @@ export function MobileNeutralSurface() {
                   </>
                 ) : showTailscaleHost ? (
                   <PairingFieldGroup
-                    label="Endereco Tailscale"
-                    description="Digite o IP 100.x ou nome .ts.net. Se faltar porta, usamos a porta do link colado."
+                    label="Tailscale address"
+                    description="Enter a 100.x IP or .ts.net name. We'll reuse the port from the pasted link."
                   >
                     <Input
                       value={host}
                       onChange={(event) => setHost(event.target.value)}
-                      placeholder="100.x.y.z ou macbook.ts.net"
+                      placeholder="100.x.y.z or macbook.ts.net"
                       disabled={busy}
                       inputMode="url"
                     />
@@ -700,7 +701,7 @@ export function MobileNeutralSurface() {
                 onClick={() => closePairingPanel(false)}
                 disabled={busyAction === "pair"}
               >
-                Cancelar
+                Cancel
               </Button>
               <Button
                 className="h-11 rounded-full"
@@ -713,7 +714,7 @@ export function MobileNeutralSurface() {
                 }
               >
                 {busyAction === "pair" ? <LoaderCircle className="animate-spin" /> : <PlugZap />}
-                Parear agora
+                Pair now
               </Button>
             </DialogFooter>
           </DialogPopup>
@@ -729,10 +730,10 @@ export function MobileNeutralSurface() {
         >
           <DialogPopup className="max-w-md data-ending-style:translate-y-8 data-starting-style:translate-y-10 max-sm:data-ending-style:translate-y-full max-sm:data-starting-style:translate-y-full">
             <DialogHeader>
-              <DialogTitle>Esquecer conexao?</DialogTitle>
+              <DialogTitle>Forget this connection?</DialogTitle>
               <DialogDescription>
-                Esta conexao sera removida deste celular. Para usar de novo, sera preciso parear
-                novamente pelo QR ou codigo.
+                This removes it from this phone. To use it again, pair with a QR code or pairing
+                code.
               </DialogDescription>
             </DialogHeader>
 
@@ -754,7 +755,7 @@ export function MobileNeutralSurface() {
                 onClick={() => setProfileToRemove(null)}
                 disabled={busyAction === "remove"}
               >
-                Cancelar
+                Cancel
               </Button>
               <Button
                 className="h-11 rounded-full"
@@ -763,7 +764,7 @@ export function MobileNeutralSurface() {
                 disabled={busyAction === "remove"}
               >
                 {busyAction === "remove" ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
-                Esquecer conexao
+                Forget connection
               </Button>
             </DialogFooter>
           </DialogPopup>

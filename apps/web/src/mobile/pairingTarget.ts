@@ -53,7 +53,7 @@ export function inferMobileConnectionModeFromPairingInput(
 function normalizeMobileBaseUrl(rawValue: string): URL {
   const trimmed = rawValue.trim();
   if (!trimmed) {
-    throw new Error("Informe o host do backend.");
+    throw new Error("Enter the backend host.");
   }
 
   const valueWithScheme = hasScheme(trimmed) ? trimmed : `http://${trimmed}`;
@@ -97,7 +97,7 @@ function parsePairingUrl(rawValue: string): { credential: string; suggestedHttpB
   const url = new URL(rawValue, window.location.origin);
   const credential = getPairingTokenFromUrl(url) ?? "";
   if (!credential) {
-    throw new Error("A URL de pareamento nao tem token.");
+    throw new Error("The pairing URL does not include a token.");
   }
   return {
     credential,
@@ -129,7 +129,7 @@ export function resolveMobilePairingTarget(input: {
 }): ResolvedMobilePairingTarget {
   const pairingInput = input.pairingUrlOrToken.trim();
   if (!pairingInput) {
-    throw new Error("Informe o token ou a URL de pareamento.");
+    throw new Error("Enter a pairing token or URL.");
   }
 
   const fromPairingUrl = (() => {
