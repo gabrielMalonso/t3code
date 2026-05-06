@@ -37,7 +37,7 @@ describe("resolveMobilePairingTarget", () => {
         pairingUrlOrToken: "EJTVFWLYUVKM",
         host: "",
       }),
-    ).toThrow("Informe o host do backend.");
+    ).toThrow("Enter the backend host.");
   });
 
   it("uses an explicit host while extracting the credential from a pairing url", () => {
