@@ -2,10 +2,10 @@
 
 ## Status atual
 
-- Data: 2026-05-06
+- Data: 2026-05-07
 - Branch de trabalho: `main`
-- Upstream integrado nesta wave: `6c79039ce` (`upstream/main`)
-- Estado: merge aplicado e validado localmente com `thread loop`, `file references`, `showPlanSidebar`, `skills de workspace` e mobile Capacitor preservados sobre VCS/source-control/hosted static upstream
+- Upstream integrado nesta wave: `a74ed8ed3` (`upstream/main`)
+- Estado: merge aplicado em `--no-commit` e custom desktop de auto-update opt-in adicionado para impedir que builds do fork apontem automaticamente para releases upstream
 - Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
 ## Features locais vivas
@@ -18,6 +18,7 @@
 - `apps/server/src/t3code-custom/workspace/internalArtifacts.ts`: artefatos internos de workspace, como `.t3code/.gitignore`
 - `apps/web/src/t3code-custom/terminal/fontFamily.ts`: policy local da fonte monoespacada no terminal e blocos de codigo
 - `apps/mobile` + `apps/web/src/mobile`: app mobile Capacitor Android-first/iOS-compatible como cliente nativo do `apps/web`, com pareamento LAN/Tailscale e runtime mobile de um environment ativo por vez
+- `scripts/build-desktop-artifact.ts`: builds desktop do fork so criam feed de auto-update quando `T3CODE_DESKTOP_UPDATE_REPOSITORY` estiver definido explicitamente
 
 ## Refatoracoes feitas para sair da frente do upstream
 
@@ -65,6 +66,29 @@
 - Se a mudanca for regra de negocio local, empurrar para `t3code-custom/*`
 - Se a mudanca for mobile/root/runtime/header/composer, preservar o fluxo upstream e reaplicar o app mobile como `apps/mobile/*`, `apps/web/src/mobile/*` e guards pequenos atras de `isMobileCapacitorRuntime()`
 - Se precisar tocar `ChatComposer` ou `ComposerPromptEditor`, fazer o minimo e deixar a adaptacao visivel
+- Se a mudanca for release/build desktop, nao permitir fallback automatico para `GITHUB_REPOSITORY` no feed de updater; o fork precisa de opt-in explicito para nao reinstalar upstream por acidente
+
+## 2026-05-07 — Sync ate `a74ed8ed3`
+
+- Branch de sync: `main`
+- Donor local usado para replay seletivo: `197382449` (`Add hosted remote endpoints and VCS foundation`)
+- Upstream absorvido:
+  - `a74ed8ed3` — revert do cache de assets desktop em CI/release
+- Zona de atrito prevista antes do merge:
+  - vazia na intersecao desde a base; o upstream tocou apenas `.github/workflows/ci.yml` e `.github/workflows/release.yml`
+- Conflitos reais do merge:
+  - nenhum
+- O que foi reaplicado do custom vivo:
+  - nada no conflito; merge limpo
+  - novo hardening local: `scripts/build-desktop-artifact.ts` deixou de usar `GITHUB_REPOSITORY` como fallback para gerar feed de auto-update
+- O que foi deliberadamente deixado de fora do replay:
+  - nenhum replay de composer, loop, file references ou mobile; upstream nao tocou esses caminhos nesta wave
+- Decisao importante:
+  - builds desktop custom agora precisam de `T3CODE_DESKTOP_UPDATE_REPOSITORY` explicito para embutir `app-update.yml`; sem isso, nao ha feed para o app auto-atualizar para `pingdotgg/t3code`
+- Classificacao:
+  - `.github/workflows/ci.yml` — `core-puro`
+  - `.github/workflows/release.yml` — `core-puro`
+  - `scripts/build-desktop-artifact.ts` — `adaptador-core`
 
 ## 2026-05-06 — Sync ate `6c79039ce`
 

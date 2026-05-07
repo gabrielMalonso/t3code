@@ -3,6 +3,7 @@ import { assert, it } from "@effect/vitest";
 import { ConfigProvider, Effect, Option } from "effect";
 
 import {
+  resolveGitHubPublishConfig,
   resolveBuildOptions,
   resolveDesktopBuildIconAssets,
   resolveDesktopProductName,
@@ -21,6 +22,38 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   it("switches desktop packaging product names to nightly for nightly builds", () => {
     assert.equal(resolveDesktopProductName("0.0.17"), "T3 Code (Alpha)");
     assert.equal(resolveDesktopProductName("0.0.17-nightly.20260413.42"), "T3 Code (Nightly)");
+  });
+
+  it("requires an explicit desktop update repository before publishing updater metadata", () => {
+    const previousUpdateRepository = process.env.T3CODE_DESKTOP_UPDATE_REPOSITORY;
+    const previousGitHubRepository = process.env.GITHUB_REPOSITORY;
+
+    try {
+      delete process.env.T3CODE_DESKTOP_UPDATE_REPOSITORY;
+      process.env.GITHUB_REPOSITORY = "pingdotgg/t3code";
+      assert.equal(resolveGitHubPublishConfig("latest"), undefined);
+
+      process.env.T3CODE_DESKTOP_UPDATE_REPOSITORY = "gabrielalonso/t3code-custom";
+      assert.deepStrictEqual(resolveGitHubPublishConfig("nightly"), {
+        provider: "github",
+        owner: "gabrielalonso",
+        repo: "t3code-custom",
+        releaseType: "prerelease",
+        channel: "nightly",
+      });
+    } finally {
+      if (previousUpdateRepository === undefined) {
+        delete process.env.T3CODE_DESKTOP_UPDATE_REPOSITORY;
+      } else {
+        process.env.T3CODE_DESKTOP_UPDATE_REPOSITORY = previousUpdateRepository;
+      }
+
+      if (previousGitHubRepository === undefined) {
+        delete process.env.GITHUB_REPOSITORY;
+      } else {
+        process.env.GITHUB_REPOSITORY = previousGitHubRepository;
+      }
+    }
   });
 
   it("switches desktop packaging icons to the nightly artwork for nightly versions", () => {
