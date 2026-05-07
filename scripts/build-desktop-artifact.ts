@@ -501,7 +501,7 @@ function resolveDesktopRuntimeDependencies(
   return resolveCatalogDependencies(runtimeDependencies, catalog, "apps/desktop");
 }
 
-function resolveGitHubPublishConfig(updateChannel: "latest" | "nightly"):
+export function resolveGitHubPublishConfig(updateChannel: "latest" | "nightly"):
   | {
       readonly provider: "github";
       readonly owner: string;
@@ -510,10 +510,9 @@ function resolveGitHubPublishConfig(updateChannel: "latest" | "nightly"):
       readonly channel?: "nightly";
     }
   | undefined {
-  const rawRepo =
-    process.env.T3CODE_DESKTOP_UPDATE_REPOSITORY?.trim() ||
-    process.env.GITHUB_REPOSITORY?.trim() ||
-    "";
+  // Fork builds must opt into an updater feed. Falling back to GITHUB_REPOSITORY
+  // can silently point custom installs back at the upstream release channel.
+  const rawRepo = process.env.T3CODE_DESKTOP_UPDATE_REPOSITORY?.trim() || "";
   if (!rawRepo) return undefined;
 
   const [owner, repo, ...rest] = rawRepo.split("/");
