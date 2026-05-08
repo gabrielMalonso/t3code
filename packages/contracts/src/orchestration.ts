@@ -344,6 +344,11 @@ export const ThreadLoop = Schema.Struct({
   enabled: Schema.Boolean,
   prompt: TrimmedNonEmptyString,
   intervalMinutes: PositiveInt,
+  compactTiming: Schema.optional(
+    Schema.Literals(["disabled", "before", "after"]).pipe(
+      Schema.withDecodingDefault(Effect.succeed("disabled" as const)),
+    ),
+  ),
   nextRunAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   lastRunAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   lastError: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
@@ -582,6 +587,7 @@ const ThreadLoopUpsertCommand = Schema.Struct({
   enabled: Schema.Boolean,
   prompt: TrimmedNonEmptyString,
   intervalMinutes: PositiveInt,
+  compactTiming: Schema.optional(Schema.Literals(["disabled", "before", "after"])),
   createdAt: IsoDateTime,
 });
 

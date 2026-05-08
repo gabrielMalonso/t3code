@@ -30,6 +30,7 @@ import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQu
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ThreadLoopScheduler } from "../Services/ThreadLoopScheduler.ts";
+import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { makeThreadLoopScheduler, ThreadLoopSchedulerLive } from "./ThreadLoopScheduler.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 
@@ -83,6 +84,7 @@ describe("ThreadLoopScheduler", () => {
           enabled: true,
           prompt: "Check the deployment",
           intervalMinutes: 30,
+          compactTiming: "disabled" as const,
           nextRunAt: "2026-04-07T11:00:00.000Z",
           lastRunAt: null,
           lastError: null,
@@ -145,6 +147,7 @@ describe("ThreadLoopScheduler", () => {
               enabled: true,
               prompt: "Check the deployment",
               intervalMinutes: 30,
+              compactTiming: "disabled",
               nextRunAt: "2026-04-07T11:00:00.000Z",
               lastRunAt: null,
               lastError: null,
@@ -204,6 +207,11 @@ describe("ThreadLoopScheduler", () => {
                 loops.filter((loop) => loop.threadId !== threadId),
               ).pipe(Effect.asVoid),
           }),
+        ),
+        Layer.provideMerge(
+          Layer.succeed(ProviderService, {
+            compactThread: () => Effect.void,
+          } as never),
         ),
         Layer.provideMerge(
           Layer.mock(ProjectionSnapshotQuery)({
@@ -442,6 +450,11 @@ describe("ThreadLoopScheduler", () => {
           Layer.provideMerge(orchestrationLayer),
           Layer.provideMerge(projectionSnapshotLayer),
           Layer.provideMerge(RepositoryIdentityResolverLive),
+          Layer.provideMerge(
+            Layer.succeed(ProviderService, {
+              compactThread: () => Effect.void,
+            } as never),
+          ),
         ),
       );
     };

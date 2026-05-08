@@ -734,6 +734,7 @@ describe("incremental orchestration updates", () => {
         enabled: true,
         prompt: "rodar",
         intervalMinutes: 15,
+        compactTiming: "disabled",
         nextRunAt: "2026-02-27T00:15:00.000Z",
         lastRunAt: null,
         lastError: null,

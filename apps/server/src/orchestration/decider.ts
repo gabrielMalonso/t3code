@@ -41,6 +41,7 @@ function buildThreadLoopFromUpsert(input: {
     enabled: command.enabled,
     prompt: command.prompt,
     intervalMinutes: command.intervalMinutes,
+    compactTiming: command.compactTiming ?? existingLoop?.compactTiming ?? "disabled",
     nextRunAt,
     lastRunAt: existingLoop?.lastRunAt ?? null,
     lastError: existingLoop?.lastError ?? null,
