@@ -1,4 +1,5 @@
 import { getPairingTokenFromUrl } from "../pairingUrl";
+import { readHostedPairingRequest } from "../hostedPairing";
 
 export type MobileConnectionMode = "tailscale" | "lan";
 
@@ -33,7 +34,11 @@ export function inferMobileConnectionModeFromPairingInput(
   }
 
   try {
-    const hostname = new URL(trimmed, window.location.origin).hostname.toLowerCase();
+    const url = new URL(trimmed, window.location.origin);
+    const hostedPairingRequest = readHostedPairingRequest(url);
+    const hostname = (
+      hostedPairingRequest ? normalizeMobileBaseUrl(hostedPairingRequest.host) : url
+    ).hostname.toLowerCase();
     if (hostname.startsWith("100.") || hostname.endsWith(".ts.net")) {
       return "tailscale";
     }
@@ -95,6 +100,14 @@ function toWsBaseUrl(url: URL): string {
 
 function parsePairingUrl(rawValue: string): { credential: string; suggestedHttpBaseUrl: string } {
   const url = new URL(rawValue, window.location.origin);
+  const hostedPairingRequest = readHostedPairingRequest(url);
+  if (hostedPairingRequest) {
+    return {
+      credential: hostedPairingRequest.token,
+      suggestedHttpBaseUrl: toHttpBaseUrl(normalizeMobileBaseUrl(hostedPairingRequest.host)),
+    };
+  }
+
   const credential = getPairingTokenFromUrl(url) ?? "";
   if (!credential) {
     throw new Error("The pairing URL does not include a token.");
