@@ -363,7 +363,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         createdAt: nowIso,
       });
 
-      yield* orchestrationEngine
+      const turnStarted = yield* orchestrationEngine
         .dispatch({
           type: "thread.turn.start",
           commandId: serverCommandId("thread-loop-turn-start"),
@@ -380,6 +380,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
           createdAt: nowIso,
         })
         .pipe(
+          Effect.as(true),
           Effect.catchCause((cause) =>
             Effect.gen(function* () {
               const detail = Cause.pretty(cause);
@@ -398,9 +399,14 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
                 tone: "error",
                 createdAt: nowIso,
               });
+              return false;
             }),
           ),
         );
+
+      if (!turnStarted) {
+        continue;
+      }
 
       if (thread.loop.compactTiming === "after") {
         yield* Effect.forkScoped(
