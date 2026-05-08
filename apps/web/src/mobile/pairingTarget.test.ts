@@ -67,6 +67,36 @@ describe("resolveMobilePairingTarget", () => {
       wsBaseUrl: "ws://100.71.185.10:3773/",
     });
   });
+
+  it("uses the backend host embedded in hosted pairing urls", () => {
+    expect(
+      resolveMobilePairingTarget({
+        pairingUrlOrToken:
+          "https://app.t3.codes/pair?host=http%3A%2F%2F100.71.185.10%3A3773%2F#token=BJL68TGTBXAR",
+        host: "",
+      }),
+    ).toEqual({
+      credential: "BJL68TGTBXAR",
+      suggestedHttpBaseUrl: "http://100.71.185.10:3773/",
+      httpBaseUrl: "http://100.71.185.10:3773/",
+      wsBaseUrl: "ws://100.71.185.10:3773/",
+    });
+  });
+
+  it("lets an explicit mobile host override a hosted pairing url backend", () => {
+    expect(
+      resolveMobilePairingTarget({
+        pairingUrlOrToken:
+          "https://app.t3.codes/pair?host=http%3A%2F%2F192.168.15.12%3A3773%2F#token=BJL68TGTBXAR",
+        host: "100.71.185.10",
+      }),
+    ).toEqual({
+      credential: "BJL68TGTBXAR",
+      suggestedHttpBaseUrl: "http://192.168.15.12:3773/",
+      httpBaseUrl: "http://100.71.185.10:3773/",
+      wsBaseUrl: "ws://100.71.185.10:3773/",
+    });
+  });
 });
 
 describe("inferMobileConnectionModeFromPairingInput", () => {
@@ -89,5 +119,19 @@ describe("inferMobileConnectionModeFromPairingInput", () => {
         "http://macbook.tailnet.ts.net:3774/pair#token=EJTVFWLYUVKM",
       ),
     ).toBe("tailscale");
+  });
+
+  it("infers the mode from the backend host inside hosted pairing urls", () => {
+    expect(
+      inferMobileConnectionModeFromPairingInput(
+        "https://app.t3.codes/pair?host=http%3A%2F%2F100.71.185.10%3A3773%2F#token=BJL68TGTBXAR",
+      ),
+    ).toBe("tailscale");
+
+    expect(
+      inferMobileConnectionModeFromPairingInput(
+        "https://app.t3.codes/pair?host=http%3A%2F%2F192.168.15.12%3A3773%2F#token=BJL68TGTBXAR",
+      ),
+    ).toBe("lan");
   });
 });
