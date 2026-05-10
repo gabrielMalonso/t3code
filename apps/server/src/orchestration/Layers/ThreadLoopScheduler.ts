@@ -15,7 +15,12 @@ import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 
 import { ProjectionThreadLoopRepositoryLive } from "../../persistence/Layers/ProjectionThreadLoops.ts";
-import { ProjectionThreadLoopRepository } from "../../persistence/Services/ProjectionThreadLoops.ts";
+import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/ProjectionTurns.ts";
+import {
+  ProjectionThreadLoopRepository,
+  type ProjectionThreadLoop,
+} from "../../persistence/Services/ProjectionThreadLoops.ts";
+import { ProjectionTurnRepository } from "../../persistence/Services/ProjectionTurns.ts";
 import type { ProjectionRepositoryError } from "../../persistence/Errors.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -49,6 +54,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const projectionThreadLoopRepository = yield* ProjectionThreadLoopRepository;
+  const projectionTurnRepository = yield* ProjectionTurnRepository;
   const providerService = yield* ProviderService;
 
   const appendLoopActivity = (input: {
@@ -119,6 +125,335 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
     });
   });
 
+  const runClaimedThreadLoop = Effect.fn("runClaimedThreadLoop")(function* (input: {
+    readonly loop: ProjectionThreadLoop;
+    readonly nextRunAt: string;
+    readonly nowIso: string;
+  }) {
+    const { loop, nextRunAt, nowIso } = input;
+    const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+    const thread = readModel.threads.find((entry) => entry.id === loop.threadId);
+    if (!thread) {
+      yield* projectionThreadLoopRepository
+        .deleteByThreadId({
+          threadId: loop.threadId,
+        })
+        .pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("thread loop scheduler failed to delete orphaned loop row", {
+              threadId: loop.threadId,
+              cause: Cause.pretty(cause),
+            }),
+          ),
+        );
+      return;
+    }
+    if (!thread.loop) {
+      yield* projectionThreadLoopRepository
+        .deleteByThreadId({
+          threadId: loop.threadId,
+        })
+        .pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("thread loop scheduler failed to delete stale loop row", {
+              threadId: loop.threadId,
+              cause: Cause.pretty(cause),
+            }),
+          ),
+        );
+      return;
+    }
+    if (!thread.loop.enabled) {
+      yield* syncLoopPatch({
+        threadId: loop.threadId,
+        createdAt: nowIso,
+        patch: {
+          enabled: false,
+          nextRunAt: null,
+        },
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("thread loop scheduler failed to sync disabled loop", {
+            threadId: loop.threadId,
+            cause: Cause.pretty(cause),
+          }),
+        ),
+      );
+      return;
+    }
+    if (thread.archivedAt !== null) {
+      yield* syncLoopPatch({
+        threadId: loop.threadId,
+        createdAt: nowIso,
+        patch: {
+          enabled: false,
+          nextRunAt: null,
+          lastError: null,
+        },
+      });
+      yield* appendLoopActivity({
+        threadId: loop.threadId,
+        kind: "loop.paused",
+        summary: "Loop paused because the thread was archived",
+        createdAt: nowIso,
+      });
+      return;
+    }
+    if (isThreadLoopBusy(thread)) {
+      yield* syncLoopPatch({
+        threadId: loop.threadId,
+        createdAt: nowIso,
+        patch: {
+          nextRunAt,
+        },
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("thread loop scheduler failed to sync next run", {
+            threadId: loop.threadId,
+            cause: Cause.pretty(cause),
+          }),
+        ),
+      );
+      yield* appendLoopActivity({
+        threadId: loop.threadId,
+        kind: "loop.tick.skipped",
+        summary: "Automatic loop run skipped because the thread is busy",
+        createdAt: nowIso,
+      });
+      return;
+    }
+
+    const waitForCondition = Effect.fn("waitForCondition")(function* (
+      startedAtMs: number,
+      predicate: () => Effect.Effect<boolean, ProjectionRepositoryError>,
+      timeoutMessage: string,
+    ) {
+      for (;;) {
+        if (yield* predicate()) {
+          return;
+        }
+        const elapsedMs = (yield* Clock.currentTimeMillis) - startedAtMs;
+        if (elapsedMs > THREAD_LOOP_COMPACT_TIMEOUT_MS) {
+          return yield* new ThreadLoopSchedulerError({ message: timeoutMessage });
+        }
+        yield* Effect.sleep(`${THREAD_LOOP_COMPACT_POLL_MS} millis`);
+      }
+    });
+
+    const waitForContextCompaction = Effect.fn("waitForContextCompaction")(function* (input: {
+      readonly threadId: ThreadId;
+      readonly compactRequestedAt: string;
+    }) {
+      yield* waitForCondition(
+        yield* Clock.currentTimeMillis,
+        Effect.fn("hasContextCompactionActivity")(function* () {
+          const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+          const latestThread = readModel.threads.find((entry) => entry.id === input.threadId);
+          return (
+            latestThread?.activities.some(
+              (activity) =>
+                activity.kind === "context-compaction" &&
+                Date.parse(activity.createdAt) >= Date.parse(input.compactRequestedAt),
+            ) ?? false
+          );
+        }),
+        "Timed out waiting for loop context compaction to finish.",
+      );
+    });
+
+    const waitForLoopTurnSettled = Effect.fn("waitForLoopTurnSettled")(function* (input: {
+      readonly threadId: ThreadId;
+      readonly messageId: MessageId;
+    }) {
+      yield* waitForCondition(
+        yield* Clock.currentTimeMillis,
+        Effect.fn("isLoopTurnSettled")(function* () {
+          const turns = yield* projectionTurnRepository.listByThreadId({
+            threadId: input.threadId,
+          });
+          const loopTurn = turns.find(
+            (turn) => turn.pendingMessageId === input.messageId && turn.turnId !== null,
+          );
+          if (loopTurn) {
+            return loopTurn.state !== "running" && loopTurn.state !== "pending";
+          }
+
+          const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+          const latestThread = readModel.threads.find((entry) => entry.id === input.threadId);
+          return latestThread?.session?.status === "error";
+        }),
+        "Timed out waiting for loop turn to finish.",
+      );
+    });
+
+    const compactThreadForLoop = Effect.fn("compactThreadForLoop")(function* (input: {
+      readonly threadId: ThreadId;
+      readonly timing: "before" | "after";
+      readonly createdAt: string;
+    }) {
+      yield* appendLoopActivity({
+        threadId: input.threadId,
+        kind: "loop.tick.started",
+        summary:
+          input.timing === "before"
+            ? "Loop context compaction started before the run"
+            : "Loop context compaction started after the run",
+        createdAt: input.createdAt,
+      });
+      if (!providerService.compactThread) {
+        return yield* new ThreadLoopSchedulerError({
+          message: "Provider service does not support compaction.",
+        });
+      }
+      yield* providerService.compactThread({ threadId: input.threadId });
+      yield* waitForContextCompaction({
+        threadId: input.threadId,
+        compactRequestedAt: input.createdAt,
+      });
+    });
+
+    if (thread.loop.compactTiming === "before") {
+      const compactedBefore = yield* compactThreadForLoop({
+        threadId: loop.threadId,
+        timing: "before",
+        createdAt: nowIso,
+      }).pipe(
+        Effect.as(true),
+        Effect.catchCause((cause) =>
+          Effect.gen(function* () {
+            const detail = Cause.pretty(cause);
+            yield* syncLoopPatch({
+              threadId: loop.threadId,
+              createdAt: nowIso,
+              patch: {
+                lastError: detail,
+              },
+            });
+            yield* appendLoopActivity({
+              threadId: loop.threadId,
+              kind: "loop.tick.failed",
+              summary: "Loop context compaction failed",
+              detail,
+              tone: "error",
+              createdAt: nowIso,
+            });
+            return false;
+          }),
+        ),
+      );
+      if (!compactedBefore) {
+        return;
+      }
+
+      const refreshed = yield* projectionSnapshotQuery.getCommandReadModel();
+      const refreshedThread = refreshed.threads.find((entry) => entry.id === loop.threadId);
+      if (!refreshedThread || isThreadLoopBusy(refreshedThread)) {
+        return;
+      }
+    }
+
+    yield* syncLoopPatch({
+      threadId: loop.threadId,
+      createdAt: nowIso,
+      patch: {
+        nextRunAt,
+        lastRunAt: nowIso,
+        lastError: null,
+      },
+    });
+    yield* appendLoopActivity({
+      threadId: loop.threadId,
+      kind: "loop.tick.started",
+      summary: "Automatic loop run started",
+      createdAt: nowIso,
+    });
+
+    const loopMessageId = MessageId.make(`loop-msg:${crypto.randomUUID()}`);
+    const turnStarted = yield* orchestrationEngine
+      .dispatch({
+        type: "thread.turn.start",
+        commandId: serverCommandId("thread-loop-turn-start"),
+        threadId: loop.threadId,
+        message: {
+          messageId: loopMessageId,
+          role: "user",
+          text: loop.prompt,
+          attachments: [],
+        },
+        modelSelection: thread.modelSelection,
+        runtimeMode: thread.runtimeMode,
+        interactionMode: thread.interactionMode,
+        createdAt: nowIso,
+      })
+      .pipe(
+        Effect.as(true),
+        Effect.catchCause((cause) =>
+          Effect.gen(function* () {
+            const detail = Cause.pretty(cause);
+            yield* syncLoopPatch({
+              threadId: loop.threadId,
+              createdAt: nowIso,
+              patch: {
+                lastError: detail,
+              },
+            });
+            yield* appendLoopActivity({
+              threadId: loop.threadId,
+              kind: "loop.tick.failed",
+              summary: "Automatic loop run failed",
+              detail,
+              tone: "error",
+              createdAt: nowIso,
+            });
+            return false;
+          }),
+        ),
+      );
+
+    if (!turnStarted) {
+      return;
+    }
+
+    if (thread.loop.compactTiming === "after") {
+      yield* Effect.forkScoped(
+        Effect.gen(function* () {
+          yield* waitForLoopTurnSettled({
+            threadId: loop.threadId,
+            messageId: loopMessageId,
+          });
+          const compactAt = yield* currentIso;
+          yield* compactThreadForLoop({
+            threadId: loop.threadId,
+            timing: "after",
+            createdAt: compactAt,
+          });
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.gen(function* () {
+              const failedAt = yield* currentIso;
+              const detail = Cause.pretty(cause);
+              yield* syncLoopPatch({
+                threadId: loop.threadId,
+                createdAt: failedAt,
+                patch: {
+                  lastError: detail,
+                },
+              });
+              yield* appendLoopActivity({
+                threadId: loop.threadId,
+                kind: "loop.tick.failed",
+                summary: "Loop context compaction failed",
+                detail,
+                tone: "error",
+                createdAt: failedAt,
+              });
+            }),
+          ),
+        ),
+      );
+    }
+  });
+
   const runDueThreadLoops = Effect.fn("runDueThreadLoops")(function* (nowIso: string) {
     const dueLoops = yield* projectionThreadLoopRepository.listDue({
       dueBefore: nowIso,
@@ -140,326 +475,16 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         continue;
       }
 
-      const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
-      const thread = readModel.threads.find((entry) => entry.id === loop.threadId);
-      if (!thread) {
-        yield* projectionThreadLoopRepository
-          .deleteByThreadId({
-            threadId: loop.threadId,
-          })
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning("thread loop scheduler failed to delete orphaned loop row", {
-                threadId: loop.threadId,
-                cause: Cause.pretty(cause),
-              }),
-            ),
-          );
-        continue;
-      }
-      if (!thread.loop) {
-        yield* projectionThreadLoopRepository
-          .deleteByThreadId({
-            threadId: loop.threadId,
-          })
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning("thread loop scheduler failed to delete stale loop row", {
-                threadId: loop.threadId,
-                cause: Cause.pretty(cause),
-              }),
-            ),
-          );
-        continue;
-      }
-      if (!thread.loop.enabled) {
-        yield* syncLoopPatch({
-          threadId: loop.threadId,
-          createdAt: nowIso,
-          patch: {
-            enabled: false,
-            nextRunAt: null,
-          },
-        }).pipe(
+      yield* Effect.forkScoped(
+        runClaimedThreadLoop({ loop, nextRunAt, nowIso }).pipe(
           Effect.catchCause((cause) =>
-            Effect.logWarning("thread loop scheduler failed to sync disabled loop", {
+            Effect.logWarning("thread loop scheduler claimed run failed", {
               threadId: loop.threadId,
               cause: Cause.pretty(cause),
             }),
           ),
-        );
-        continue;
-      }
-      if (thread.archivedAt !== null) {
-        yield* syncLoopPatch({
-          threadId: loop.threadId,
-          createdAt: nowIso,
-          patch: {
-            enabled: false,
-            nextRunAt: null,
-            lastError: null,
-          },
-        });
-        yield* appendLoopActivity({
-          threadId: loop.threadId,
-          kind: "loop.paused",
-          summary: "Loop paused because the thread was archived",
-          createdAt: nowIso,
-        });
-        continue;
-      }
-      if (isThreadLoopBusy(thread)) {
-        yield* syncLoopPatch({
-          threadId: loop.threadId,
-          createdAt: nowIso,
-          patch: {
-            nextRunAt,
-          },
-        }).pipe(
-          Effect.catchCause((cause) =>
-            Effect.logWarning("thread loop scheduler failed to sync next run", {
-              threadId: loop.threadId,
-              cause: Cause.pretty(cause),
-            }),
-          ),
-        );
-        yield* appendLoopActivity({
-          threadId: loop.threadId,
-          kind: "loop.tick.skipped",
-          summary: "Automatic loop run skipped because the thread is busy",
-          createdAt: nowIso,
-        });
-        continue;
-      }
-
-      const waitForCondition = Effect.fn("waitForCondition")(function* (
-        startedAtMs: number,
-        predicate: () => Effect.Effect<boolean, ProjectionRepositoryError>,
-        timeoutMessage: string,
-      ) {
-        for (;;) {
-          if (yield* predicate()) {
-            return;
-          }
-          const elapsedMs = (yield* Clock.currentTimeMillis) - startedAtMs;
-          if (elapsedMs > THREAD_LOOP_COMPACT_TIMEOUT_MS) {
-            return yield* new ThreadLoopSchedulerError({ message: timeoutMessage });
-          }
-          yield* Effect.sleep(`${THREAD_LOOP_COMPACT_POLL_MS} millis`);
-        }
-      });
-
-      const waitForContextCompaction = Effect.fn("waitForContextCompaction")(function* (input: {
-        readonly threadId: ThreadId;
-        readonly compactRequestedAt: string;
-      }) {
-        yield* waitForCondition(
-          yield* Clock.currentTimeMillis,
-          Effect.fn("hasContextCompactionActivity")(function* () {
-            const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
-            const latestThread = readModel.threads.find((entry) => entry.id === input.threadId);
-            return (
-              latestThread?.activities.some(
-                (activity) =>
-                  activity.kind === "context-compaction" &&
-                  Date.parse(activity.createdAt) >= Date.parse(input.compactRequestedAt),
-              ) ?? false
-            );
-          }),
-          "Timed out waiting for loop context compaction to finish.",
-        );
-      });
-
-      const waitForLoopTurnSettled = Effect.fn("waitForLoopTurnSettled")(function* (input: {
-        readonly threadId: ThreadId;
-        readonly turnRequestedAt: string;
-      }) {
-        yield* waitForCondition(
-          yield* Clock.currentTimeMillis,
-          Effect.fn("isLoopTurnSettled")(function* () {
-            const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
-            const latestThread = readModel.threads.find((entry) => entry.id === input.threadId);
-            if (!latestThread) {
-              return true;
-            }
-            const latestTurn = latestThread.latestTurn;
-            if (
-              latestTurn &&
-              Date.parse(latestTurn.requestedAt) >= Date.parse(input.turnRequestedAt)
-            ) {
-              return latestTurn.state !== "running";
-            }
-            return latestThread.session?.status === "error";
-          }),
-          "Timed out waiting for loop turn to finish.",
-        );
-      });
-
-      const compactThreadForLoop = Effect.fn("compactThreadForLoop")(function* (input: {
-        readonly threadId: ThreadId;
-        readonly timing: "before" | "after";
-        readonly createdAt: string;
-      }) {
-        yield* appendLoopActivity({
-          threadId: input.threadId,
-          kind: "loop.tick.started",
-          summary:
-            input.timing === "before"
-              ? "Loop context compaction started before the run"
-              : "Loop context compaction started after the run",
-          createdAt: input.createdAt,
-        });
-        if (!providerService.compactThread) {
-          return yield* new ThreadLoopSchedulerError({
-            message: "Provider service does not support compaction.",
-          });
-        }
-        yield* providerService.compactThread({ threadId: input.threadId });
-        yield* waitForContextCompaction({
-          threadId: input.threadId,
-          compactRequestedAt: input.createdAt,
-        });
-      });
-
-      if (thread.loop.compactTiming === "before") {
-        const compactedBefore = yield* compactThreadForLoop({
-          threadId: loop.threadId,
-          timing: "before",
-          createdAt: nowIso,
-        }).pipe(
-          Effect.as(true),
-          Effect.catchCause((cause) =>
-            Effect.gen(function* () {
-              const detail = Cause.pretty(cause);
-              yield* syncLoopPatch({
-                threadId: loop.threadId,
-                createdAt: nowIso,
-                patch: {
-                  lastError: detail,
-                },
-              });
-              yield* appendLoopActivity({
-                threadId: loop.threadId,
-                kind: "loop.tick.failed",
-                summary: "Loop context compaction failed",
-                detail,
-                tone: "error",
-                createdAt: nowIso,
-              });
-              return false;
-            }),
-          ),
-        );
-        if (!compactedBefore) {
-          continue;
-        }
-
-        const refreshed = yield* projectionSnapshotQuery.getCommandReadModel();
-        const refreshedThread = refreshed.threads.find((entry) => entry.id === loop.threadId);
-        if (!refreshedThread || isThreadLoopBusy(refreshedThread)) {
-          continue;
-        }
-      }
-
-      yield* syncLoopPatch({
-        threadId: loop.threadId,
-        createdAt: nowIso,
-        patch: {
-          nextRunAt,
-          lastRunAt: nowIso,
-          lastError: null,
-        },
-      });
-      yield* appendLoopActivity({
-        threadId: loop.threadId,
-        kind: "loop.tick.started",
-        summary: "Automatic loop run started",
-        createdAt: nowIso,
-      });
-
-      const turnStarted = yield* orchestrationEngine
-        .dispatch({
-          type: "thread.turn.start",
-          commandId: serverCommandId("thread-loop-turn-start"),
-          threadId: loop.threadId,
-          message: {
-            messageId: MessageId.make(`loop-msg:${crypto.randomUUID()}`),
-            role: "user",
-            text: loop.prompt,
-            attachments: [],
-          },
-          modelSelection: thread.modelSelection,
-          runtimeMode: thread.runtimeMode,
-          interactionMode: thread.interactionMode,
-          createdAt: nowIso,
-        })
-        .pipe(
-          Effect.as(true),
-          Effect.catchCause((cause) =>
-            Effect.gen(function* () {
-              const detail = Cause.pretty(cause);
-              yield* syncLoopPatch({
-                threadId: loop.threadId,
-                createdAt: nowIso,
-                patch: {
-                  lastError: detail,
-                },
-              });
-              yield* appendLoopActivity({
-                threadId: loop.threadId,
-                kind: "loop.tick.failed",
-                summary: "Automatic loop run failed",
-                detail,
-                tone: "error",
-                createdAt: nowIso,
-              });
-              return false;
-            }),
-          ),
-        );
-
-      if (!turnStarted) {
-        continue;
-      }
-
-      if (thread.loop.compactTiming === "after") {
-        yield* Effect.forkScoped(
-          Effect.gen(function* () {
-            yield* waitForLoopTurnSettled({
-              threadId: loop.threadId,
-              turnRequestedAt: nowIso,
-            });
-            const compactAt = yield* currentIso;
-            yield* compactThreadForLoop({
-              threadId: loop.threadId,
-              timing: "after",
-              createdAt: compactAt,
-            });
-          }).pipe(
-            Effect.catchCause((cause) =>
-              Effect.gen(function* () {
-                const failedAt = yield* currentIso;
-                const detail = Cause.pretty(cause);
-                yield* syncLoopPatch({
-                  threadId: loop.threadId,
-                  createdAt: failedAt,
-                  patch: {
-                    lastError: detail,
-                  },
-                });
-                yield* appendLoopActivity({
-                  threadId: loop.threadId,
-                  kind: "loop.tick.failed",
-                  summary: "Loop context compaction failed",
-                  detail,
-                  tone: "error",
-                  createdAt: failedAt,
-                });
-              }),
-            ),
-          ),
-        );
-      }
+        ),
+      );
     }
   });
 
@@ -505,4 +530,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
 export const ThreadLoopSchedulerLive = Layer.effect(
   ThreadLoopScheduler,
   makeThreadLoopScheduler,
-).pipe(Layer.provideMerge(ProjectionThreadLoopRepositoryLive));
+).pipe(
+  Layer.provideMerge(ProjectionThreadLoopRepositoryLive),
+  Layer.provideMerge(ProjectionTurnRepositoryLive),
+);
