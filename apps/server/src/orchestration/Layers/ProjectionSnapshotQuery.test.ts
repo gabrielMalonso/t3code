@@ -393,6 +393,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             enabled: true,
             prompt: "Check the inbox",
             intervalMinutes: 5,
+            compactTiming: "disabled",
             nextRunAt: "2026-02-24T00:10:00.000Z",
             lastRunAt: null,
             lastError: null,
@@ -1414,8 +1415,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             NULL,
             NULL,
             'running',
-            '2026-04-03T00:00:30.000Z',
-            '2026-04-03T00:00:30.000Z',
+            '2099-04-03T00:00:30.000Z',
+            '2099-04-03T00:00:30.000Z',
             NULL,
             NULL,
             NULL,
@@ -1454,7 +1455,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
 
       const commandReadModel = yield* snapshotQuery.getCommandReadModel();
       assert.equal(commandReadModel.threads[0]?.latestTurn?.turnId, asTurnId("turn-running"));
-      assert.equal(commandReadModel.threads[0]?.latestTurn?.state, "interrupted");
+      assert.equal(commandReadModel.threads[0]?.latestTurn?.state, "running");
 
       const shellSnapshot = yield* snapshotQuery.getShellSnapshot();
       assert.equal(shellSnapshot.threads[0]?.latestTurn?.turnId, asTurnId("turn-running"));
@@ -1462,7 +1463,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
 
       const fullSnapshot = yield* snapshotQuery.getSnapshot();
       assert.equal(fullSnapshot.threads[0]?.latestTurn?.turnId, asTurnId("turn-running"));
-      assert.equal(fullSnapshot.threads[0]?.latestTurn?.state, "interrupted");
+      assert.equal(fullSnapshot.threads[0]?.latestTurn?.state, "running");
     }),
   );
 

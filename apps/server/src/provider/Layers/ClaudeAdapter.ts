@@ -3184,6 +3184,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     },
   );
 
+  const compactThread = Effect.fn("compactThread")(function* (_threadId: ThreadId) {
+    return yield* new ProviderAdapterValidationError({
+      provider: PROVIDER,
+      operation: "compactThread",
+      issue: "Claude does not expose provider-native context compaction.",
+    });
+  });
+
   const readThread: ClaudeAdapterShape["readThread"] = Effect.fn("readThread")(
     function* (threadId) {
       const context = yield* requireSession(threadId);
@@ -3282,6 +3290,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     startSession,
     sendTurn,
     interruptTurn,
+    compactThread,
     readThread,
     rollbackThread,
     respondToRequest,

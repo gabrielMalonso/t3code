@@ -45,6 +45,7 @@ import Migration0029 from "./Migrations/027_ProviderSessionRuntimeInstanceId.ts"
 import Migration0030 from "./Migrations/028_ProjectionThreadSessionInstanceId.ts";
 import Migration0031 from "./Migrations/029_ProjectionThreadDetailOrderingIndexes.ts";
 import Migration0032 from "./Migrations/030_ProjectionThreadShellArchiveIndexes.ts";
+import Migration0033 from "./Migrations/031_ProjectionThreadLoopCompactTiming.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -89,6 +90,7 @@ export const migrationEntries = [
   [30, "ProjectionThreadSessionInstanceId", Migration0030],
   [31, "ProjectionThreadDetailOrderingIndexes", Migration0031],
   [32, "ProjectionThreadShellArchiveIndexes", Migration0032],
+  [33, "ProjectionThreadLoopCompactTiming", Migration0033],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

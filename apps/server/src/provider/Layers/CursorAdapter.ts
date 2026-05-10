@@ -976,6 +976,15 @@ export function makeCursorAdapter(
         );
       });
 
+    const compactThread = (_threadId: ThreadId) =>
+      Effect.fail(
+        new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "compactThread",
+          issue: "Cursor does not expose provider-native context compaction.",
+        }),
+      );
+
     const respondToRequest: CursorAdapterShape["respondToRequest"] = (
       threadId,
       requestId,
@@ -1069,6 +1078,7 @@ export function makeCursorAdapter(
       startSession,
       sendTurn,
       interruptTurn,
+      compactThread,
       readThread,
       rollbackThread,
       respondToRequest,
