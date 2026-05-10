@@ -15,6 +15,7 @@ import * as Option from "effect/Option";
 
 import * as DesktopAssets from "./app/DesktopAssets.ts";
 import * as DesktopEnvironment from "./app/DesktopEnvironment.ts";
+import * as DesktopObservability from "./app/DesktopObservability.ts";
 import * as ElectronWindow from "./electron/ElectronWindow.ts";
 import * as IpcChannels from "./ipc/channels.ts";
 import * as DesktopAppSettings from "./settings/DesktopAppSettings.ts";
@@ -28,6 +29,11 @@ const SAFE_PET_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,79}$/i;
 
 type ResolvePetAssetPath = (petId: string) => string | null;
 type OnMoved = (position: DesktopPetOverlayPosition) => void;
+type PetOverlayDiagnostic = (
+  level: "info" | "warning",
+  message: string,
+  annotations?: DesktopObservability.DesktopLogAnnotations,
+) => void;
 
 interface OverlayDragState {
   pointerAnchorX: number;
@@ -40,6 +46,9 @@ interface PetOverlayLayout {
   windowHeight: number;
   petLeft: number;
 }
+
+const { logInfo: logPetInfo, logWarning: logPetWarning } =
+  DesktopObservability.makeComponentLogger("desktop-pet-overlay");
 
 export interface DisplayWorkArea {
   x: number;
@@ -67,6 +76,30 @@ function resolveOverlayLayout(state: DesktopPetOverlayState): PetOverlayLayout {
     windowWidth: state.width,
     windowHeight: state.height + PET_GROUND_PADDING,
     petLeft: 0,
+  };
+}
+
+function summarizePetOverlayStateInput(input: unknown): DesktopObservability.DesktopLogAnnotations {
+  if (typeof input !== "object" || input === null) {
+    return { inputType: typeof input };
+  }
+
+  const rawState = input as Partial<DesktopPetOverlayState>;
+  return {
+    inputType: "object",
+    visible: rawState.visible,
+    petId: rawState.petId,
+    displayName: rawState.displayName,
+    animation: rawState.animation,
+    row: rawState.row,
+    frames: rawState.frames,
+    durationMs: rawState.durationMs,
+    width: rawState.width,
+    height: rawState.height,
+    columns: rawState.columns,
+    rows: rawState.rows,
+    x: rawState.x,
+    y: rawState.y,
   };
 }
 
@@ -441,20 +474,33 @@ export class DesktopPetOverlayController {
   private readonly input: {
     preloadPath: string;
     resolvePetAssetPath: ResolvePetAssetPath;
+    logDiagnostic: PetOverlayDiagnostic;
     onMoved: OnMoved;
   };
 
   constructor(input: {
     preloadPath: string;
     resolvePetAssetPath: ResolvePetAssetPath;
+    logDiagnostic: PetOverlayDiagnostic;
     onMoved: OnMoved;
   }) {
     this.input = input;
   }
 
   async setState(input: unknown): Promise<void> {
+    this.input.logDiagnostic("info", "pet overlay controller received state", {
+      ...summarizePetOverlayStateInput(input),
+    });
     const state = normalizePetOverlayState(input, this.input.resolvePetAssetPath);
     if (!state || !state.visible) {
+      this.input.logDiagnostic(
+        state ? "info" : "warning",
+        state ? "pet overlay state requested hidden overlay" : "pet overlay state rejected",
+        {
+          ...summarizePetOverlayStateInput(input),
+          normalized: Boolean(state),
+        },
+      );
       if (state) {
         this.lastState = state;
       }
@@ -468,6 +514,9 @@ export class DesktopPetOverlayController {
 
   hide(): void {
     if (this.window && !this.window.isDestroyed()) {
+      this.input.logDiagnostic("info", "pet overlay window hidden", {
+        windowId: this.window.id,
+      });
       this.window.hide();
     }
   }
@@ -535,6 +584,9 @@ export class DesktopPetOverlayController {
     this.pointerInteractive = true;
     this.mousePassthroughEnabled = false;
     if (this.window && !this.window.isDestroyed()) {
+      this.input.logDiagnostic("info", "pet overlay window disposed", {
+        windowId: this.window.id,
+      });
       this.window.close();
     }
     this.window = null;
@@ -562,6 +614,19 @@ export class DesktopPetOverlayController {
       width: layout.windowWidth,
       height: layout.windowHeight,
     };
+    this.input.logDiagnostic("info", "pet overlay show state resolved", {
+      petId: state.petId,
+      animation: state.animation,
+      row: state.row,
+      frames: state.frames,
+      wasVisible,
+      windowId: window.id,
+      x: nextBounds.x,
+      y: nextBounds.y,
+      width: nextBounds.width,
+      height: nextBounds.height,
+      assetUrl: state.assetUrl,
+    });
     const currentBounds = window.getBounds();
     this.lastEmittedPosition = { x: position.x + layout.petLeft, y: position.y };
     if (
@@ -579,13 +644,30 @@ export class DesktopPetOverlayController {
       this.applyPointerInteractivityPolicy();
       window.moveTop();
       window.showInactive();
+      this.input.logDiagnostic("info", "pet overlay window shown", {
+        windowId: window.id,
+        visible: window.isVisible(),
+      });
     }
 
     await this.waitForLoad();
     if (window.isDestroyed()) return;
-    await window.webContents
-      .executeJavaScript(`window.__setPetOverlayState(${JSON.stringify(state)})`, true)
-      .catch(() => undefined);
+    try {
+      await window.webContents.executeJavaScript(
+        `window.__setPetOverlayState(${JSON.stringify(state)})`,
+        true,
+      );
+      this.input.logDiagnostic("info", "pet overlay renderer state applied", {
+        windowId: window.id,
+        petId: state.petId,
+        animation: state.animation,
+      });
+    } catch (cause) {
+      this.input.logDiagnostic("warning", "pet overlay renderer state apply failed", {
+        windowId: window.id,
+        cause: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
   }
 
   private ensureWindow(): Electron.BrowserWindow {
@@ -617,6 +699,10 @@ export class DesktopPetOverlayController {
       },
     });
 
+    this.input.logDiagnostic("info", "pet overlay window created", {
+      windowId: window.id,
+      preloadPath: this.input.preloadPath,
+    });
     window.setMenu(null);
     window.setAlwaysOnTop(true, "floating", 1);
     this.makeVisibleOnEveryWorkspace(window);
@@ -636,7 +722,20 @@ export class DesktopPetOverlayController {
 
     this.window = window;
     this.loadPromise = new Promise((resolve) => {
-      window.webContents.once("did-finish-load", () => resolve());
+      window.webContents.once("did-finish-load", () => {
+        this.input.logDiagnostic("info", "pet overlay renderer loaded", {
+          windowId: window.id,
+        });
+        resolve();
+      });
+      window.webContents.once("did-fail-load", (_event, errorCode, errorDescription) => {
+        this.input.logDiagnostic("warning", "pet overlay renderer failed to load", {
+          windowId: window.id,
+          errorCode,
+          errorDescription,
+        });
+        resolve();
+      });
     });
     void window.loadURL(
       `data:text/html;charset=utf-8,${encodeURIComponent(buildPetOverlayHtml())}`,
@@ -745,12 +844,32 @@ const make = Effect.gen(function* () {
   const nimbusAssetPath = yield* assets.resolveResourcePath("pets/nimbus/spritesheet.webp");
   if (Option.isSome(nimbusAssetPath)) {
     petAssetPaths.set("nimbus", nimbusAssetPath.value);
+    yield* logPetInfo("pet overlay asset registered", {
+      petId: "nimbus",
+      assetPath: nimbusAssetPath.value,
+    });
+  } else {
+    yield* logPetWarning("pet overlay asset missing", {
+      petId: "nimbus",
+      fileName: "pets/nimbus/spritesheet.webp",
+    });
   }
+
+  const logDiagnostic: PetOverlayDiagnostic = (level, message, annotations) => {
+    const effect =
+      level === "warning" ? logPetWarning(message, annotations) : logPetInfo(message, annotations);
+    void runPromise(effect);
+  };
 
   const controller = new DesktopPetOverlayController({
     preloadPath: environment.path.join(environment.dirname, "petOverlayPreload.cjs"),
     resolvePetAssetPath: (petId) => petAssetPaths.get(petId) ?? null,
+    logDiagnostic,
     onMoved: (position) => {
+      logDiagnostic("info", "pet overlay moved", {
+        x: position.x,
+        y: position.y,
+      });
       void runPromise(
         Effect.gen(function* () {
           const current = yield* settings.get;
@@ -778,10 +897,23 @@ const make = Effect.gen(function* () {
     electronWindow.sendAll(IpcChannels.PET_OVERLAY_SETTINGS_CHANGED_CHANNEL, nextSettings);
 
   return DesktopPetOverlay.of({
-    getSettings: settings.get.pipe(Effect.map((current) => current.petOverlay)),
+    getSettings: settings.get.pipe(
+      Effect.map((current) => current.petOverlay),
+      Effect.tap((petOverlay) =>
+        logPetInfo("pet overlay settings requested", {
+          enabled: petOverlay.enabled,
+          position: petOverlay.position,
+        }),
+      ),
+    ),
     setEnabled: (enabled) =>
       Effect.gen(function* () {
         const current = yield* settings.get;
+        yield* logPetInfo("pet overlay setEnabled requested", {
+          requestedEnabled: enabled,
+          previousEnabled: current.petOverlay.enabled,
+          previousPosition: current.petOverlay.position,
+        });
         const next = withPetOverlay(current.petOverlay, { enabled });
         const change = yield* settings.setPetOverlay(next);
         if (!enabled) {
@@ -790,19 +922,36 @@ const make = Effect.gen(function* () {
         if (change.changed) {
           yield* emitSettings(change.settings.petOverlay);
         }
+        yield* logPetInfo("pet overlay setEnabled persisted", {
+          requestedEnabled: enabled,
+          changed: change.changed,
+          enabled: change.settings.petOverlay.enabled,
+          position: change.settings.petOverlay.position,
+        });
         return change.settings.petOverlay;
       }).pipe(Effect.withSpan("desktop.petOverlay.setEnabled", { attributes: { enabled } })),
     setState: (state) =>
       Effect.gen(function* () {
         const current = yield* settings.get;
+        yield* logPetInfo("pet overlay setState requested", {
+          enabled: current.petOverlay.enabled,
+          ...summarizePetOverlayStateInput(state),
+        });
         if (!current.petOverlay.enabled) {
+          yield* logPetInfo("pet overlay setState ignored because overlay is disabled", {
+            ...summarizePetOverlayStateInput(state),
+          });
           controller.hide();
           return;
         }
         yield* Effect.promise(() => controller.setState(state));
       }).pipe(Effect.withSpan("desktop.petOverlay.setState")),
-    hide: Effect.sync(() => controller.hide()),
+    hide: Effect.sync(() => {
+      logDiagnostic("info", "pet overlay hide requested");
+      controller.hide();
+    }),
     close: Effect.gen(function* () {
+      yield* logPetInfo("pet overlay close requested");
       controller.close();
       const current = yield* settings.get;
       const change = yield* settings.setPetOverlay(
@@ -811,6 +960,11 @@ const make = Effect.gen(function* () {
       if (change.changed) {
         yield* emitSettings(change.settings.petOverlay);
       }
+      yield* logPetInfo("pet overlay close persisted", {
+        changed: change.changed,
+        enabled: change.settings.petOverlay.enabled,
+        position: change.settings.petOverlay.position,
+      });
       return change.settings.petOverlay;
     }).pipe(Effect.withSpan("desktop.petOverlay.close")),
     dragStart: (input) =>

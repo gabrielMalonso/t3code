@@ -13,6 +13,7 @@ import {
   isContextMenuPointerDown,
   orderItemsByPreferredIds,
   resolveProjectStatusIndicator,
+  resolveSidebarChromeHeaderClassName,
   resolveSidebarNewThreadSeedContext,
   resolveSidebarNewThreadEnvMode,
   resolveThreadRowClassName,
@@ -36,6 +37,20 @@ import {
 } from "../types";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
+
+describe("resolveSidebarChromeHeaderClassName", () => {
+  it("keeps the macOS traffic-light inset when window controls overlay is visible", () => {
+    expect(resolveSidebarChromeHeaderClassName({ hasLeftNativeWindowControls: true })).toContain(
+      "wco:pl-[90px]",
+    );
+  });
+
+  it("uses dynamic overlay geometry when native controls are not on the left", () => {
+    expect(resolveSidebarChromeHeaderClassName({ hasLeftNativeWindowControls: false })).toContain(
+      "wco:pl-[calc(env(titlebar-area-x)+1em)]",
+    );
+  });
+});
 
 function makeLatestTurn(overrides?: {
   completedAt?: string | null;
