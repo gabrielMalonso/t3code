@@ -244,6 +244,35 @@ describe("OpenPetsReactor", () => {
     ]);
   });
 
+  it("ignores tool and item lifecycle noise", async () => {
+    const harness = makeHarness([
+      makeEvent("item.completed", {
+        itemType: "mcp_tool_call",
+        status: "completed",
+        title: "MCP tool call",
+      }),
+      makeEvent("tool.progress", {
+        toolName: "gmail",
+        summary: "Reading labels.",
+      }),
+      makeEvent("tool.summary", {
+        summary: "Finished MCP tool call.",
+      }),
+    ]);
+    await harness.run(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const reactor = yield* OpenPetsReactor;
+          yield* reactor.start();
+          yield* drainFibers;
+          yield* reactor.drain;
+        }),
+      ),
+    );
+
+    expect(harness.notifications).toEqual([]);
+  });
+
   it("maps failures and interruptions to failed", async () => {
     expect(
       OpenPetsReactorInternals.eventToNotification(

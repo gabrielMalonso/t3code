@@ -75,17 +75,6 @@ function completionText(event: Extract<ProviderRuntimeEvent, { type: "turn.compl
   return event.payload.errorMessage ?? `Turn ${event.payload.state}.`;
 }
 
-function itemText(
-  event: Extract<ProviderRuntimeEvent, { type: "item.started" | "item.completed" }>,
-): string {
-  const label = event.payload.title ?? requestTypeLabel(event.payload.itemType);
-  const detail = event.payload.detail ? `: ${event.payload.detail}` : "";
-  if (event.type === "item.completed") {
-    return `Finished ${label}${detail}.`;
-  }
-  return `Working on ${label}${detail}.`;
-}
-
 function planText(event: Extract<ProviderRuntimeEvent, { type: "turn.plan.updated" }>): string {
   const activeStep =
     event.payload.plan.find((step) => step.status === "inProgress") ??
@@ -113,39 +102,6 @@ function eventToNotification(
         title,
         status: "running",
         text: shortText(planText(event)),
-      };
-    case "item.started":
-    case "item.completed":
-      if (
-        event.payload.itemType === "assistant_message" ||
-        event.payload.itemType === "reasoning" ||
-        event.payload.itemType === "user_message" ||
-        event.payload.itemType === "unknown"
-      ) {
-        return null;
-      }
-      return {
-        key,
-        title,
-        status: "running",
-        text: shortText(itemText(event)),
-      };
-    case "tool.progress":
-      if (!event.payload.summary) {
-        return null;
-      }
-      return {
-        key,
-        title,
-        status: "running",
-        text: shortText(event.payload.summary),
-      };
-    case "tool.summary":
-      return {
-        key,
-        title,
-        status: "running",
-        text: shortText(event.payload.summary),
       };
     case "request.opened":
       return {
