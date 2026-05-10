@@ -16,17 +16,6 @@ import {
   setTailscaleServeEnabled,
 } from "./methods/serverExposure.ts";
 import {
-  closePetOverlay,
-  endPetOverlayDrag,
-  getPetOverlaySettings,
-  hidePetOverlay,
-  movePetOverlayDrag,
-  setPetOverlayEnabled,
-  setPetOverlayPointerInteraction,
-  setPetOverlayState,
-  startPetOverlayDrag,
-} from "./methods/petOverlay.ts";
-import {
   bootstrapSshBearerSession,
   disconnectSshEnvironment,
   discoverSshHosts,
@@ -86,16 +75,6 @@ export const installDesktopIpcHandlers = Effect.gen(function* () {
   yield* ipc.handle(setTheme);
   yield* ipc.handle(showContextMenu);
   yield* ipc.handle(openExternal);
-
-  yield* ipc.handle(getPetOverlaySettings);
-  yield* ipc.handle(setPetOverlayEnabled);
-  yield* ipc.handle(setPetOverlayState);
-  yield* ipc.handle(hidePetOverlay);
-  yield* ipc.handle(closePetOverlay);
-  yield* ipc.handle(startPetOverlayDrag);
-  yield* ipc.handle(movePetOverlayDrag);
-  yield* ipc.handle(endPetOverlayDrag);
-  yield* ipc.handle(setPetOverlayPointerInteraction);
 
   yield* ipc.handle(getUpdateState);
   yield* ipc.handle(setUpdateChannel);

@@ -11,7 +11,6 @@ import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
-import * as DesktopPetOverlay from "../petOverlay.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 
@@ -27,8 +26,7 @@ export class DesktopApplicationMenu extends Context.Service<
 type DesktopApplicationMenuRuntimeServices =
   | DesktopUpdates.DesktopUpdates
   | DesktopWindow.DesktopWindow
-  | ElectronDialog.ElectronDialog
-  | DesktopPetOverlay.DesktopPetOverlay;
+  | ElectronDialog.ElectronDialog;
 
 const { logInfo: logUpdaterInfo } = DesktopObservability.makeComponentLogger("desktop-updater");
 
@@ -40,11 +38,6 @@ const dispatchMenuAction = Effect.fn("desktop.menu.dispatchMenuAction")(function
   const desktopWindow = yield* DesktopWindow.DesktopWindow;
   yield* desktopWindow.dispatchMenuAction(action);
 });
-
-const showPetFromMenu = Effect.gen(function* () {
-  const petOverlay = yield* DesktopPetOverlay.DesktopPetOverlay;
-  yield* petOverlay.showDefault;
-}).pipe(Effect.withSpan("desktop.menu.showPet"));
 
 const checkForUpdatesFromMenu: Effect.Effect<
   void,
@@ -134,9 +127,6 @@ const make = Effect.gen(function* () {
     const settingsClick = () => {
       runMenuEffect("open-settings", dispatchMenuAction("open-settings"));
     };
-    const showPetClick = () => {
-      runMenuEffect("show-pet", showPetFromMenu);
-    };
     const template: Electron.MenuItemConstructorOptions[] = [];
 
     if (environment.platform === "darwin") {
@@ -195,11 +185,6 @@ const make = Effect.gen(function* () {
           { role: "zoomIn", accelerator: "CmdOrCtrl+=" },
           { role: "zoomIn", accelerator: "CmdOrCtrl+Plus", visible: false },
           { role: "zoomOut" },
-          { type: "separator" },
-          {
-            label: "Show Pet",
-            click: showPetClick,
-          },
           { type: "separator" },
           { role: "togglefullscreen" },
         ],

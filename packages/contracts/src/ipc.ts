@@ -361,49 +361,6 @@ export const DesktopServerExposureStateSchema = Schema.Struct({
   tailscaleServePort: Schema.Number,
 });
 
-export interface DesktopPetOverlayPosition {
-  readonly x: number;
-  readonly y: number;
-}
-
-export type DesktopPetOverlayActivityKind = "input-needed" | "working" | "connecting";
-
-export interface DesktopPetOverlayState {
-  readonly visible: boolean;
-  readonly petId: string;
-  readonly displayName: string;
-  readonly description: string;
-  readonly animation: string;
-  readonly activity: {
-    readonly kind: DesktopPetOverlayActivityKind;
-    readonly label: string;
-    readonly title: string;
-  } | null;
-  readonly row: number;
-  readonly frames: number;
-  readonly durationMs: number;
-  readonly width: number;
-  readonly height: number;
-  readonly columns: number;
-  readonly rows: number;
-  readonly x: number;
-  readonly y: number;
-}
-
-export interface DesktopPetOverlayDragStartInput {
-  readonly pointerWindowX: number;
-  readonly pointerWindowY: number;
-}
-
-export interface DesktopPetOverlayPointerInteractionInput {
-  readonly interactive: boolean;
-}
-
-export interface DesktopPetOverlaySettings {
-  readonly enabled: boolean;
-  readonly position: DesktopPetOverlayPosition | null;
-}
-
 export interface PickFolderOptions {
   initialPath?: string | null;
 }
@@ -461,19 +418,6 @@ export interface DesktopBridge {
   ) => Promise<T | null>;
   openExternal: (url: string) => Promise<boolean>;
   onMenuAction: (listener: (action: string) => void) => () => void;
-  petOverlay?: {
-    getSettings: () => Promise<DesktopPetOverlaySettings>;
-    setEnabled: (enabled: boolean) => Promise<DesktopPetOverlaySettings>;
-    setState: (state: DesktopPetOverlayState) => Promise<void>;
-    hide: () => Promise<void>;
-    close: () => Promise<DesktopPetOverlaySettings>;
-    dragStart: (input: DesktopPetOverlayDragStartInput) => Promise<void>;
-    dragMove: () => Promise<void>;
-    dragEnd: () => Promise<void>;
-    setPointerInteraction: (input: DesktopPetOverlayPointerInteractionInput) => Promise<void>;
-    onMoved: (listener: (position: DesktopPetOverlayPosition) => void) => () => void;
-    onSettingsChanged: (listener: (settings: DesktopPetOverlaySettings) => void) => () => void;
-  };
   getUpdateState: () => Promise<DesktopUpdateState>;
   setUpdateChannel: (channel: DesktopUpdateChannel) => Promise<DesktopUpdateState>;
   checkForUpdate: () => Promise<DesktopUpdateCheckResult>;
