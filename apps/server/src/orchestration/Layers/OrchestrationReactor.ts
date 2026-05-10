@@ -10,6 +10,7 @@ import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeIngestion.ts";
 import { ThreadLoopScheduler } from "../Services/ThreadLoopScheduler.ts";
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
+import { OpenPetsReactor } from "../Services/OpenPetsReactor.ts";
 
 export const makeOrchestrationReactor = Effect.gen(function* () {
   const providerRuntimeIngestion = yield* ProviderRuntimeIngestionService;
@@ -17,6 +18,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
   const checkpointReactor = yield* CheckpointReactor;
   const threadLoopScheduler = yield* ThreadLoopScheduler;
   const threadDeletionReactor = yield* ThreadDeletionReactor;
+  const openPetsReactor = yield* OpenPetsReactor;
 
   const start: OrchestrationReactorShape["start"] = Effect.fn("start")(function* () {
     yield* providerRuntimeIngestion.start();
@@ -25,6 +27,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
     yield* threadLoopScheduler.start();
     yield* threadLoopScheduler.start();
     yield* threadDeletionReactor.start();
+    yield* openPetsReactor.start();
   });
 
   return {

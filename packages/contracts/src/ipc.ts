@@ -38,6 +38,7 @@ import type {
   ServerSignalProcessResult,
   ServerTraceDiagnosticsResult,
   ServerUpsertKeybindingResult,
+  OpenPetsRuntimeStatus,
 } from "./server.ts";
 import type {
   TerminalClearInput,
@@ -482,6 +483,7 @@ export interface LocalApi {
     removeKeybinding: (input: ServerRemoveKeybindingInput) => Promise<ServerRemoveKeybindingResult>;
     getSettings: () => Promise<ServerSettings>;
     updateSettings: (patch: ServerSettingsPatch) => Promise<ServerSettings>;
+    getOpenPetsStatus: () => Promise<OpenPetsRuntimeStatus>;
     discoverSourceControl: () => Promise<SourceControlDiscoveryResult>;
     getTraceDiagnostics: () => Promise<ServerTraceDiagnosticsResult>;
     getProcessDiagnostics: () => Promise<ServerProcessDiagnosticsResult>;
