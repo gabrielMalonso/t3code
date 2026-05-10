@@ -1,5 +1,4 @@
-import { Effect } from "effect";
-import type { Effect as EffectType } from "effect";
+import * as Effect from "effect/Effect";
 
 import type { WorkspaceFileSystemError } from "../../workspace/Services/WorkspaceFileSystem.ts";
 import type {
@@ -22,16 +21,14 @@ export function ensureT3codeWorkspaceInternalArtifacts(input: {
   cwd: string;
   normalizedRelativePath: string;
   resolveRelativePathWithinRoot: WorkspacePathsShape["resolveRelativePathWithinRoot"];
-  doesPathExist: (absolutePath: string) => EffectType.Effect<boolean, never>;
-  makeDirectory: (
-    absoluteDirectoryPath: string,
-  ) => EffectType.Effect<void, WorkspaceFileSystemError>;
+  doesPathExist: (absolutePath: string) => Effect.Effect<boolean, never>;
+  makeDirectory: (absoluteDirectoryPath: string) => Effect.Effect<void, WorkspaceFileSystemError>;
   writeFileString: (
     absolutePath: string,
     contents: string,
-  ) => EffectType.Effect<void, WorkspaceFileSystemError>;
+  ) => Effect.Effect<void, WorkspaceFileSystemError>;
   dirname: (absolutePath: string) => string;
-}): EffectType.Effect<void, WorkspaceFileSystemError | WorkspacePathOutsideRootError> {
+}): Effect.Effect<void, WorkspaceFileSystemError | WorkspacePathOutsideRootError> {
   return Effect.gen(function* () {
     if (!isInsideT3codeInternalDirectory(input.normalizedRelativePath)) {
       return;
