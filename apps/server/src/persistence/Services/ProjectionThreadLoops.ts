@@ -19,6 +19,7 @@ export const ProjectionThreadLoop = Schema.Struct({
   enabled: Schema.Boolean,
   prompt: Schema.String,
   intervalMinutes: PositiveInt,
+  compactTiming: Schema.Literals(["disabled", "before", "after"]),
   nextRunAt: Schema.NullOr(IsoDateTime),
   lastRunAt: Schema.NullOr(IsoDateTime),
   lastError: Schema.NullOr(Schema.String),

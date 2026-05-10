@@ -1,6 +1,7 @@
 import type { ThreadId } from "@t3tools/contracts";
 import {
   AlertCircleIcon,
+  ArchiveIcon,
   MinusIcon,
   PauseIcon,
   PlayIcon,
@@ -31,6 +32,11 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../../components/ui/toolt
 import type { ThreadLoop } from "~/types";
 
 const THREAD_LOOP_INTERVAL_PRESETS = [1, 5, 15, 30, 60, 240] as const;
+const THREAD_LOOP_COMPACT_TIMINGS = [
+  { value: "disabled", label: "Off" },
+  { value: "before", label: "Before" },
+  { value: "after", label: "After" },
+] as const;
 
 function formatInterval(intervalMinutes: number): string {
   if (intervalMinutes >= 60 && intervalMinutes % 60 === 0) {
@@ -140,6 +146,7 @@ export default function ThreadLoopControl(props: {
       enabled: boolean;
       prompt: string;
       intervalMinutes: number;
+      compactTiming: "disabled" | "before" | "after";
     },
   ) => Promise<void>;
   onDeleteLoop: (threadId: ThreadId) => Promise<void>;
@@ -149,6 +156,9 @@ export default function ThreadLoopControl(props: {
   const [enabled, setEnabled] = useState(props.loop?.enabled ?? true);
   const [prompt, setPrompt] = useState(props.loop?.prompt ?? "");
   const [intervalMinutes, setIntervalMinutes] = useState(String(props.loop?.intervalMinutes ?? 30));
+  const [compactTiming, setCompactTiming] = useState<"disabled" | "before" | "after">(
+    props.loop?.compactTiming ?? "disabled",
+  );
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -160,6 +170,7 @@ export default function ThreadLoopControl(props: {
     setEnabled(props.loop?.enabled ?? true);
     setPrompt(props.loop?.prompt ?? "");
     setIntervalMinutes(String(props.loop?.intervalMinutes ?? 30));
+    setCompactTiming(props.loop?.compactTiming ?? "disabled");
     setError(null);
   }, [open, props.loop]);
 
@@ -172,6 +183,9 @@ export default function ThreadLoopControl(props: {
       `Every ${formatInterval(props.loop.intervalMinutes)}`,
     ];
     if (props.loop.nextRunAt) lines.push(`Next: ${formatRelativeTime(props.loop.nextRunAt)}`);
+    if ((props.loop.compactTiming ?? "disabled") !== "disabled") {
+      lines.push(`Compact: ${props.loop.compactTiming}`);
+    }
     if (props.loop.lastError) lines.push(`Error: ${props.loop.lastError}`);
     return lines.join("\n");
   }, [props.loop]);
@@ -187,6 +201,7 @@ export default function ThreadLoopControl(props: {
           enabled: !props.loop.enabled,
           prompt: props.loop.prompt,
           intervalMinutes: props.loop.intervalMinutes,
+          compactTiming: props.loop.compactTiming ?? "disabled",
         });
       } finally {
         setIsTogglingPause(false);
@@ -215,6 +230,7 @@ export default function ThreadLoopControl(props: {
         enabled,
         prompt: trimmedPrompt,
         intervalMinutes: parsedInterval,
+        compactTiming,
       });
       setOpen(false);
     } catch (nextError) {
@@ -432,6 +448,35 @@ export default function ThreadLoopControl(props: {
                 );
               })}
             </div>
+          </div>
+
+          <div className="space-y-2.5">
+            <Label className="text-sm">Context compaction</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {THREAD_LOOP_COMPACT_TIMINGS.map((option) => {
+                const selected = compactTiming === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setCompactTiming(option.value)}
+                    className={[
+                      "inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors duration-100 sm:h-6 sm:text-[0.6875rem]",
+                      "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                      selected
+                        ? "border-primary/30 bg-primary/10 text-primary font-medium dark:border-primary/20 dark:bg-primary/16"
+                        : "border-input bg-background text-muted-foreground hover:bg-accent/50 dark:bg-input/32 dark:hover:bg-input/48",
+                    ].join(" ")}
+                  >
+                    <ArchiveIcon className="size-3" />
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              Before saves context for the next run. After keeps the run lean once it finishes.
+            </p>
           </div>
 
           <div className="space-y-2">

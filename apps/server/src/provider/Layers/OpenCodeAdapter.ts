@@ -1275,6 +1275,14 @@ export function makeOpenCodeAdapter(
       },
     );
 
+    const compactThread = Effect.fn("compactThread")(function* (_threadId: ThreadId) {
+      return yield* new ProviderAdapterValidationError({
+        provider: PROVIDER,
+        operation: "compactThread",
+        issue: "OpenCode does not expose provider-native context compaction.",
+      });
+    });
+
     const respondToRequest: OpenCodeAdapterShape["respondToRequest"] = Effect.fn(
       "respondToRequest",
     )(function* (threadId, requestId, decision) {
@@ -1419,6 +1427,7 @@ export function makeOpenCodeAdapter(
       startSession,
       sendTurn,
       interruptTurn,
+      compactThread,
       respondToRequest,
       respondToUserInput,
       stopSession,
