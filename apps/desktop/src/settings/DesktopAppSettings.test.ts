@@ -21,6 +21,19 @@ const DesktopSettingsPatch = Schema.Struct({
   tailscaleServePort: Schema.optionalKey(Schema.Number),
   updateChannel: Schema.optionalKey(Schema.Literals(["latest", "nightly"])),
   updateChannelConfiguredByUser: Schema.optionalKey(Schema.Boolean),
+  petOverlay: Schema.optionalKey(
+    Schema.Struct({
+      enabled: Schema.optionalKey(Schema.Boolean),
+      position: Schema.optionalKey(
+        Schema.NullOr(
+          Schema.Struct({
+            x: Schema.Number,
+            y: Schema.Number,
+          }),
+        ),
+      ),
+    }),
+  ),
 });
 
 const decodeDesktopSettingsPatch = Schema.decodeEffect(Schema.fromJsonString(DesktopSettingsPatch));
@@ -95,6 +108,10 @@ describe("DesktopSettings", () => {
       tailscaleServePort: 443,
       updateChannel: "nightly",
       updateChannelConfiguredByUser: false,
+      petOverlay: {
+        enabled: false,
+        position: null,
+      },
     } satisfies DesktopSettingsValue);
   });
 
@@ -116,6 +133,10 @@ describe("DesktopSettings", () => {
           tailscaleServePort: 8443,
           updateChannel: "latest",
           updateChannelConfiguredByUser: true,
+          petOverlay: {
+            enabled: false,
+            position: null,
+          },
         } satisfies DesktopSettingsValue);
 
         const exposure = yield* settings.setServerExposureMode("local-only");
@@ -195,6 +216,10 @@ describe("DesktopSettings", () => {
           tailscaleServePort: 8443,
           updateChannel: "latest",
           updateChannelConfiguredByUser: false,
+          petOverlay: {
+            enabled: false,
+            position: null,
+          },
         } satisfies DesktopSettingsValue);
       }),
     ),
@@ -234,6 +259,10 @@ describe("DesktopSettings", () => {
           tailscaleServePort: 443,
           updateChannel: "nightly",
           updateChannelConfiguredByUser: false,
+          petOverlay: {
+            enabled: false,
+            position: null,
+          },
         } satisfies DesktopSettingsValue);
       }),
       { appVersion: "0.0.17-nightly.20260415.1" },
@@ -256,6 +285,10 @@ describe("DesktopSettings", () => {
           tailscaleServePort: 443,
           updateChannel: "latest",
           updateChannelConfiguredByUser: true,
+          petOverlay: {
+            enabled: false,
+            position: null,
+          },
         } satisfies DesktopSettingsValue);
       }),
       { appVersion: "0.0.17-nightly.20260415.1" },
@@ -277,7 +310,40 @@ describe("DesktopSettings", () => {
           tailscaleServePort: 443,
           updateChannel: "latest",
           updateChannelConfiguredByUser: false,
+          petOverlay: {
+            enabled: false,
+            position: null,
+          },
         } satisfies DesktopSettingsValue);
+      }),
+    ),
+  );
+
+  it.effect("persists pet overlay settings", () =>
+    withSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+
+        const change = yield* settings.setPetOverlay({
+          enabled: true,
+          position: { x: 10.4, y: 20.6 },
+        });
+
+        assert.isTrue(change.changed);
+        assert.deepEqual(change.settings.petOverlay, {
+          enabled: true,
+          position: { x: 10, y: 21 },
+        });
+
+        const persisted = yield* decodeDesktopSettingsPatch(
+          yield* fileSystem.readFileString(environment.desktopSettingsPath),
+        );
+        assert.deepEqual(persisted.petOverlay, {
+          enabled: true,
+          position: { x: 10, y: 21 },
+        });
       }),
     ),
   );

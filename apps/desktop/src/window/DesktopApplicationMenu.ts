@@ -127,6 +127,9 @@ const make = Effect.gen(function* () {
     const settingsClick = () => {
       runMenuEffect("open-settings", dispatchMenuAction("open-settings"));
     };
+    const showPetClick = () => {
+      runMenuEffect("show-pet", dispatchMenuAction("show-pet"));
+    };
     const template: Electron.MenuItemConstructorOptions[] = [];
 
     if (environment.platform === "darwin") {
@@ -185,6 +188,11 @@ const make = Effect.gen(function* () {
           { role: "zoomIn", accelerator: "CmdOrCtrl+=" },
           { role: "zoomIn", accelerator: "CmdOrCtrl+Plus", visible: false },
           { role: "zoomOut" },
+          { type: "separator" },
+          {
+            label: "Show Pet",
+            click: showPetClick,
+          },
           { type: "separator" },
           { role: "togglefullscreen" },
         ],
