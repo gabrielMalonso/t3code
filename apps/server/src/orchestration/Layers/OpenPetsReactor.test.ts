@@ -239,8 +239,8 @@ describe("OpenPetsReactor", () => {
     );
 
     expect(harness.notifications.map((notification) => notification.text)).toEqual([
-      "Thinking: Checking the code path before editing the reactor.",
-      "Codex: I found the missing title lookup and will wire it into the pet notification.",
+      "Checking the code path before editing the reactor.",
+      "I found the missing title lookup and will wire it into the pet notification.",
     ]);
   });
 
