@@ -134,10 +134,13 @@ const desktopBackendLayer = DesktopBackendManager.layer.pipe(
   Layer.provideMerge(desktopWindowLayer),
 );
 
+const desktopApplicationMenuLayer = DesktopApplicationMenu.layer.pipe(
+  Layer.provideMerge(DesktopPetOverlay.layer),
+);
+
 const desktopApplicationLayer = Layer.mergeAll(
   DesktopLifecycle.layer,
-  DesktopApplicationMenu.layer,
-  DesktopPetOverlay.layer,
+  desktopApplicationMenuLayer,
   DesktopShellEnvironment.layer,
   desktopSshLayer,
 ).pipe(Layer.provideMerge(DesktopUpdates.layer), Layer.provideMerge(desktopBackendLayer));

@@ -26,6 +26,15 @@ const MAX_PET_WINDOW_SIZE = 320;
 const MIN_PET_WINDOW_SIZE = 16;
 const PET_GROUND_PADDING = 8;
 const SAFE_PET_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,79}$/i;
+const DEFAULT_DESKTOP_PET_ID = "nimbus";
+const DEFAULT_DESKTOP_PET_DISPLAY_NAME = "Nimbus";
+const DEFAULT_DESKTOP_PET_DESCRIPTION =
+  "A tiny chibi martial-arts kid riding a golden cloud companion.";
+const DEFAULT_DESKTOP_PET_COLUMNS = 8;
+const DEFAULT_DESKTOP_PET_ROWS = 9;
+const DEFAULT_DESKTOP_PET_RENDER_WIDTH = 96;
+const DEFAULT_DESKTOP_PET_RENDER_HEIGHT = 104;
+const DEFAULT_DESKTOP_PET_IDLE_DURATION_MS = 180;
 
 type ResolvePetAssetPath = (petId: string) => string | null;
 type OnMoved = (position: DesktopPetOverlayPosition) => void;
@@ -77,6 +86,44 @@ function resolveOverlayLayout(state: DesktopPetOverlayState): PetOverlayLayout {
     windowHeight: state.height + PET_GROUND_PADDING,
     petLeft: 0,
   };
+}
+
+function defaultDesktopPetPosition(): DesktopPetOverlayPosition {
+  const workArea = screen.getPrimaryDisplay().workArea;
+  return {
+    x: Math.max(
+      workArea.x,
+      Math.round(workArea.x + workArea.width - DEFAULT_DESKTOP_PET_RENDER_WIDTH - 32),
+    ),
+    y: Math.max(
+      workArea.y,
+      Math.round(
+        workArea.y + workArea.height - DEFAULT_DESKTOP_PET_RENDER_HEIGHT - PET_GROUND_PADDING - 48,
+      ),
+    ),
+  };
+}
+
+function buildDefaultDesktopPetOverlayState(settings: DesktopPetOverlaySettings) {
+  const position = settings.position ?? defaultDesktopPetPosition();
+
+  return {
+    visible: true,
+    petId: DEFAULT_DESKTOP_PET_ID,
+    displayName: DEFAULT_DESKTOP_PET_DISPLAY_NAME,
+    description: DEFAULT_DESKTOP_PET_DESCRIPTION,
+    animation: "idle",
+    activity: null,
+    row: 0,
+    frames: 1,
+    durationMs: DEFAULT_DESKTOP_PET_IDLE_DURATION_MS,
+    width: DEFAULT_DESKTOP_PET_RENDER_WIDTH,
+    height: DEFAULT_DESKTOP_PET_RENDER_HEIGHT,
+    columns: DEFAULT_DESKTOP_PET_COLUMNS,
+    rows: DEFAULT_DESKTOP_PET_ROWS,
+    x: position.x,
+    y: position.y,
+  } satisfies DesktopPetOverlayState;
 }
 
 function summarizePetOverlayStateInput(input: unknown): DesktopObservability.DesktopLogAnnotations {
@@ -806,6 +853,10 @@ export interface DesktopPetOverlayShape {
   readonly setEnabled: (
     enabled: boolean,
   ) => Effect.Effect<DesktopPetOverlaySettings, DesktopAppSettings.DesktopSettingsWriteError>;
+  readonly showDefault: Effect.Effect<
+    DesktopPetOverlaySettings,
+    DesktopAppSettings.DesktopSettingsWriteError
+  >;
   readonly setState: (state: unknown) => Effect.Effect<void>;
   readonly hide: Effect.Effect<void>;
   readonly close: Effect.Effect<
@@ -841,17 +892,19 @@ const make = Effect.gen(function* () {
   >();
   const runPromise = Effect.runPromiseWith(context);
   const petAssetPaths = new Map<string, string>();
-  const nimbusAssetPath = yield* assets.resolveResourcePath("pets/nimbus/spritesheet.webp");
+  const nimbusAssetPath = yield* assets.resolveResourcePath(
+    `pets/${DEFAULT_DESKTOP_PET_ID}/spritesheet.webp`,
+  );
   if (Option.isSome(nimbusAssetPath)) {
-    petAssetPaths.set("nimbus", nimbusAssetPath.value);
+    petAssetPaths.set(DEFAULT_DESKTOP_PET_ID, nimbusAssetPath.value);
     yield* logPetInfo("pet overlay asset registered", {
-      petId: "nimbus",
+      petId: DEFAULT_DESKTOP_PET_ID,
       assetPath: nimbusAssetPath.value,
     });
   } else {
     yield* logPetWarning("pet overlay asset missing", {
-      petId: "nimbus",
-      fileName: "pets/nimbus/spritesheet.webp",
+      petId: DEFAULT_DESKTOP_PET_ID,
+      fileName: `pets/${DEFAULT_DESKTOP_PET_ID}/spritesheet.webp`,
     });
   }
 
@@ -930,6 +983,29 @@ const make = Effect.gen(function* () {
         });
         return change.settings.petOverlay;
       }).pipe(Effect.withSpan("desktop.petOverlay.setEnabled", { attributes: { enabled } })),
+    showDefault: Effect.gen(function* () {
+      const current = yield* settings.get;
+      yield* logPetInfo("pet overlay showDefault requested", {
+        previousEnabled: current.petOverlay.enabled,
+        previousPosition: current.petOverlay.position,
+      });
+
+      const next = withPetOverlay(current.petOverlay, { enabled: true });
+      const change = yield* settings.setPetOverlay(next);
+      if (change.changed) {
+        yield* emitSettings(change.settings.petOverlay);
+      }
+
+      const state = buildDefaultDesktopPetOverlayState(change.settings.petOverlay);
+      yield* logPetInfo("pet overlay showDefault applying state", {
+        changed: change.changed,
+        enabled: change.settings.petOverlay.enabled,
+        position: change.settings.petOverlay.position,
+        ...summarizePetOverlayStateInput(state),
+      });
+      yield* Effect.promise(() => controller.setState(state));
+      return change.settings.petOverlay;
+    }).pipe(Effect.withSpan("desktop.petOverlay.showDefault")),
     setState: (state) =>
       Effect.gen(function* () {
         const current = yield* settings.get;
