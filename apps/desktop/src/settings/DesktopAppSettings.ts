@@ -1,5 +1,4 @@
 import {
-  type DesktopPetOverlaySettings,
   DesktopServerExposureModeSchema,
   DesktopUpdateChannelSchema,
   type DesktopServerExposureMode,
@@ -27,7 +26,6 @@ export interface DesktopSettings {
   readonly tailscaleServePort: number;
   readonly updateChannel: DesktopUpdateChannel;
   readonly updateChannelConfiguredByUser: boolean;
-  readonly petOverlay: DesktopPetOverlaySettings;
 }
 
 export interface DesktopSettingsChange {
@@ -43,10 +41,6 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   tailscaleServePort: DEFAULT_TAILSCALE_SERVE_PORT,
   updateChannel: "latest",
   updateChannelConfiguredByUser: false,
-  petOverlay: {
-    enabled: false,
-    position: null,
-  },
 };
 
 const DesktopSettingsDocument = Schema.Struct({
@@ -55,19 +49,6 @@ const DesktopSettingsDocument = Schema.Struct({
   tailscaleServePort: Schema.optionalKey(Schema.Number),
   updateChannel: Schema.optionalKey(DesktopUpdateChannelSchema),
   updateChannelConfiguredByUser: Schema.optionalKey(Schema.Boolean),
-  petOverlay: Schema.optionalKey(
-    Schema.Struct({
-      enabled: Schema.optionalKey(Schema.Boolean),
-      position: Schema.optionalKey(
-        Schema.NullOr(
-          Schema.Struct({
-            x: Schema.Number,
-            y: Schema.Number,
-          }),
-        ),
-      ),
-    }),
-  ),
 });
 
 type DesktopSettingsDocument = typeof DesktopSettingsDocument.Type;
@@ -103,9 +84,6 @@ export interface DesktopAppSettingsShape {
   readonly setUpdateChannel: (
     channel: DesktopUpdateChannel,
   ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
-  readonly setPetOverlay: (
-    settings: DesktopPetOverlaySettings,
-  ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
 }
 
 export class DesktopAppSettings extends Context.Service<
@@ -124,26 +102,6 @@ function normalizeTailscaleServePort(value: unknown): number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 65_535
     ? value
     : DEFAULT_TAILSCALE_SERVE_PORT;
-}
-
-function normalizePetOverlaySettings(value: DesktopSettingsDocument["petOverlay"]) {
-  if (typeof value !== "object" || value === null) {
-    return DEFAULT_DESKTOP_SETTINGS.petOverlay;
-  }
-  const position =
-    typeof value.position === "object" &&
-    value.position !== null &&
-    Number.isFinite(value.position.x) &&
-    Number.isFinite(value.position.y)
-      ? {
-          x: Math.round(value.position.x),
-          y: Math.round(value.position.y),
-        }
-      : null;
-  return {
-    enabled: value.enabled === true,
-    position,
-  } satisfies DesktopPetOverlaySettings;
 }
 
 function normalizeDesktopSettingsDocument(
@@ -166,7 +124,6 @@ function normalizeDesktopSettingsDocument(
       ? Option.getOrElse(parsedUpdateChannel, () => defaultSettings.updateChannel)
       : defaultSettings.updateChannel,
     updateChannelConfiguredByUser,
-    petOverlay: normalizePetOverlaySettings(parsed.petOverlay),
   };
 }
 
@@ -191,14 +148,6 @@ function toDesktopSettingsDocument(
   if (settings.updateChannelConfiguredByUser !== defaults.updateChannelConfiguredByUser) {
     document.updateChannelConfiguredByUser = settings.updateChannelConfiguredByUser;
   }
-  if (
-    settings.petOverlay.enabled !== defaults.petOverlay.enabled ||
-    settings.petOverlay.position?.x !== defaults.petOverlay.position?.x ||
-    settings.petOverlay.position?.y !== defaults.petOverlay.position?.y
-  ) {
-    document.petOverlay = settings.petOverlay;
-  }
-
   return document;
 }
 
@@ -242,33 +191,6 @@ function setUpdateChannel(
         updateChannel: requestedChannel,
         updateChannelConfiguredByUser: true,
       };
-}
-
-function setPetOverlay(
-  settings: DesktopSettings,
-  requestedSettings: DesktopPetOverlaySettings,
-): DesktopSettings {
-  const position = requestedSettings.position
-    ? {
-        x: Math.round(requestedSettings.position.x),
-        y: Math.round(requestedSettings.position.y),
-      }
-    : null;
-  const nextPetOverlay = {
-    enabled: requestedSettings.enabled,
-    position,
-  };
-  if (
-    settings.petOverlay.enabled === nextPetOverlay.enabled &&
-    settings.petOverlay.position?.x === nextPetOverlay.position?.x &&
-    settings.petOverlay.position?.y === nextPetOverlay.position?.y
-  ) {
-    return settings;
-  }
-  return {
-    ...settings,
-    petOverlay: nextPetOverlay,
-  };
 }
 
 function readSettings(
@@ -362,10 +284,6 @@ export const layer = Layer.effect(
         persist((settings) => setUpdateChannel(settings, channel)).pipe(
           Effect.withSpan("desktop.settings.setUpdateChannel", { attributes: { channel } }),
         ),
-      setPetOverlay: (settings) =>
-        persist((current) => setPetOverlay(current, settings)).pipe(
-          Effect.withSpan("desktop.settings.setPetOverlay"),
-        ),
     });
   }),
 );
@@ -394,7 +312,6 @@ export const layerTest = (initialSettings: DesktopSettings = DEFAULT_DESKTOP_SET
           update((settings) => setServerExposureMode(settings, mode)),
         setTailscaleServe: (input) => update((settings) => setTailscaleServe(settings, input)),
         setUpdateChannel: (channel) => update((settings) => setUpdateChannel(settings, channel)),
-        setPetOverlay: (petOverlay) => update((settings) => setPetOverlay(settings, petOverlay)),
       });
     }),
   );

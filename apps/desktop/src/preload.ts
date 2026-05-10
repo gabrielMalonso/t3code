@@ -115,44 +115,6 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.MENU_ACTION_CHANNEL, wrappedListener);
     };
   },
-  petOverlay: {
-    getSettings: () => ipcRenderer.invoke(IpcChannels.PET_OVERLAY_GET_SETTINGS_CHANNEL),
-    setEnabled: (enabled) =>
-      ipcRenderer.invoke(IpcChannels.PET_OVERLAY_SET_ENABLED_CHANNEL, enabled),
-    setState: (state) => ipcRenderer.invoke(IpcChannels.PET_OVERLAY_SET_STATE_CHANNEL, state),
-    hide: () => ipcRenderer.invoke(IpcChannels.PET_OVERLAY_HIDE_CHANNEL),
-    close: () => ipcRenderer.invoke(IpcChannels.PET_OVERLAY_CLOSE_CHANNEL),
-    dragStart: (input) => ipcRenderer.invoke(IpcChannels.PET_OVERLAY_DRAG_START_CHANNEL, input),
-    dragMove: () => ipcRenderer.invoke(IpcChannels.PET_OVERLAY_DRAG_MOVE_CHANNEL),
-    dragEnd: () => ipcRenderer.invoke(IpcChannels.PET_OVERLAY_DRAG_END_CHANNEL),
-    setPointerInteraction: (input) =>
-      ipcRenderer.invoke(IpcChannels.PET_OVERLAY_POINTER_INTERACTION_CHANNEL, input),
-    onMoved: (listener) => {
-      const wrappedListener = (_event: Electron.IpcRendererEvent, position: unknown) => {
-        if (typeof position !== "object" || position === null) return;
-        listener(position as Parameters<typeof listener>[0]);
-      };
-
-      ipcRenderer.on(IpcChannels.PET_OVERLAY_MOVED_CHANNEL, wrappedListener);
-      return () => {
-        ipcRenderer.removeListener(IpcChannels.PET_OVERLAY_MOVED_CHANNEL, wrappedListener);
-      };
-    },
-    onSettingsChanged: (listener) => {
-      const wrappedListener = (_event: Electron.IpcRendererEvent, settings: unknown) => {
-        if (typeof settings !== "object" || settings === null) return;
-        listener(settings as Parameters<typeof listener>[0]);
-      };
-
-      ipcRenderer.on(IpcChannels.PET_OVERLAY_SETTINGS_CHANGED_CHANNEL, wrappedListener);
-      return () => {
-        ipcRenderer.removeListener(
-          IpcChannels.PET_OVERLAY_SETTINGS_CHANGED_CHANNEL,
-          wrappedListener,
-        );
-      };
-    },
-  },
   getUpdateState: () => ipcRenderer.invoke(IpcChannels.UPDATE_GET_STATE_CHANNEL),
   setUpdateChannel: (channel) =>
     ipcRenderer.invoke(IpcChannels.UPDATE_SET_CHANNEL_CHANNEL, channel),
