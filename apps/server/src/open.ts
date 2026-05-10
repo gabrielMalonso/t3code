@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off
 /**
  * Open - Browser/editor launch service interface.
  *
@@ -13,7 +14,9 @@ import path from "node:path";
 
 import { EDITORS, OpenError, type EditorId } from "@t3tools/contracts";
 import { isCommandAvailable, type CommandAvailabilityOptions } from "@t3tools/shared/shell";
-import { Context, Effect, Layer } from "effect";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 
 // ==============================
 // Definitions

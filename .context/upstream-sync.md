@@ -2,10 +2,10 @@
 
 ## Status atual
 
-- Data: 2026-05-07
+- Data: 2026-05-10
 - Branch de trabalho: `main`
-- Upstream integrado nesta wave: `a74ed8ed3` (`upstream/main`)
-- Estado: merge aplicado em `--no-commit` e custom desktop de auto-update opt-in adicionado para impedir que builds do fork apontem automaticamente para releases upstream
+- Upstream integrado nesta wave: `b793401ae` (`upstream/main`)
+- Estado: merge aplicado em `--no-commit`; upstream desktop/Effect/archive-shell absorvido e custom vivo reencaixado em slots/adaptadores pequenos
 - Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
 ## Features locais vivas
@@ -67,6 +67,53 @@
 - Se a mudanca for mobile/root/runtime/header/composer, preservar o fluxo upstream e reaplicar o app mobile como `apps/mobile/*`, `apps/web/src/mobile/*` e guards pequenos atras de `isMobileCapacitorRuntime()`
 - Se precisar tocar `ChatComposer` ou `ComposerPromptEditor`, fazer o minimo e deixar a adaptacao visivel
 - Se a mudanca for release/build desktop, nao permitir fallback automatico para `GITHUB_REPOSITORY` no feed de updater; o fork precisa de opt-in explicito para nao reinstalar upstream por acidente
+
+## 2026-05-10 — Sync ate `b793401ae`
+
+- Branch de sync: `main`
+- Donor local usado para replay seletivo: `03e3d5d88` (`Handle hosted pairing URLs in mobile pairing target`)
+- Upstream absorvido:
+  - refactor grande do desktop para camadas `app/`, `backend/`, `electron/`, `ipc/`, `settings/`, `ssh/`, `updates/` e `window/`
+  - archived shell snapshots e listagem separada de threads arquivadas
+  - colapso de mensagens longas de usuario e renderizacao de skill chips inline no markdown
+  - stricter Effect diagnostics, oxlint plugin, automatic git fetch interval e atualizacoes de release/deploy
+  - fixes hosted/bootstrap, CORS de pairing remoto, reconnect SSH e raw delta de OpenCode
+- Zona de atrito prevista antes do merge:
+  - `apps/desktop/src/main.ts`, `apps/desktop/src/preload.ts`, `apps/server/src/ws.ts`
+  - `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts`
+  - `apps/server/src/orchestration/decider.ts`
+  - `apps/server/src/persistence/Migrations.ts`
+  - `apps/web/src/components/chat/ChatComposer.tsx`
+  - `apps/web/src/components/chat/MessagesTimeline.tsx`
+  - `apps/web/src/components/ChatMarkdown.tsx`
+  - `apps/web/src/composerDraftStore.ts`
+  - `apps/web/src/components/settings/SettingsPanels.tsx`
+  - `apps/web/package.json`, `bun.lock`
+- Conflitos reais do merge:
+  - desktop bridge/main/preload e remocao de `clientPersistence`/`desktopSettings` antigos
+  - `open.test`, `server.test`, `ProjectionSnapshotQuery`, `decider`, `Migrations`, `ws`
+  - `ChatMarkdown`, `ChatComposer`, `MessagesTimeline`, `SettingsPanels`, `composerDraftStore`, `apps/web/package.json`, `bun.lock`
+- O que foi reaplicado do custom vivo:
+  - `getPathForFile` no `apps/desktop/src/preload.ts`, preservando file references por path no Electron sobre a nova arquitetura IPC
+  - `showPlanSidebar` no novo teste de `DesktopClientSettings`
+  - thread loop em `decider`, `ProjectionSnapshotQuery`, migrations e scheduler, atualizado para as regras Effect novas
+  - file references em `MessagesTimeline` antes do novo `CollapsibleUserMessageBody`
+  - placeholder custom do composer via `resolveComposerPlaceholder`
+  - dependencias Capacitor junto do bump upstream de `@base-ui/react`
+- O que foi deliberadamente deixado de fora do replay:
+  - `clientPersistence.ts`, `desktopSettings.ts` e o `main.ts` monolitico antigos; o upstream substituiu isso melhor
+  - fluxo antigo de mensagens de usuario sem colapso; o upstream agora cobre essa UX no core
+  - qualquer copia local do markdown skill-chip; o upstream ganhou `SkillInlineText`
+- Decisoes importantes:
+  - migration upstream `030_ProjectionThreadShellArchiveIndexes` entrou como ID `32`, porque o fork ja ocupa IDs locais e o sync anterior ja havia deslocado `029` para `31`
+  - `ProjectionSnapshotQuery` agora preserva loops custom e tambem absorve queries upstream de threads ativas/arquivadas
+  - no desktop, o custom fica no preload/bridge; nao ressuscitar os modulos removidos pelo upstream
+- Validacao final:
+  - `bun fmt`
+  - `bun lint`
+  - `bun typecheck`
+  - `bun run --cwd apps/desktop test src/settings/DesktopClientSettings.test.ts`
+  - `bun run --cwd apps/server test src/orchestration/Layers/ProjectionSnapshotQuery.test.ts src/orchestration/Layers/ThreadLoopScheduler.test.ts src/orchestration/projector.test.ts`
 
 ## 2026-05-07 — Sync ate `a74ed8ed3`
 

@@ -1,3 +1,7 @@
+// @effect-diagnostics nodeBuiltinImport:off
+// @effect-diagnostics importFromBarrel:off
+// @effect-diagnostics globalDate:off
+// @effect-diagnostics globalTimers:off
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
