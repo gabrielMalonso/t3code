@@ -1,5 +1,6 @@
 import {
   EventId,
+  ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
   RuntimeRequestId,
@@ -11,6 +12,7 @@ import {
 import { describe, expect, it } from "vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
 import type { OpenPetsNotifyInput } from "../../openpets/Services/OpenPetsBridge.ts";
@@ -20,6 +22,10 @@ import {
   type ProviderServiceShape,
 } from "../../provider/Services/ProviderService.ts";
 import { OpenPetsReactor } from "../Services/OpenPetsReactor.ts";
+import {
+  ProjectionSnapshotQuery,
+  type ProjectionSnapshotQueryShape,
+} from "../Services/ProjectionSnapshotQuery.ts";
 import { OpenPetsReactorInternals, OpenPetsReactorLive } from "./OpenPetsReactor.ts";
 
 const drainFibers = Effect.forEach(Array.from({ length: 10 }), () => Effect.yieldNow, {
@@ -35,6 +41,29 @@ const openPetsStatus: OpenPetsRuntimeStatus = {
   lastError: null,
   lastEventAt: null,
 };
+
+const threadShell = {
+  id: ThreadId.make("thread-1"),
+  projectId: ProjectId.make("project-1"),
+  title: "Improve OpenPets sync",
+  modelSelection: {
+    instanceId: ProviderInstanceId.make("codex"),
+    model: "gpt-5.4",
+  },
+  runtimeMode: "full-access",
+  interactionMode: "default",
+  branch: null,
+  worktreePath: null,
+  latestTurn: null,
+  createdAt: "2026-05-10T12:00:00.000Z",
+  updatedAt: "2026-05-10T12:00:00.000Z",
+  archivedAt: null,
+  session: null,
+  latestUserMessageAt: null,
+  hasPendingApprovals: false,
+  hasPendingUserInput: false,
+  hasActionableProposedPlan: false,
+} as const;
 
 function makeEvent<T extends ProviderRuntimeEvent["type"]>(
   type: T,
@@ -57,6 +86,8 @@ function makeEvent<T extends ProviderRuntimeEvent["type"]>(
 function makeHarness(events: ReadonlyArray<ProviderRuntimeEvent>) {
   const notifications: OpenPetsNotifyInput[] = [];
   const unsupported = () => Effect.die(new Error("Unsupported provider call in test")) as never;
+  const unsupportedQuery = () =>
+    Effect.die(new Error("Unsupported projection query in test")) as never;
   const providerService: ProviderServiceShape = {
     startSession: () => unsupported(),
     sendTurn: () => unsupported(),
@@ -80,9 +111,27 @@ function makeHarness(events: ReadonlyArray<ProviderRuntimeEvent>) {
     rollbackConversation: () => unsupported(),
     streamEvents: Stream.fromIterable(events),
   };
+  const projectionSnapshotQuery: ProjectionSnapshotQueryShape = {
+    getCommandReadModel: () => unsupportedQuery(),
+    getSnapshot: () => unsupportedQuery(),
+    getShellSnapshot: () => unsupportedQuery(),
+    getArchivedShellSnapshot: () => unsupportedQuery(),
+    getSnapshotSequence: () => unsupportedQuery(),
+    getCounts: () => unsupportedQuery(),
+    getActiveProjectByWorkspaceRoot: () => unsupportedQuery(),
+    getProjectShellById: () => unsupportedQuery(),
+    getFirstActiveThreadIdByProjectId: () => unsupportedQuery(),
+    getThreadCheckpointContext: () => unsupportedQuery(),
+    getThreadShellById: (threadId) =>
+      Effect.succeed(
+        threadId === ThreadId.make("thread-1") ? Option.some(threadShell) : Option.none(),
+      ),
+    getThreadDetailById: () => unsupportedQuery(),
+  };
 
   const layer = OpenPetsReactorLive.pipe(
     Layer.provide(Layer.succeed(ProviderService, providerService)),
+    Layer.provide(Layer.succeed(ProjectionSnapshotQuery, projectionSnapshotQuery)),
     Layer.provide(
       Layer.succeed(OpenPetsBridge, {
         notify: (input) => Effect.sync(() => notifications.push(input)),
@@ -122,7 +171,8 @@ describe("OpenPetsReactor", () => {
       "running",
       "done",
     ]);
-    expect(harness.notifications[0]?.key).toBe("thread-1:turn-1");
+    expect(harness.notifications[0]?.key).toBe("thread-1");
+    expect(harness.notifications[0]?.title).toBe("Improve OpenPets sync");
     expect(harness.notifications[1]?.text).toBe("Completed.");
   });
 
@@ -166,6 +216,34 @@ describe("OpenPetsReactor", () => {
     expect(harness.notifications[2]?.text).toBe("Back to work.");
   });
 
+  it("uses assistant and reasoning summary deltas as live chat context", async () => {
+    const harness = makeHarness([
+      makeEvent("content.delta", {
+        streamKind: "reasoning_summary_text",
+        delta: "Checking the code path before editing the reactor.",
+      }),
+      makeEvent("content.delta", {
+        streamKind: "assistant_text",
+        delta: "I found the missing title lookup and will wire it into the pet notification.",
+      }),
+    ]);
+    await harness.run(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const reactor = yield* OpenPetsReactor;
+          yield* reactor.start();
+          yield* drainFibers;
+          yield* reactor.drain;
+        }),
+      ),
+    );
+
+    expect(harness.notifications.map((notification) => notification.text)).toEqual([
+      "Thinking: Checking the code path before editing the reactor.",
+      "Codex: I found the missing title lookup and will wire it into the pet notification.",
+    ]);
+  });
+
   it("maps failures and interruptions to failed", async () => {
     expect(
       OpenPetsReactorInternals.eventToNotification(
@@ -203,6 +281,6 @@ describe("OpenPetsReactor", () => {
       },
     );
 
-    expect(OpenPetsReactorInternals.notificationKey(event)).toBe("thread-1:request:request-1");
+    expect(OpenPetsReactorInternals.notificationKey(event)).toBe("thread-1");
   });
 });
