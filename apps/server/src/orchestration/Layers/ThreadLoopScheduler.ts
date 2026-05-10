@@ -6,7 +6,11 @@ import {
   type OrchestrationSessionStatus,
   type OrchestrationEvent,
 } from "@t3tools/contracts";
-import { Cause, Effect, Layer, Stream } from "effect";
+import * as Cause from "effect/Cause";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Stream from "effect/Stream";
 
 import { ProjectionThreadLoopRepositoryLive } from "../../persistence/Layers/ProjectionThreadLoops.ts";
 import { ProjectionThreadLoopRepository } from "../../persistence/Services/ProjectionThreadLoops.ts";
@@ -277,7 +281,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
     yield* Effect.forkScoped(
       Effect.gen(function* () {
         for (;;) {
-          const nowIso = new Date().toISOString();
+          const nowIso = DateTime.formatIso(yield* DateTime.now);
           yield* runDueThreadLoops(nowIso).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("thread loop scheduler tick failed", {

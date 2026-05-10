@@ -8,7 +8,8 @@ import {
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
@@ -598,7 +599,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             'default',
             NULL,
             NULL,
-            NULL,
+            'turn-live',
             '2026-03-01T00:00:10.000Z',
             '2026-03-01T00:00:11.000Z',
             NULL,
@@ -1453,7 +1454,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
 
       const commandReadModel = yield* snapshotQuery.getCommandReadModel();
       assert.equal(commandReadModel.threads[0]?.latestTurn?.turnId, asTurnId("turn-running"));
-      assert.equal(commandReadModel.threads[0]?.latestTurn?.state, "running");
+      assert.equal(commandReadModel.threads[0]?.latestTurn?.state, "interrupted");
 
       const shellSnapshot = yield* snapshotQuery.getShellSnapshot();
       assert.equal(shellSnapshot.threads[0]?.latestTurn?.turnId, asTurnId("turn-running"));
@@ -1461,7 +1462,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
 
       const fullSnapshot = yield* snapshotQuery.getSnapshot();
       assert.equal(fullSnapshot.threads[0]?.latestTurn?.turnId, asTurnId("turn-running"));
-      assert.equal(fullSnapshot.threads[0]?.latestTurn?.state, "running");
+      assert.equal(fullSnapshot.threads[0]?.latestTurn?.state, "interrupted");
     }),
   );
 

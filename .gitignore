@@ -27,3 +27,5 @@ squashfs-root/
 # Local agent/worktree state
 .Codex/progress/
 .vercel
+dist-electron/
+.electron-runtime/

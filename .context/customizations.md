@@ -29,7 +29,7 @@ Regra pratica:
 | ------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | File references por path                    | web custom        | `apps/web/src/t3code-custom/file-references/*`, `apps/web/src/t3code-custom/hooks/useComposerFileReferenceSend.ts`, `apps/web/src/t3code-custom/hooks/useComposerPasteFileReference.ts`, `apps/web/src/t3code-custom/chat/UserMessageFileReferencesSlot.tsx`                                                                                                                                                                                               | `apps/web/src/components/ChatView.tsx`, `apps/web/src/components/chat/ChatComposer.tsx`, `apps/web/src/components/chat/MessagesTimeline.tsx`, `apps/web/src/composerDraftStore.ts`, `apps/web/src/historyBootstrap.ts`                                                                                                                                        | preservar o parser e a serializacao local; no core, manter so adaptadores pequenos                                                              |
 | Thread loop por thread                      | web custom        | `apps/web/src/t3code-custom/chat/ThreadLoopControl.tsx`, `apps/web/src/t3code-custom/hooks/useThreadLoopActions.ts`, `apps/server/src/orchestration/Layers/ThreadLoopScheduler.ts`                                                                                                                                                                                                                                                                         | `apps/web/src/components/ChatView.tsx`, `apps/web/src/components/chat/ChatComposer.tsx`, `apps/server/src/orchestration/*`, `packages/contracts/src/orchestration.ts`                                                                                                                                                                                         | contracts e scheduler sao hotspot real; UI deve continuar no perimetro custom                                                                   |
-| Visibilidade da Plan sidebar                | web custom leve   | `packages/contracts/src/settings.ts`, `apps/web/src/components/settings/SettingsPanels.tsx`                                                                                                                                                                                                                                                                                                                                                                | `apps/web/src/components/ChatView.tsx`, `apps/web/src/components/chat/ChatComposer.tsx`, `apps/web/src/localApi.ts`, `apps/desktop/src/clientPersistence.ts`                                                                                                                                                                                                  | manter o setting local ate o upstream ganhar equivalente; gates do auto-open devem continuar pequenos                                           |
+| Visibilidade da Plan sidebar                | web custom leve   | `packages/contracts/src/settings.ts`, `apps/web/src/components/settings/SettingsPanels.tsx`                                                                                                                                                                                                                                                                                                                                                                | `apps/web/src/components/ChatView.tsx`, `apps/web/src/components/chat/ChatComposer.tsx`, `apps/web/src/localApi.ts`, `apps/desktop/src/settings/DesktopClientSettings.ts`                                                                                                                                                                                     | manter o setting local ate o upstream ganhar equivalente; gates do auto-open devem continuar pequenos                                           |
 | Skills de workspace para turnos do Codex    | web+server custom | `apps/web/src/t3code-custom/hooks/useComposerProviderSkills.ts`, `apps/web/src/t3code-custom/hooks/useComposerSkillExtension.ts`, `apps/server/src/provider/Layers/ProviderService.ts`, `apps/server/src/provider/Layers/CodexAdapter.ts`, `apps/server/src/provider/Layers/CodexSessionRuntime.ts`, `apps/server/src/provider/Layers/CodexProvider.ts`, `apps/server/src/ws.ts`, `packages/contracts/src/provider.ts`, `packages/contracts/src/server.ts` | `apps/web/src/components/chat/ChatComposer.tsx`, `apps/web/src/components/ChatView.tsx`, `packages/contracts/src/rpc.ts`, `apps/web/src/environmentApi.ts`, `apps/web/src/localApi.ts`, `apps/desktop/src/main.ts`, `apps/desktop/src/preload.ts`, `packages/contracts/src/providerInstance.ts`                                                               | no web, manter o composer so consumindo hooks custom; no server, aceitar `ProviderInstanceId` do upstream e reaplicar skills como overlay Codex |
 | Artefatos internos do workspace (`.t3code`) | server custom     | `apps/server/src/t3code-custom/workspace/internalArtifacts.ts`                                                                                                                                                                                                                                                                                                                                                                                             | `apps/server/src/workspace/Layers/WorkspaceFileSystem.ts`                                                                                                                                                                                                                                                                                                     | se upstream mexer no workspace file system, manter o core generico e reaplicar so a chamada do helper local                                     |
 | Fonte monoespacada do terminal/codigo       | web custom leve   | `apps/web/src/t3code-custom/terminal/fontFamily.ts`, `apps/web/src/index.css`                                                                                                                                                                                                                                                                                                                                                                              | `apps/web/src/components/ThreadTerminalDrawer.tsx`                                                                                                                                                                                                                                                                                                            | manter o drawer so lendo o helper; qualquer policy visual fica fora dele                                                                        |
@@ -78,7 +78,7 @@ Regra pratica:
   - `apps/web/src/components/ChatView.tsx`
   - `apps/web/src/components/chat/ChatComposer.tsx`
   - `apps/web/src/localApi.ts`
-  - `apps/desktop/src/clientPersistence.ts`
+  - `apps/desktop/src/settings/DesktopClientSettings.ts`
 - Motivo:
   - manter a sidebar do plano como capacidade opcional do fork, sem espalhar regra local por todo o layout do chat
 
@@ -107,6 +107,7 @@ Regra pratica:
   - `apps/web/src/localApi.ts`
   - `apps/desktop/src/main.ts`
   - `apps/desktop/src/preload.ts`
+  - `apps/desktop/src/ipc/*`
 - Regra adicional:
   - se o upstream mexer no runtime do Codex, aceitar o fluxo novo e reaplicar so a passagem de `skills` como item do protocolo, sem recriar manager paralelo
   - se o upstream mexer em provider instances, manter `listProviderSkills` como RPC local pequeno, sem criar registry paralelo
@@ -189,6 +190,26 @@ Regra pratica:
   - builds desktop do fork nao devem criar `app-update.yml` a partir de `GITHUB_REPOSITORY`
   - feed de update so deve existir quando `T3CODE_DESKTOP_UPDATE_REPOSITORY` estiver definido explicitamente
   - motivo bem concreto: evitar que uma instalacao custom reinstale sozinha o build oficial do upstream e perca `t3code-custom`
+
+### Desktop bridge para file references
+
+- Fonte de verdade:
+  - `packages/contracts/src/ipc.ts`
+  - `apps/desktop/src/preload.ts`
+- Regra pos refactor desktop upstream:
+  - o desktop core agora vive em camadas `app/`, `electron/`, `ipc/`, `settings/` e `updates/`
+  - preservar `getPathForFile` no preload como adaptador pequeno
+  - nao recriar `clientPersistence.ts`, `desktopSettings.ts` ou constantes de canal antigas no `main.ts`
+
+### Archived shell snapshots upstream
+
+- Fonte de verdade upstream:
+  - `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts`
+  - `apps/web/src/lib/archivedThreadsState.ts`
+- Regra de conflito:
+  - aceitar a separacao upstream entre shell ativo e arquivado
+  - manter `thread.loop` hidratado nas leituras completas e command read model
+  - se `ProjectionSnapshotQuery` conflitar de novo, preservar simultaneamente `listThreadLoopRows` custom e `listActiveThreadRows`/`listArchivedThreadRows` upstream
 
 ## Checklist quando houver conflito
 
