@@ -27,6 +27,10 @@ import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Lay
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
 import { layerConfig as SqlitePersistenceLive } from "../../persistence/Layers/Sqlite.ts";
 import { ProjectionThreadLoopRepository } from "../../persistence/Services/ProjectionThreadLoops.ts";
+import {
+  ProjectionTurnRepository,
+  type ProjectionTurn,
+} from "../../persistence/Services/ProjectionTurns.ts";
 import { RepositoryIdentityResolverLive } from "../../project/Layers/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
@@ -79,8 +83,13 @@ describe("ThreadLoopScheduler", () => {
   async function createHarness(input: {
     sessionStatus: "ready" | "running" | "interrupted" | "stopped" | "error";
     activeTurnId: string | null;
+    compactTiming?: "disabled" | "before" | "after";
+    includeSecondDueLoop?: boolean;
+    compactThread?: (input: { readonly threadId: ThreadId }) => Effect.Effect<void>;
   }) {
     const commandsRef = Effect.runSync(Ref.make<Array<OrchestrationCommand>>([]));
+    const compactCallsRef = Effect.runSync(Ref.make<Array<ThreadId>>([]));
+    const turnRowsRef = Effect.runSync(Ref.make<Array<ProjectionTurn>>([]));
     const loopsRef = Effect.runSync(
       Ref.make([
         {
@@ -88,7 +97,7 @@ describe("ThreadLoopScheduler", () => {
           enabled: true,
           prompt: "Check the deployment",
           intervalMinutes: 30,
-          compactTiming: "disabled" as const,
+          compactTiming: input.compactTiming ?? ("disabled" as const),
           nextRunAt: "2026-04-07T11:00:00.000Z",
           lastRunAt: null,
           lastError: null,
@@ -151,7 +160,7 @@ describe("ThreadLoopScheduler", () => {
               enabled: true,
               prompt: "Check the deployment",
               intervalMinutes: 30,
-              compactTiming: "disabled",
+              compactTiming: input.compactTiming ?? "disabled",
               nextRunAt: "2026-04-07T11:00:00.000Z",
               lastRunAt: null,
               lastError: null,
@@ -162,6 +171,58 @@ describe("ThreadLoopScheduler", () => {
         ],
       }),
     );
+    if (input.includeSecondDueLoop) {
+      Effect.runSync(
+        Ref.update(loopsRef, (loops) => [
+          ...loops,
+          {
+            threadId: asThreadId("thread-2"),
+            enabled: true,
+            prompt: "Check the second deployment",
+            intervalMinutes: 30,
+            compactTiming: "disabled" as const,
+            nextRunAt: "2026-04-07T11:00:00.000Z",
+            lastRunAt: null,
+            lastError: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ]),
+      );
+      Effect.runSync(
+        Ref.update(readModelRef, (readModel) => {
+          const template = readModel.threads[0];
+          if (!template?.loop) {
+            return readModel;
+          }
+          return {
+            ...readModel,
+            threads: [
+              ...readModel.threads,
+              {
+                ...template,
+                id: asThreadId("thread-2"),
+                title: "Thread 2",
+                session: {
+                  threadId: asThreadId("thread-2"),
+                  status: "ready" as const,
+                  providerName: "codex",
+                  runtimeMode: "full-access" as const,
+                  activeTurnId: null,
+                  lastError: null,
+                  updatedAt: now,
+                },
+                loop: {
+                  ...template.loop,
+                  prompt: "Check the second deployment",
+                  compactTiming: "disabled" as const,
+                },
+              },
+            ],
+          };
+        }),
+      );
+    }
     const eventPubSub = Effect.runSync(PubSub.unbounded<OrchestrationEvent>());
 
     runtime = ManagedRuntime.make(
@@ -213,8 +274,23 @@ describe("ThreadLoopScheduler", () => {
           }),
         ),
         Layer.provideMerge(
+          Layer.succeed(ProjectionTurnRepository, {
+            upsertByTurnId: () => Effect.void,
+            replacePendingTurnStart: () => Effect.void,
+            getPendingTurnStartByThreadId: () => Effect.succeed({ _tag: "None" }),
+            deletePendingTurnStartByThreadId: () => Effect.void,
+            listByThreadId: () => Ref.get(turnRowsRef),
+            getByTurnId: () => Effect.succeed({ _tag: "None" }),
+            clearCheckpointTurnConflict: () => Effect.void,
+            deleteByThreadId: () => Effect.void,
+          } as never),
+        ),
+        Layer.provideMerge(
           Layer.succeed(ProviderService, {
-            compactThread: () => Effect.void,
+            compactThread: (compactInput: { readonly threadId: ThreadId }) =>
+              Ref.update(compactCallsRef, (calls) => [...calls, compactInput.threadId]).pipe(
+                Effect.andThen(input.compactThread?.(compactInput) ?? Effect.void),
+              ),
           } as never),
         ),
         Layer.provideMerge(
@@ -270,7 +346,10 @@ describe("ThreadLoopScheduler", () => {
 
     return {
       commandsRef,
+      compactCallsRef,
       loopsRef,
+      readModelRef,
+      turnRowsRef,
       eventPubSub,
     };
   }
@@ -372,6 +451,112 @@ describe("ThreadLoopScheduler", () => {
         (command) =>
           command.type === "thread.activity.append" &&
           command.activity.kind === "loop.tick.skipped",
+      ),
+    );
+  });
+
+  it("waits for the loop turn itself before after-run compaction", async () => {
+    const harness = await createHarness({
+      sessionStatus: "ready",
+      activeTurnId: null,
+      compactTiming: "after",
+    });
+
+    await waitFor(async () => {
+      const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
+      return commands.some((command) => command.type === "thread.turn.start");
+    });
+
+    const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
+    const turnStart = commands.find((command) => command.type === "thread.turn.start");
+    assert.isDefined(turnStart);
+    if (turnStart?.type !== "thread.turn.start") {
+      throw new Error("Expected thread.turn.start command.");
+    }
+
+    await Effect.runPromise(
+      Ref.set(harness.turnRowsRef, [
+        {
+          threadId: asThreadId("thread-1"),
+          turnId: TurnId.make("turn-loop"),
+          pendingMessageId: turnStart.message.messageId,
+          sourceProposedPlanThreadId: null,
+          sourceProposedPlanId: null,
+          assistantMessageId: null,
+          state: "running",
+          requestedAt: turnStart.createdAt,
+          startedAt: turnStart.createdAt,
+          completedAt: null,
+          checkpointTurnCount: null,
+          checkpointRef: null,
+          checkpointStatus: null,
+          checkpointFiles: [],
+        },
+      ]),
+    );
+    await Effect.runPromise(
+      Ref.update(harness.readModelRef, (readModel) => ({
+        ...readModel,
+        threads: readModel.threads.map((thread) =>
+          thread.id !== asThreadId("thread-1")
+            ? thread
+            : {
+                ...thread,
+                latestTurn: {
+                  turnId: TurnId.make("turn-manual"),
+                  state: "completed" as const,
+                  requestedAt: "2026-04-07T12:00:01.000Z",
+                  startedAt: "2026-04-07T12:00:01.000Z",
+                  completedAt: "2026-04-07T12:00:02.000Z",
+                  assistantMessageId: null,
+                },
+                session: thread.session
+                  ? {
+                      ...thread.session,
+                      status: "ready" as const,
+                      activeTurnId: null,
+                    }
+                  : null,
+              },
+        ),
+      })),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
+
+    const compactCalls = await Effect.runPromise(Ref.get(harness.compactCallsRef));
+    assert.deepEqual(compactCalls, []);
+  });
+
+  it("continues processing other due loops while before-run compaction waits", async () => {
+    const harness = await createHarness({
+      sessionStatus: "ready",
+      activeTurnId: null,
+      compactTiming: "before",
+      includeSecondDueLoop: true,
+      compactThread: ({ threadId }) =>
+        threadId === asThreadId("thread-1") ? Effect.never : Effect.void,
+    });
+
+    await waitFor(async () => {
+      const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
+      return commands.some(
+        (command) =>
+          command.type === "thread.turn.start" && command.threadId === asThreadId("thread-2"),
+      );
+    });
+
+    const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
+    assert.isTrue(
+      commands.some(
+        (command) =>
+          command.type === "thread.turn.start" && command.threadId === asThreadId("thread-2"),
+      ),
+    );
+    assert.isFalse(
+      commands.some(
+        (command) =>
+          command.type === "thread.turn.start" && command.threadId === asThreadId("thread-1"),
       ),
     );
   });
