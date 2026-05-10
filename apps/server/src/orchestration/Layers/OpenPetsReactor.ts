@@ -248,11 +248,7 @@ const make = Effect.gen(function* () {
           reasoningSummaryLastNotifiedAtMs:
             shouldNotify && !isAssistantText ? nowMs : previous.reasoningSummaryLastNotifiedAtMs,
         });
-        const text = shouldNotify
-          ? isAssistantText
-            ? `Codex: ${snippet}`
-            : `Thinking: ${snippet}`
-          : null;
+        const text = shouldNotify ? snippet : null;
         return [text, { ...state, content }] as const;
       });
     });
