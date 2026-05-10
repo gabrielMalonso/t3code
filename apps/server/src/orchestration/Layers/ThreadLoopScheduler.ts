@@ -6,7 +6,13 @@ import {
   type OrchestrationSessionStatus,
   type OrchestrationEvent,
 } from "@t3tools/contracts";
-import { Cause, Effect, Layer, Stream } from "effect";
+import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
+import * as Data from "effect/Data";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Stream from "effect/Stream";
 
 import { ProjectionThreadLoopRepositoryLive } from "../../persistence/Layers/ProjectionThreadLoops.ts";
 import { ProjectionThreadLoopRepository } from "../../persistence/Services/ProjectionThreadLoops.ts";
@@ -25,7 +31,12 @@ const THREAD_LOOP_SCHEDULER_INTERVAL_MS = 10_000;
 const THREAD_LOOP_COMPACT_POLL_MS = 1_000;
 const THREAD_LOOP_COMPACT_TIMEOUT_MS = 10 * 60_000;
 
+class ThreadLoopSchedulerError extends Data.TaggedError("ThreadLoopSchedulerError")<{
+  readonly message: string;
+}> {}
+
 const serverCommandId = (tag: string) => CommandId.make(`server:${tag}:${crypto.randomUUID()}`);
+const currentIso = Effect.map(DateTime.now, DateTime.formatIso);
 
 const isThreadLoopBusy = (thread: {
   readonly session: {
@@ -230,8 +241,9 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
           if (yield* predicate()) {
             return;
           }
-          if (Date.now() - startedAtMs > THREAD_LOOP_COMPACT_TIMEOUT_MS) {
-            return yield* Effect.fail(new Error(timeoutMessage));
+          const elapsedMs = (yield* Clock.currentTimeMillis) - startedAtMs;
+          if (elapsedMs > THREAD_LOOP_COMPACT_TIMEOUT_MS) {
+            return yield* new ThreadLoopSchedulerError({ message: timeoutMessage });
           }
           yield* Effect.sleep(`${THREAD_LOOP_COMPACT_POLL_MS} millis`);
         }
@@ -242,7 +254,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         readonly compactRequestedAt: string;
       }) {
         yield* waitForCondition(
-          Date.now(),
+          yield* Clock.currentTimeMillis,
           Effect.fn("hasContextCompactionActivity")(function* () {
             const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
             const latestThread = readModel.threads.find((entry) => entry.id === input.threadId);
@@ -263,7 +275,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         readonly turnRequestedAt: string;
       }) {
         yield* waitForCondition(
-          Date.now(),
+          yield* Clock.currentTimeMillis,
           Effect.fn("isLoopTurnSettled")(function* () {
             const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
             const latestThread = readModel.threads.find((entry) => entry.id === input.threadId);
@@ -298,7 +310,9 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
           createdAt: input.createdAt,
         });
         if (!providerService.compactThread) {
-          return yield* Effect.fail(new Error("Provider service does not support compaction."));
+          return yield* new ThreadLoopSchedulerError({
+            message: "Provider service does not support compaction.",
+          });
         }
         yield* providerService.compactThread({ threadId: input.threadId });
         yield* waitForContextCompaction({
@@ -415,7 +429,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
               threadId: loop.threadId,
               turnRequestedAt: nowIso,
             });
-            const compactAt = new Date().toISOString();
+            const compactAt = yield* currentIso;
             yield* compactThreadForLoop({
               threadId: loop.threadId,
               timing: "after",
@@ -424,7 +438,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
           }).pipe(
             Effect.catchCause((cause) =>
               Effect.gen(function* () {
-                const failedAt = new Date().toISOString();
+                const failedAt = yield* currentIso;
                 const detail = Cause.pretty(cause);
                 yield* syncLoopPatch({
                   threadId: loop.threadId,
@@ -453,7 +467,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
     yield* Effect.forkScoped(
       Effect.gen(function* () {
         for (;;) {
-          const nowIso = new Date().toISOString();
+          const nowIso = DateTime.formatIso(yield* DateTime.now);
           yield* runDueThreadLoops(nowIso).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("thread loop scheduler tick failed", {

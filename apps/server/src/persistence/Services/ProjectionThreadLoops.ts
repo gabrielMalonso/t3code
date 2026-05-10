@@ -7,8 +7,10 @@
  * @module ProjectionThreadLoopRepository
  */
 import { IsoDateTime, PositiveInt, ThreadId } from "@t3tools/contracts";
-import { Context, Option, Schema } from "effect";
-import type { Effect } from "effect";
+import * as Context from "effect/Context";
+import type * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import type { ProjectionRepositoryError } from "../Errors.ts";
 

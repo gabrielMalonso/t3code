@@ -1,5 +1,6 @@
 import { assert, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { runMigrations } from "../Migrations.ts";
@@ -13,7 +14,7 @@ layer("029_ProjectionThreadDetailOrderingIndexes", (it) => {
       const sql = yield* SqlClient.SqlClient;
 
       yield* runMigrations({ toMigrationInclusive: 28 });
-      yield* runMigrations({ toMigrationInclusive: 29 });
+      yield* runMigrations({ toMigrationInclusive: 31 });
 
       const activityIndexes = yield* sql<{
         readonly seq: number;
