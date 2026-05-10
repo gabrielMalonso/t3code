@@ -13,6 +13,7 @@ import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as DesktopApplicationMenu from "./DesktopApplicationMenu.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as DesktopPetOverlay from "../petOverlay.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 
@@ -63,6 +64,23 @@ const desktopUpdatesLayer = Layer.succeed(DesktopUpdates.DesktopUpdates, {
   install: Effect.die("unexpected install"),
 } satisfies DesktopUpdates.DesktopUpdatesShape);
 
+const makeDesktopPetOverlayLayer = (showDefault: Deferred.Deferred<void>) =>
+  Layer.succeed(DesktopPetOverlay.DesktopPetOverlay, {
+    getSettings: Effect.die("unexpected getSettings"),
+    setEnabled: () => Effect.die("unexpected setEnabled"),
+    showDefault: Deferred.succeed(showDefault, undefined).pipe(
+      Effect.as({ enabled: true, position: null }),
+    ),
+    setState: () => Effect.die("unexpected setState"),
+    hide: Effect.die("unexpected hide"),
+    close: Effect.die("unexpected close"),
+    dragStart: () => Effect.die("unexpected dragStart"),
+    dragMove: Effect.die("unexpected dragMove"),
+    dragEnd: Effect.die("unexpected dragEnd"),
+    setPointerInteraction: () => Effect.die("unexpected setPointerInteraction"),
+    dispose: Effect.die("unexpected dispose"),
+  } satisfies DesktopPetOverlay.DesktopPetOverlayShape);
+
 const makeDesktopWindowLayer = (selectedAction: Deferred.Deferred<string>) =>
   Layer.succeed(DesktopWindow.DesktopWindow, {
     createMain: Effect.die("unexpected createMain"),
@@ -89,6 +107,7 @@ describe("DesktopApplicationMenu", () => {
   it.effect("installs the native menu and routes Settings through DesktopWindow", () =>
     Effect.gen(function* () {
       const selectedAction = yield* Deferred.make<string>();
+      const showDefault = yield* Deferred.make<void>();
       const applicationMenuTemplate =
         yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
 
@@ -100,6 +119,7 @@ describe("DesktopApplicationMenu", () => {
           DesktopApplicationMenu.layer.pipe(
             Layer.provideMerge(makeElectronMenuLayer(applicationMenuTemplate)),
             Layer.provideMerge(makeDesktopWindowLayer(selectedAction)),
+            Layer.provideMerge(makeDesktopPetOverlayLayer(showDefault)),
             Layer.provideMerge(desktopUpdatesLayer),
             Layer.provideMerge(electronDialogLayer),
             Layer.provideMerge(electronAppLayer),
@@ -127,6 +147,52 @@ describe("DesktopApplicationMenu", () => {
 
       settingsClick({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
       assert.equal(yield* Deferred.await(selectedAction), "open-settings");
+    }),
+  );
+
+  it.effect("routes Show Pet through DesktopPetOverlay", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const showDefault = yield* Deferred.make<void>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+
+      yield* Effect.gen(function* () {
+        const menu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
+        yield* menu.configure;
+      }).pipe(
+        Effect.provide(
+          DesktopApplicationMenu.layer.pipe(
+            Layer.provideMerge(makeElectronMenuLayer(applicationMenuTemplate)),
+            Layer.provideMerge(makeDesktopWindowLayer(selectedAction)),
+            Layer.provideMerge(makeDesktopPetOverlayLayer(showDefault)),
+            Layer.provideMerge(desktopUpdatesLayer),
+            Layer.provideMerge(electronDialogLayer),
+            Layer.provideMerge(electronAppLayer),
+            Layer.provideMerge(
+              DesktopEnvironment.layer(environmentInput).pipe(
+                Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({}))),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      const viewMenu = template.find((item) => item.label === "View");
+      assert.isDefined(viewMenu);
+      if (!Array.isArray(viewMenu.submenu)) {
+        throw new Error("Expected View menu submenu to be an array.");
+      }
+      const showPetItem = viewMenu.submenu.find((item) => item.label === "Show Pet");
+      assert.isDefined(showPetItem);
+      const showPetClick = showPetItem.click;
+      if (typeof showPetClick !== "function") {
+        throw new Error("Expected Show Pet menu item to have a click handler.");
+      }
+
+      showPetClick({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
+      yield* Deferred.await(showDefault);
     }),
   );
 });
