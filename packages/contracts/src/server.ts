@@ -367,6 +367,17 @@ export const ServerConfig = Schema.Struct({
 });
 export type ServerConfig = typeof ServerConfig.Type;
 
+export const OpenPetsRuntimeStatus = Schema.Struct({
+  supported: Schema.Boolean,
+  enabled: Schema.Boolean,
+  binaryPath: Schema.String,
+  cliAvailable: Schema.Boolean,
+  petReachable: Schema.Boolean,
+  lastError: Schema.NullOr(Schema.String),
+  lastEventAt: Schema.NullOr(IsoDateTime),
+});
+export type OpenPetsRuntimeStatus = typeof OpenPetsRuntimeStatus.Type;
+
 const ServerUpsertKeybindingReplaceTarget = Schema.Struct({
   key: KeybindingValue,
   command: KeybindingCommand,
