@@ -21,6 +21,7 @@ import {
 import type { MenuItemConstructorOptions, OpenDialogOptions } from "electron";
 import type {
   ClientSettings,
+  DesktopPetOverlaySettings,
   DesktopTheme,
   DesktopAppBranding,
   DesktopServerExposureMode,
@@ -40,9 +41,9 @@ import type { RemoteT3RunnerOptions } from "@t3tools/ssh/tunnel";
 import { DEFAULT_DESKTOP_BACKEND_PORT, resolveDesktopBackendPort } from "./backendPort.ts";
 import {
   type DesktopSettings,
-  DEFAULT_DESKTOP_SETTINGS,
   readDesktopSettings,
   resolveDefaultDesktopSettings,
+  setDesktopPetOverlaySettings,
   setDesktopServerExposurePreference,
   setDesktopTailscaleServePreference,
   setDesktopUpdateChannelPreference,
@@ -85,6 +86,22 @@ import { isArm64HostRunningIntelBuild, resolveDesktopRuntimeInfo } from "./runti
 import { resolveDesktopAppBranding } from "./appBranding.ts";
 import { bindFirstRevealTrigger, type RevealSubscription } from "./windowReveal.ts";
 import { resolveTailscaleAdvertisedEndpoints } from "./tailscaleEndpointProvider.ts";
+import {
+  DesktopPetOverlayController,
+  isSafePetId,
+  PET_OVERLAY_CLOSE_CHANNEL,
+  PET_OVERLAY_DRAG_END_CHANNEL,
+  PET_OVERLAY_DRAG_MOVE_CHANNEL,
+  PET_OVERLAY_DRAG_START_CHANNEL,
+  PET_OVERLAY_GET_SETTINGS_CHANNEL,
+  PET_OVERLAY_HIDE_CHANNEL,
+  PET_OVERLAY_MOVED_CHANNEL,
+  PET_OVERLAY_POINTER_INTERACTION_CHANNEL,
+  PET_OVERLAY_SET_ENABLED_CHANNEL,
+  PET_OVERLAY_SET_STATE_CHANNEL,
+  PET_OVERLAY_SETTINGS_CHANGED_CHANNEL,
+} from "./petOverlay.ts";
+import { resolveDesktopResourcePath } from "./resourcePath.ts";
 
 syncShellEnvironment();
 
@@ -240,6 +257,7 @@ let restoreStdIoCapture: (() => void) | null = null;
 let backendObservabilitySettings = readPersistedBackendObservabilitySettings();
 let desktopSettings = readDesktopSettings(DESKTOP_SETTINGS_PATH, app.getVersion());
 let desktopServerExposureMode: DesktopServerExposureMode = desktopSettings.serverExposureMode;
+let petOverlayController: DesktopPetOverlayController | null = null;
 
 let destructiveMenuIconCache: Electron.NativeImage | null | undefined;
 const expectedBackendExitChildren = new WeakSet<ChildProcess.ChildProcess>();
@@ -356,6 +374,67 @@ function getDesktopSecretStorage() {
     encryptString: (value: string) => safeStorage.encryptString(value),
     decryptString: (value: Buffer) => safeStorage.decryptString(value),
   } as const;
+}
+
+function getPetOverlayController(): DesktopPetOverlayController {
+  if (!petOverlayController) {
+    petOverlayController = new DesktopPetOverlayController({
+      preloadPath: Path.join(__dirname, "petOverlayPreload.cjs"),
+      resolvePetAssetPath,
+      onMoved: persistPetOverlayPosition,
+    });
+  }
+  return petOverlayController;
+}
+
+function getMainWindowIfAvailable(): BrowserWindow | null {
+  return mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+}
+
+function getFocusedMainWindow(): BrowserWindow | null {
+  const focusedWindow = BrowserWindow.getFocusedWindow();
+  if (focusedWindow && !petOverlayController?.isOverlayWindow(focusedWindow)) {
+    return focusedWindow;
+  }
+  return getMainWindowIfAvailable();
+}
+
+function resolvePetAssetPath(petId: string): string | null {
+  if (!isSafePetId(petId)) {
+    return null;
+  }
+  return resolveDesktopResourcePath({
+    fileName: Path.join("pets", petId, "spritesheet.webp"),
+    dirname: __dirname,
+    resourcesPath: process.resourcesPath,
+  });
+}
+
+function emitPetOverlaySettings(): void {
+  const settings = desktopSettings.petOverlay;
+  const window = getMainWindowIfAvailable();
+  if (!window) return;
+  window.webContents.send(PET_OVERLAY_SETTINGS_CHANGED_CHANNEL, settings);
+}
+
+function updatePetOverlaySettings(
+  nextSettings: DesktopPetOverlaySettings,
+): DesktopPetOverlaySettings {
+  const nextDesktopSettings = setDesktopPetOverlaySettings(desktopSettings, nextSettings);
+  if (nextDesktopSettings !== desktopSettings) {
+    desktopSettings = nextDesktopSettings;
+    writeDesktopSettings(DESKTOP_SETTINGS_PATH, desktopSettings);
+    emitPetOverlaySettings();
+  }
+  return desktopSettings.petOverlay;
+}
+
+function persistPetOverlayPosition(position: { x: number; y: number }): void {
+  mainWindow?.webContents.send(PET_OVERLAY_MOVED_CHANNEL, position);
+  updatePetOverlaySettings({
+    ...desktopSettings.petOverlay,
+    position,
+  });
 }
 
 function resolveAdvertisedHostOverride(): string | undefined {
@@ -536,7 +615,7 @@ async function waitForBackendWindowReady(baseUrl: string): Promise<"listening" |
 }
 
 function ensureInitialBackendWindowOpen(): void {
-  const existingWindow = mainWindow ?? BrowserWindow.getAllWindows()[0] ?? null;
+  const existingWindow = getMainWindowIfAvailable();
   if (isDevelopment || existingWindow !== null || backendInitialWindowOpenInFlight !== null) {
     return;
   }
@@ -544,7 +623,7 @@ function ensureInitialBackendWindowOpen(): void {
   const nextOpen = waitForBackendWindowReady(backendHttpUrl)
     .then((source) => {
       writeDesktopLogHeader(`bootstrap backend ready source=${source}`);
-      if (mainWindow ?? BrowserWindow.getAllWindows()[0]) {
+      if (getMainWindowIfAvailable()) {
         return;
       }
       mainWindow = createWindow();
@@ -558,7 +637,7 @@ function ensureInitialBackendWindowOpen(): void {
         `bootstrap backend readiness warning message=${formatErrorMessage(error)}`,
       );
       console.warn("[desktop] backend readiness check timed out during packaged bootstrap", error);
-      const fallbackWindow = mainWindow ?? BrowserWindow.getAllWindows()[0] ?? createWindow();
+      const fallbackWindow = getMainWindowIfAvailable() ?? createWindow();
       if (mainWindow === null) {
         mainWindow = fallbackWindow;
       }
@@ -945,8 +1024,7 @@ function registerDesktopProtocol(): void {
 }
 
 function dispatchMenuAction(action: string): void {
-  const existingWindow =
-    BrowserWindow.getFocusedWindow() ?? mainWindow ?? BrowserWindow.getAllWindows()[0];
+  const existingWindow = getFocusedMainWindow();
   const targetWindow = existingWindow ?? createWindow();
   if (!existingWindow) {
     mainWindow = targetWindow;
@@ -989,7 +1067,7 @@ function handleCheckForUpdatesMenuClick(): void {
     return;
   }
 
-  if (!BrowserWindow.getAllWindows().length) {
+  if (!getMainWindowIfAvailable()) {
     mainWindow = createWindow();
   }
   void checkForUpdatesFromMenu();
@@ -1067,6 +1145,17 @@ function configureApplicationMenu(): void {
     {
       label: "View",
       submenu: [
+        {
+          label: "Show Pet",
+          click: () => {
+            updatePetOverlaySettings({
+              ...desktopSettings.petOverlay,
+              enabled: true,
+            });
+            dispatchMenuAction("show-pet");
+          },
+        },
+        { type: "separator" },
         { role: "reload" },
         { role: "forceReload" },
         { role: "toggleDevTools" },
@@ -1095,20 +1184,11 @@ function configureApplicationMenu(): void {
 }
 
 function resolveResourcePath(fileName: string): string | null {
-  const candidates = [
-    Path.join(__dirname, "../resources", fileName),
-    Path.join(__dirname, "../prod-resources", fileName),
-    Path.join(process.resourcesPath, "resources", fileName),
-    Path.join(process.resourcesPath, fileName),
-  ];
-
-  for (const candidate of candidates) {
-    if (FS.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  return null;
+  return resolveDesktopResourcePath({
+    fileName,
+    dirname: __dirname,
+    resourcesPath: process.resourcesPath,
+  });
 }
 
 function resolveIconPath(ext: "ico" | "icns" | "png"): string | null {
@@ -1213,6 +1293,7 @@ function revealWindow(window: BrowserWindow): void {
 
 function emitUpdateState(): void {
   for (const window of BrowserWindow.getAllWindows()) {
+    if (petOverlayController?.isOverlayWindow(window)) continue;
     if (window.isDestroyed()) continue;
     window.webContents.send(UPDATE_STATE_CHANNEL, updateState);
   }
@@ -1924,6 +2005,70 @@ function registerIpcHandlers(): void {
     }
   });
 
+  ipcMain.removeHandler(PET_OVERLAY_GET_SETTINGS_CHANNEL);
+  ipcMain.handle(PET_OVERLAY_GET_SETTINGS_CHANNEL, async () => desktopSettings.petOverlay);
+
+  ipcMain.removeHandler(PET_OVERLAY_SET_ENABLED_CHANNEL);
+  ipcMain.handle(PET_OVERLAY_SET_ENABLED_CHANNEL, async (_event, rawEnabled: unknown) => {
+    const enabled = rawEnabled === true;
+    const nextSettings = updatePetOverlaySettings({
+      ...desktopSettings.petOverlay,
+      enabled,
+    });
+    if (!enabled) {
+      petOverlayController?.close();
+    }
+    return nextSettings;
+  });
+
+  ipcMain.removeHandler(PET_OVERLAY_SET_STATE_CHANNEL);
+  ipcMain.handle(PET_OVERLAY_SET_STATE_CHANNEL, async (_event, input: unknown) => {
+    if (!desktopSettings.petOverlay.enabled) {
+      petOverlayController?.close();
+      return;
+    }
+    await getPetOverlayController().setState(input);
+  });
+
+  ipcMain.removeHandler(PET_OVERLAY_HIDE_CHANNEL);
+  ipcMain.handle(PET_OVERLAY_HIDE_CHANNEL, async () => {
+    petOverlayController?.hide();
+  });
+
+  ipcMain.removeHandler(PET_OVERLAY_CLOSE_CHANNEL);
+  ipcMain.handle(PET_OVERLAY_CLOSE_CHANNEL, async () => {
+    const nextSettings = updatePetOverlaySettings({
+      ...desktopSettings.petOverlay,
+      enabled: false,
+    });
+    petOverlayController?.close();
+    return nextSettings;
+  });
+
+  ipcMain.removeHandler(PET_OVERLAY_DRAG_START_CHANNEL);
+  ipcMain.handle(PET_OVERLAY_DRAG_START_CHANNEL, async (_event, input: unknown) => {
+    getPetOverlayController().startDrag(
+      input as Parameters<DesktopPetOverlayController["startDrag"]>[0],
+    );
+  });
+
+  ipcMain.removeHandler(PET_OVERLAY_DRAG_MOVE_CHANNEL);
+  ipcMain.handle(PET_OVERLAY_DRAG_MOVE_CHANNEL, async () => {
+    petOverlayController?.moveDrag();
+  });
+
+  ipcMain.removeHandler(PET_OVERLAY_DRAG_END_CHANNEL);
+  ipcMain.handle(PET_OVERLAY_DRAG_END_CHANNEL, async () => {
+    petOverlayController?.endDrag();
+  });
+
+  ipcMain.removeHandler(PET_OVERLAY_POINTER_INTERACTION_CHANNEL);
+  ipcMain.handle(PET_OVERLAY_POINTER_INTERACTION_CHANNEL, async (_event, input: unknown) => {
+    petOverlayController?.setPointerInteraction(
+      input as Parameters<DesktopPetOverlayController["setPointerInteraction"]>[0],
+    );
+  });
+
   ipcMain.removeHandler(UPDATE_GET_STATE_CHANNEL);
   ipcMain.handle(UPDATE_GET_STATE_CHANNEL, async () => updateState);
 
@@ -2052,6 +2197,7 @@ function syncWindowAppearance(window: BrowserWindow): void {
 
 function syncAllWindowAppearance(): void {
   for (const window of BrowserWindow.getAllWindows()) {
+    if (petOverlayController?.isOverlayWindow(window)) continue;
     syncWindowAppearance(window);
   }
 }
@@ -2167,6 +2313,8 @@ function createWindow(): BrowserWindow {
     );
     if (mainWindow === window) {
       mainWindow = null;
+      petOverlayController?.dispose();
+      petOverlayController = null;
     }
   });
 
@@ -2255,6 +2403,8 @@ app.on("before-quit", () => {
   writeDesktopLogHeader("before-quit received");
   clearUpdatePollTimer();
   cancelBackendReadinessWait();
+  petOverlayController?.dispose();
+  petOverlayController = null;
   stopBackend();
   void desktopSshEnvironmentBridge.dispose().catch(() => undefined);
   restoreStdIoCapture?.();
@@ -2276,7 +2426,7 @@ app
     });
 
     app.on("activate", () => {
-      const existingWindow = mainWindow ?? BrowserWindow.getAllWindows()[0];
+      const existingWindow = getMainWindowIfAvailable();
       if (existingWindow) {
         revealWindow(existingWindow);
         return;
@@ -2305,6 +2455,8 @@ if (process.platform !== "win32") {
     writeDesktopLogHeader("SIGINT received");
     clearUpdatePollTimer();
     cancelBackendReadinessWait();
+    petOverlayController?.dispose();
+    petOverlayController = null;
     stopBackend();
     void desktopSshEnvironmentBridge.dispose().catch(() => undefined);
     restoreStdIoCapture?.();
@@ -2316,6 +2468,8 @@ if (process.platform !== "win32") {
     isQuitting = true;
     writeDesktopLogHeader("SIGTERM received");
     clearUpdatePollTimer();
+    petOverlayController?.dispose();
+    petOverlayController = null;
     stopBackend();
     void desktopSshEnvironmentBridge.dispose().catch(() => undefined);
     restoreStdIoCapture?.();

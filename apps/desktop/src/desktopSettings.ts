@@ -1,6 +1,10 @@
 import * as FS from "node:fs";
 import * as Path from "node:path";
-import type { DesktopServerExposureMode, DesktopUpdateChannel } from "@t3tools/contracts";
+import type {
+  DesktopPetOverlaySettings,
+  DesktopServerExposureMode,
+  DesktopUpdateChannel,
+} from "@t3tools/contracts";
 
 import { resolveDefaultDesktopUpdateChannel } from "./updateChannels.ts";
 
@@ -10,6 +14,7 @@ export interface DesktopSettings {
   readonly tailscaleServePort: number;
   readonly updateChannel: DesktopUpdateChannel;
   readonly updateChannelConfiguredByUser: boolean;
+  readonly petOverlay: DesktopPetOverlaySettings;
 }
 
 export const DEFAULT_TAILSCALE_SERVE_PORT = 443;
@@ -20,6 +25,10 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   tailscaleServePort: DEFAULT_TAILSCALE_SERVE_PORT,
   updateChannel: "latest",
   updateChannelConfiguredByUser: false,
+  petOverlay: {
+    enabled: false,
+    position: null,
+  },
 };
 
 export function resolveDefaultDesktopSettings(appVersion: string): DesktopSettings {
@@ -75,6 +84,53 @@ export function setDesktopUpdateChannelPreference(
   };
 }
 
+function normalizePetOverlayPosition(value: unknown): DesktopPetOverlaySettings["position"] {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const position = value as { readonly x?: unknown; readonly y?: unknown };
+  if (
+    typeof position.x !== "number" ||
+    typeof position.y !== "number" ||
+    !Number.isFinite(position.x) ||
+    !Number.isFinite(position.y)
+  ) {
+    return null;
+  }
+  return {
+    x: Math.round(position.x),
+    y: Math.round(position.y),
+  };
+}
+
+export function normalizePetOverlaySettings(value: unknown): DesktopPetOverlaySettings {
+  if (typeof value !== "object" || value === null) {
+    return DEFAULT_DESKTOP_SETTINGS.petOverlay;
+  }
+  const settings = value as {
+    readonly enabled?: unknown;
+    readonly position?: unknown;
+  };
+  return {
+    enabled: settings.enabled === true,
+    position: normalizePetOverlayPosition(settings.position),
+  };
+}
+
+export function setDesktopPetOverlaySettings(
+  settings: DesktopSettings,
+  petOverlay: DesktopPetOverlaySettings,
+): DesktopSettings {
+  return settings.petOverlay.enabled === petOverlay.enabled &&
+    settings.petOverlay.position?.x === petOverlay.position?.x &&
+    settings.petOverlay.position?.y === petOverlay.position?.y
+    ? settings
+    : {
+        ...settings,
+        petOverlay,
+      };
+}
+
 export function readDesktopSettings(settingsPath: string, appVersion: string): DesktopSettings {
   const defaultSettings = resolveDefaultDesktopSettings(appVersion);
   try {
@@ -89,6 +145,7 @@ export function readDesktopSettings(settingsPath: string, appVersion: string): D
       readonly tailscaleServePort?: unknown;
       readonly updateChannel?: unknown;
       readonly updateChannelConfiguredByUser?: unknown;
+      readonly petOverlay?: unknown;
     };
     const parsedUpdateChannel =
       parsed.updateChannel === "nightly" || parsed.updateChannel === "latest"
@@ -109,6 +166,7 @@ export function readDesktopSettings(settingsPath: string, appVersion: string): D
           ? parsedUpdateChannel
           : defaultSettings.updateChannel,
       updateChannelConfiguredByUser,
+      petOverlay: normalizePetOverlaySettings(parsed.petOverlay),
     };
   } catch {
     return defaultSettings;

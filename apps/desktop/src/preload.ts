@@ -1,5 +1,18 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { DesktopBridge } from "@t3tools/contracts";
+import {
+  PET_OVERLAY_CLOSE_CHANNEL,
+  PET_OVERLAY_DRAG_END_CHANNEL,
+  PET_OVERLAY_DRAG_MOVE_CHANNEL,
+  PET_OVERLAY_DRAG_START_CHANNEL,
+  PET_OVERLAY_GET_SETTINGS_CHANNEL,
+  PET_OVERLAY_HIDE_CHANNEL,
+  PET_OVERLAY_MOVED_CHANNEL,
+  PET_OVERLAY_POINTER_INTERACTION_CHANNEL,
+  PET_OVERLAY_SET_ENABLED_CHANNEL,
+  PET_OVERLAY_SET_STATE_CHANNEL,
+  PET_OVERLAY_SETTINGS_CHANGED_CHANNEL,
+} from "./petOverlay.ts";
 
 const PICK_FOLDER_CHANNEL = "desktop:pick-folder";
 const CONFIRM_CHANNEL = "desktop:confirm";
@@ -153,5 +166,41 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     return () => {
       ipcRenderer.removeListener(UPDATE_STATE_CHANNEL, wrappedListener);
     };
+  },
+  petOverlay: {
+    getSettings: () => ipcRenderer.invoke(PET_OVERLAY_GET_SETTINGS_CHANNEL),
+    setEnabled: (enabled) => ipcRenderer.invoke(PET_OVERLAY_SET_ENABLED_CHANNEL, enabled),
+    setState: (input) => ipcRenderer.invoke(PET_OVERLAY_SET_STATE_CHANNEL, input),
+    hide: () => ipcRenderer.invoke(PET_OVERLAY_HIDE_CHANNEL),
+    close: () => ipcRenderer.invoke(PET_OVERLAY_CLOSE_CHANNEL),
+    dragStart: (input) => ipcRenderer.invoke(PET_OVERLAY_DRAG_START_CHANNEL, input),
+    dragMove: () => ipcRenderer.invoke(PET_OVERLAY_DRAG_MOVE_CHANNEL),
+    dragEnd: () => ipcRenderer.invoke(PET_OVERLAY_DRAG_END_CHANNEL),
+    setPointerInteraction: (input) =>
+      ipcRenderer.invoke(PET_OVERLAY_POINTER_INTERACTION_CHANNEL, input),
+    onMoved: (listener) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, position: unknown) => {
+        if (typeof position !== "object" || position === null) return;
+        const maybePosition = position as { x?: unknown; y?: unknown };
+        if (typeof maybePosition.x !== "number" || typeof maybePosition.y !== "number") return;
+        listener({ x: maybePosition.x, y: maybePosition.y });
+      };
+
+      ipcRenderer.on(PET_OVERLAY_MOVED_CHANNEL, wrappedListener);
+      return () => {
+        ipcRenderer.removeListener(PET_OVERLAY_MOVED_CHANNEL, wrappedListener);
+      };
+    },
+    onSettingsChanged: (listener) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, settings: unknown) => {
+        if (typeof settings !== "object" || settings === null) return;
+        listener(settings as Parameters<typeof listener>[0]);
+      };
+
+      ipcRenderer.on(PET_OVERLAY_SETTINGS_CHANGED_CHANNEL, wrappedListener);
+      return () => {
+        ipcRenderer.removeListener(PET_OVERLAY_SETTINGS_CHANGED_CHANNEL, wrappedListener);
+      };
+    },
   },
 } satisfies DesktopBridge);

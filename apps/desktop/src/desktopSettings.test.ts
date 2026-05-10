@@ -8,6 +8,7 @@ import {
   DEFAULT_DESKTOP_SETTINGS,
   readDesktopSettings,
   resolveDefaultDesktopSettings,
+  setDesktopPetOverlaySettings,
   setDesktopServerExposurePreference,
   setDesktopTailscaleServePreference,
   setDesktopUpdateChannelPreference,
@@ -29,6 +30,8 @@ function makeSettingsPath() {
   return path.join(directory, "desktop-settings.json");
 }
 
+const petOverlay = DEFAULT_DESKTOP_SETTINGS.petOverlay;
+
 describe("desktopSettings", () => {
   it("returns defaults when no settings file exists", () => {
     expect(readDesktopSettings(makeSettingsPath(), "0.0.17")).toEqual(DEFAULT_DESKTOP_SETTINGS);
@@ -41,6 +44,7 @@ describe("desktopSettings", () => {
       tailscaleServePort: 443,
       updateChannel: "nightly",
       updateChannelConfiguredByUser: false,
+      petOverlay,
     });
   });
 
@@ -52,6 +56,7 @@ describe("desktopSettings", () => {
       tailscaleServePort: 443,
       updateChannel: "nightly",
       updateChannelConfiguredByUser: false,
+      petOverlay,
     });
   });
 
@@ -64,6 +69,7 @@ describe("desktopSettings", () => {
       tailscaleServePort: 8443,
       updateChannel: "latest",
       updateChannelConfiguredByUser: true,
+      petOverlay,
     });
 
     expect(readDesktopSettings(settingsPath, "0.0.17")).toEqual({
@@ -72,6 +78,7 @@ describe("desktopSettings", () => {
       tailscaleServePort: 8443,
       updateChannel: "latest",
       updateChannelConfiguredByUser: true,
+      petOverlay,
     });
   });
 
@@ -84,6 +91,7 @@ describe("desktopSettings", () => {
           tailscaleServePort: 443,
           updateChannel: "latest",
           updateChannelConfiguredByUser: false,
+          petOverlay,
         },
         "network-accessible",
       ),
@@ -93,6 +101,7 @@ describe("desktopSettings", () => {
       tailscaleServePort: 443,
       updateChannel: "latest",
       updateChannelConfiguredByUser: false,
+      petOverlay,
     });
   });
 
@@ -105,6 +114,7 @@ describe("desktopSettings", () => {
           tailscaleServePort: 443,
           updateChannel: "latest",
           updateChannelConfiguredByUser: false,
+          petOverlay,
         },
         { enabled: true, port: 8443 },
       ),
@@ -114,6 +124,7 @@ describe("desktopSettings", () => {
       tailscaleServePort: 8443,
       updateChannel: "latest",
       updateChannelConfiguredByUser: false,
+      petOverlay,
     });
   });
 
@@ -126,6 +137,7 @@ describe("desktopSettings", () => {
           tailscaleServePort: 8443,
           updateChannel: "latest",
           updateChannelConfiguredByUser: false,
+          petOverlay,
         },
         { enabled: true },
       ),
@@ -135,6 +147,7 @@ describe("desktopSettings", () => {
       tailscaleServePort: 8443,
       updateChannel: "latest",
       updateChannelConfiguredByUser: false,
+      petOverlay,
     });
   });
 
@@ -147,6 +160,7 @@ describe("desktopSettings", () => {
           tailscaleServePort: 443,
           updateChannel: "latest",
           updateChannelConfiguredByUser: false,
+          petOverlay,
         },
         "nightly",
       ),
@@ -156,6 +170,7 @@ describe("desktopSettings", () => {
       tailscaleServePort: 443,
       updateChannel: "nightly",
       updateChannelConfiguredByUser: true,
+      petOverlay,
     });
   });
 
@@ -176,6 +191,7 @@ describe("desktopSettings", () => {
       tailscaleServePort: 443,
       updateChannel: "nightly",
       updateChannelConfiguredByUser: false,
+      petOverlay,
     });
   });
 
@@ -196,6 +212,7 @@ describe("desktopSettings", () => {
       tailscaleServePort: 443,
       updateChannel: "nightly",
       updateChannelConfiguredByUser: false,
+      petOverlay,
     });
   });
 
@@ -217,6 +234,7 @@ describe("desktopSettings", () => {
       tailscaleServePort: 443,
       updateChannel: "latest",
       updateChannelConfiguredByUser: true,
+      petOverlay,
     });
   });
 
@@ -227,6 +245,7 @@ describe("desktopSettings", () => {
       tailscaleServePort: 443,
       updateChannel: "nightly",
       updateChannelConfiguredByUser: false,
+      petOverlay,
     });
   });
 
@@ -247,6 +266,38 @@ describe("desktopSettings", () => {
       tailscaleServePort: 443,
       updateChannel: "latest",
       updateChannelConfiguredByUser: false,
+      petOverlay,
+    });
+  });
+
+  it("persists pet overlay settings", () => {
+    const settings = setDesktopPetOverlaySettings(DEFAULT_DESKTOP_SETTINGS, {
+      enabled: true,
+      position: { x: 123.4, y: 456.6 },
+    });
+
+    expect(settings.petOverlay).toEqual({
+      enabled: true,
+      position: { x: 123.4, y: 456.6 },
+    });
+  });
+
+  it("normalizes invalid persisted pet overlay settings", () => {
+    const settingsPath = makeSettingsPath();
+    fs.writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        petOverlay: {
+          enabled: true,
+          position: { x: "bad", y: 10 },
+        },
+      }),
+      "utf8",
+    );
+
+    expect(readDesktopSettings(settingsPath, "0.0.17").petOverlay).toEqual({
+      enabled: true,
+      position: null,
     });
   });
 });

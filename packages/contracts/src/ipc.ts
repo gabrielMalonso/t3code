@@ -198,6 +198,51 @@ export interface PickFolderOptions {
   initialPath?: string | null;
 }
 
+export interface DesktopPetOverlayPosition {
+  x: number;
+  y: number;
+}
+
+export type DesktopPetOverlayActivityKind = "input-needed" | "working" | "connecting";
+
+export interface DesktopPetOverlayState {
+  visible: boolean;
+  petId: string;
+  displayName: string;
+  description: string;
+  animation: string;
+  activity?: {
+    kind: DesktopPetOverlayActivityKind;
+    label: string;
+    title: string;
+  } | null;
+  row: number;
+  frames: number;
+  durationMs: number;
+  width: number;
+  height: number;
+  columns: number;
+  rows: number;
+  x: number;
+  y: number;
+}
+
+export interface DesktopPetOverlayDragStartInput {
+  pointerWindowX: number;
+  pointerWindowY: number;
+}
+
+export interface DesktopPetOverlayPointerInteractionInput {
+  interactive: boolean;
+}
+
+export interface DesktopPetOverlayMovedEvent extends DesktopPetOverlayPosition {}
+
+export interface DesktopPetOverlaySettings {
+  enabled: boolean;
+  position: DesktopPetOverlayPosition | null;
+}
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   getLocalEnvironmentBootstrap: () => DesktopEnvironmentBootstrap | null;
@@ -253,6 +298,19 @@ export interface DesktopBridge {
   downloadUpdate: () => Promise<DesktopUpdateActionResult>;
   installUpdate: () => Promise<DesktopUpdateActionResult>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
+  petOverlay?: {
+    getSettings: () => Promise<DesktopPetOverlaySettings>;
+    setEnabled: (enabled: boolean) => Promise<DesktopPetOverlaySettings>;
+    setState: (input: DesktopPetOverlayState) => Promise<void>;
+    hide: () => Promise<void>;
+    close: () => Promise<DesktopPetOverlaySettings>;
+    dragStart: (input: DesktopPetOverlayDragStartInput) => Promise<void>;
+    dragMove: () => Promise<void>;
+    dragEnd: () => Promise<void>;
+    setPointerInteraction: (input: DesktopPetOverlayPointerInteractionInput) => Promise<void>;
+    onMoved: (listener: (event: DesktopPetOverlayMovedEvent) => void) => () => void;
+    onSettingsChanged: (listener: (settings: DesktopPetOverlaySettings) => void) => () => void;
+  };
 }
 
 /**

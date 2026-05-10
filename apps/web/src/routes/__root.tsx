@@ -13,6 +13,7 @@ import { QueryClient, useQueryClient } from "@tanstack/react-query";
 import { APP_DISPLAY_NAME } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
+import { DesktopPetController } from "../components/desktop/DesktopPetController";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
 import {
   SlowRpcAckToastCoordinator,
@@ -136,6 +137,7 @@ function RootRouteView() {
         <SshPasswordPromptDialog />
         <HostedStaticEnvironmentBootstrap />
         {primaryEnvironmentAuthenticated ? <EventRouter /> : null}
+        {primaryEnvironmentAuthenticated ? <DesktopPetController /> : null}
         {primaryEnvironmentAuthenticated ? <WebSocketConnectionCoordinator /> : null}
         {primaryEnvironmentAuthenticated ? <SlowRpcAckToastCoordinator /> : null}
         {primaryEnvironmentAuthenticated ? (
