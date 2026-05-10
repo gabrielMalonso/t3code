@@ -346,10 +346,21 @@ const make = Effect.gen(function* () {
       const send = () => {
         if (targetWindow.isDestroyed()) return;
         targetWindow.webContents.send(IpcChannels.MENU_ACTION_CHANNEL, action);
+        void runPromise(
+          logWindowInfo("menu action sent to renderer", {
+            action,
+            windowId: targetWindow.id,
+            url: targetWindow.webContents.getURL(),
+          }),
+        );
         void runPromise(electronWindow.reveal(targetWindow));
       };
 
       if (targetWindow.webContents.isLoadingMainFrame()) {
+        yield* logWindowInfo("menu action deferred until renderer finishes loading", {
+          action,
+          windowId: targetWindow.id,
+        });
         targetWindow.webContents.once("did-finish-load", send);
         return;
       }

@@ -64,6 +64,15 @@ export interface ThreadJumpHintVisibilityController {
   dispose: () => void;
 }
 
+export function resolveSidebarChromeHeaderClassName(input: {
+  hasLeftNativeWindowControls: boolean;
+}): string {
+  return cn(
+    "drag-region h-[52px] flex-row items-center gap-2 px-4 py-0 pl-[90px] wco:h-[env(titlebar-area-height)]",
+    input.hasLeftNativeWindowControls ? "wco:pl-[90px]" : "wco:pl-[calc(env(titlebar-area-x)+1em)]",
+  );
+}
+
 export function createThreadJumpHintVisibilityController(input: {
   delayMs: number;
   onVisibilityChange: (visible: boolean) => void;

@@ -162,6 +162,7 @@ import { useCommandPaletteStore } from "../commandPaletteStore";
 import {
   getSidebarThreadIdsToPrewarm,
   resolveAdjacentThreadId,
+  resolveSidebarChromeHeaderClassName,
   isContextMenuPointerDown,
   resolveProjectStatusIndicator,
   resolveSidebarNewThreadSeedContext,
@@ -2454,6 +2455,8 @@ const SidebarChromeHeader = memo(function SidebarChromeHeader({
 }: {
   isElectron: boolean;
 }) {
+  const hasLeftNativeWindowControls =
+    typeof navigator !== "undefined" && isMacPlatform(navigator.platform);
   const wordmark = (
     <div className="flex items-center gap-2">
       <SidebarTrigger className="shrink-0 md:hidden" />
@@ -2483,7 +2486,7 @@ const SidebarChromeHeader = memo(function SidebarChromeHeader({
   );
 
   return isElectron ? (
-    <SidebarHeader className="drag-region h-[52px] flex-row items-center gap-2 px-4 py-0 pl-[90px] wco:h-[env(titlebar-area-height)] wco:pl-[calc(env(titlebar-area-x)+1em)]">
+    <SidebarHeader className={resolveSidebarChromeHeaderClassName({ hasLeftNativeWindowControls })}>
       {wordmark}
     </SidebarHeader>
   ) : (

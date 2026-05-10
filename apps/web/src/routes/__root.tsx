@@ -132,7 +132,12 @@ function RootRouteView() {
   }, [pathname]);
 
   if (pathname === "/pair") {
-    return <Outlet />;
+    return (
+      <>
+        <DesktopPetController />
+        <Outlet />
+      </>
+    );
   }
 
   if (isMobileRuntime) {
@@ -140,7 +145,12 @@ function RootRouteView() {
   }
 
   if (authGateState.status !== "authenticated" && authGateState.status !== "hosted-static") {
-    return <Outlet />;
+    return (
+      <>
+        <DesktopPetController />
+        <Outlet />
+      </>
+    );
   }
 
   const appShell = (
@@ -159,7 +169,7 @@ function RootRouteView() {
         <EnvironmentConnectionManagerBootstrap />
         <SshPasswordPromptDialog />
         <HostedStaticEnvironmentBootstrap />
-        {primaryEnvironmentAuthenticated ? <DesktopPetController /> : null}
+        <DesktopPetController />
         {primaryEnvironmentAuthenticated ? <EventRouter /> : null}
         {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
         {primaryEnvironmentAuthenticated ? <WebSocketConnectionCoordinator /> : null}
