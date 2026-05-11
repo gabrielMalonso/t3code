@@ -19,6 +19,7 @@ import {
   type GitActionProgressEvent,
   type GitManagerServiceError,
   OrchestrationDispatchCommandError,
+  OrchestrationCompactThreadError,
   type OrchestrationEvent,
   type OrchestrationShellStreamEvent,
   OrchestrationGetFullThreadDiffError,
@@ -305,6 +306,12 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               cause,
             });
       };
+
+      const toCompactThreadError = (error: unknown) =>
+        new OrchestrationCompactThreadError({
+          message: error instanceof Error ? error.message : "Failed to compact thread context.",
+          cause: error,
+        });
 
       const enrichProjectEvent = (
         event: OrchestrationEvent,
@@ -934,6 +941,20 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                     }),
               ),
             ),
+            { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATION_WS_METHODS.compactThread]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.compactThread,
+            Effect.gen(function* () {
+              const command = yield* normalizeDispatchCommand({
+                type: "thread.compact.start",
+                commandId: serverCommandId("compact-thread"),
+                threadId: input.threadId,
+                createdAt: yield* nowIso,
+              });
+              yield* dispatchNormalizedCommand(command);
+            }).pipe(Effect.mapError(toCompactThreadError)),
             { "rpc.aggregate": "orchestration" },
           ),
         [ORCHESTRATION_WS_METHODS.getTurnDiff]: (input) =>
