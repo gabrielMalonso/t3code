@@ -62,6 +62,8 @@ const runtimeMock = {
     promptAsyncError: null as Error | null,
     closeError: null as Error | null,
     messages: [] as MessageEntry[],
+    messagesCalls: 0,
+    messagesHang: false,
     subscribedEvents: [] as unknown[],
   },
   reset() {
@@ -75,6 +77,8 @@ const runtimeMock = {
     this.state.promptAsyncError = null;
     this.state.closeError = null;
     this.state.messages = [];
+    this.state.messagesCalls = 0;
+    this.state.messagesHang = false;
     this.state.subscribedEvents = [];
   },
 };
@@ -138,7 +142,13 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
             throw runtimeMock.state.promptAsyncError;
           }
         },
-        messages: async () => ({ data: runtimeMock.state.messages }),
+        messages: async () => {
+          runtimeMock.state.messagesCalls += 1;
+          if (runtimeMock.state.messagesHang) {
+            return new Promise(() => {});
+          }
+          return { data: runtimeMock.state.messages };
+        },
         revert: async ({ sessionID, messageID }: { sessionID: string; messageID?: string }) => {
           runtimeMock.state.revertCalls.push({
             sessionID,
@@ -483,6 +493,41 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       });
     }).pipe(Effect.provide(adapterLayer));
   });
+
+  it.effect("sends prompts without waiting for session message history", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-history-hangs");
+      runtimeMock.state.messagesHang = true;
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter
+        .sendTurn({
+          threadId,
+          input: "Fix it",
+          modelSelection: createModelSelection(
+            ProviderInstanceId.make("opencode"),
+            "opencode-go/kimi-k2.6",
+          ),
+        })
+        .pipe(Effect.timeout("100 millis"));
+
+      assert.equal(runtimeMock.state.messagesCalls, 0);
+      assert.deepEqual(runtimeMock.state.promptCalls.at(-1), {
+        sessionID: "http://127.0.0.1:9999/session",
+        model: {
+          providerID: "opencode-go",
+          modelID: "kimi-k2.6",
+        },
+        parts: [{ type: "text", text: "Fix it" }],
+      });
+    }),
+  );
 
   it.effect("rejects sendTurn model selections for another instance id", () => {
     const instanceId = ProviderInstanceId.make("opencode_zen");
