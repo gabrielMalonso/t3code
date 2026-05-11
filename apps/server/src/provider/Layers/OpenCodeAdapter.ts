@@ -51,10 +51,20 @@ import {
 import * as Option from "effect/Option";
 
 const PROVIDER = ProviderDriverKind.make("opencode");
+const OPENCODE_RECONCILE_POLL_INTERVAL = "1 second";
+const OPENCODE_RECONCILE_STABLE_POLLS_TO_COMPLETE = 2;
 
 interface OpenCodeTurnSnapshot {
   readonly id: TurnId;
   readonly items: Array<unknown>;
+}
+
+interface OpenCodeMessageEntry {
+  readonly info: {
+    readonly id: string;
+    readonly role: "user" | "assistant";
+  };
+  readonly parts: ReadonlyArray<Part>;
 }
 
 type OpenCodeSubscribedEvent =
@@ -76,6 +86,7 @@ interface OpenCodeSessionContext {
   readonly partById: Map<string, Part>;
   readonly emittedTextByPartId: Map<string, string>;
   readonly completedAssistantPartIds: Set<string>;
+  readonly completedAssistantMessageIds: Set<string>;
   readonly turns: Array<OpenCodeTurnSnapshot>;
   activeTurnId: TurnId | undefined;
   activeAgent: string | undefined;
@@ -389,6 +400,43 @@ function toolStateCreatedAt(part: Extract<Part, { type: "tool" }>): string | und
   }
 }
 
+function normalizeOpenCodeMessageEntry(entry: unknown): OpenCodeMessageEntry | null {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+  const record = entry as {
+    readonly info?: {
+      readonly id?: unknown;
+      readonly role?: unknown;
+    };
+    readonly parts?: unknown;
+  };
+  if (
+    typeof record.info?.id !== "string" ||
+    (record.info.role !== "user" && record.info.role !== "assistant") ||
+    !Array.isArray(record.parts)
+  ) {
+    return null;
+  }
+  return {
+    info: {
+      id: record.info.id,
+      role: record.info.role,
+    },
+    parts: record.parts as ReadonlyArray<Part>,
+  };
+}
+
+function assistantMessageIdsFromMessages(messages: ReadonlyArray<unknown>): ReadonlySet<string> {
+  return new Set(
+    messages
+      .map(normalizeOpenCodeMessageEntry)
+      .filter((entry): entry is OpenCodeMessageEntry => entry !== null)
+      .filter((entry) => entry.info.role === "assistant")
+      .map((entry) => entry.info.id),
+  );
+}
+
 function sessionErrorMessage(error: unknown): string {
   if (!error || typeof error !== "object") {
     return "OpenCode session failed.";
@@ -630,6 +678,158 @@ export function makeOpenCodeAdapter(
           },
         });
       }
+    });
+
+    const readAssistantMessageIds = Effect.fn("readAssistantMessageIds")(function* (
+      context: OpenCodeSessionContext,
+    ) {
+      const messages = yield* runOpenCodeSdk("session.messages", () =>
+        context.client.session.messages({
+          sessionID: context.openCodeSessionId,
+        }),
+      );
+      return assistantMessageIdsFromMessages(messages.data ?? []);
+    });
+
+    const completeActiveTurnFromReconcile = Effect.fn("completeActiveTurnFromReconcile")(function* (
+      context: OpenCodeSessionContext,
+      turnId: TurnId,
+      raw: unknown,
+    ) {
+      if (context.activeTurnId !== turnId) {
+        return;
+      }
+      context.activeTurnId = undefined;
+      context.activeAgent = undefined;
+      context.activeVariant = undefined;
+      yield* updateProviderSession(context, { status: "ready" }, { clearActiveTurnId: true });
+      yield* emit({
+        ...(yield* buildEventBase({
+          threadId: context.session.threadId,
+          turnId,
+          raw,
+        })),
+        type: "turn.completed",
+        payload: {
+          state: "completed",
+        },
+      });
+    });
+
+    const reconcileOpenCodeMessagesForTurn = Effect.fn("reconcileOpenCodeMessagesForTurn")(
+      function* (
+        context: OpenCodeSessionContext,
+        turnId: TurnId,
+        baselineAssistantMessageIds: ReadonlySet<string>,
+      ) {
+        const messages = yield* runOpenCodeSdk("session.messages", () =>
+          context.client.session.messages({
+            sessionID: context.openCodeSessionId,
+          }),
+        );
+        let sawAssistantText = false;
+        let sawCompletedAssistantText = false;
+        const fingerprintParts: string[] = [];
+
+        for (const rawEntry of messages.data ?? []) {
+          const entry = normalizeOpenCodeMessageEntry(rawEntry);
+          if (entry === null) {
+            continue;
+          }
+          context.messageRoleById.set(entry.info.id, entry.info.role);
+          if (
+            entry.info.role !== "assistant" ||
+            baselineAssistantMessageIds.has(entry.info.id) ||
+            context.completedAssistantMessageIds.has(entry.info.id)
+          ) {
+            continue;
+          }
+
+          let messageHasCompletedText = false;
+          let messageText = "";
+          for (const part of entry.parts) {
+            context.partById.set(part.id, part);
+            appendTurnItem(context, turnId, part);
+            const text = textFromPart(part);
+            if (text !== undefined && text.length > 0) {
+              sawAssistantText = true;
+              messageText += text;
+              if (part.type === "text" && part.time?.end !== undefined) {
+                messageHasCompletedText = true;
+                sawCompletedAssistantText = true;
+              }
+            }
+            yield* emitAssistantTextDelta(context, part, turnId, {
+              source: "opencode.session.messages.reconcile",
+              message: entry.info,
+              part,
+            });
+          }
+          if (messageHasCompletedText) {
+            context.completedAssistantMessageIds.add(entry.info.id);
+          }
+          if (messageText.length > 0) {
+            fingerprintParts.push(`${entry.info.id}:${messageText}`);
+          }
+        }
+
+        return {
+          hasAssistantText: sawAssistantText,
+          hasCompletedAssistantText: sawCompletedAssistantText,
+          fingerprint: fingerprintParts.join("\n"),
+          raw: messages,
+        };
+      },
+    );
+
+    const startTurnReconciler = Effect.fn("startTurnReconciler")(function* (
+      context: OpenCodeSessionContext,
+      turnId: TurnId,
+      baselineAssistantMessageIds: ReadonlySet<string>,
+    ) {
+      let lastFingerprint = "";
+      let stablePolls = 0;
+
+      return yield* Effect.forever(
+        Effect.gen(function* () {
+          yield* Effect.sleep(OPENCODE_RECONCILE_POLL_INTERVAL);
+          if (context.activeTurnId !== turnId || Ref.getUnsafe(context.stopped)) {
+            return yield* Effect.interrupt;
+          }
+
+          const result = yield* reconcileOpenCodeMessagesForTurn(
+            context,
+            turnId,
+            baselineAssistantMessageIds,
+          ).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("opencode turn reconcile failed", {
+                threadId: context.session.threadId,
+                turnId,
+                cause: Cause.pretty(cause),
+              }).pipe(Effect.as(null)),
+            ),
+          );
+          if (result === null || !result.hasAssistantText) {
+            return;
+          }
+
+          if (result.fingerprint === lastFingerprint) {
+            stablePolls += 1;
+          } else {
+            stablePolls = 0;
+            lastFingerprint = result.fingerprint;
+          }
+
+          if (
+            result.hasCompletedAssistantText ||
+            stablePolls >= OPENCODE_RECONCILE_STABLE_POLLS_TO_COMPLETE
+          ) {
+            yield* completeActiveTurnFromReconcile(context, turnId, result.raw);
+            return yield* Effect.interrupt;
+          }
+        }),
+      );
     });
 
     const handleSubscribedEvent = Effect.fn("handleSubscribedEvent")(function* (
@@ -1111,6 +1311,7 @@ export function makeOpenCodeAdapter(
           emittedTextByPartId: new Map(),
           messageRoleById: new Map(),
           completedAssistantPartIds: new Set(),
+          completedAssistantMessageIds: new Set(),
           turns: [],
           activeTurnId: undefined,
           activeAgent: undefined,
@@ -1183,6 +1384,14 @@ export function makeOpenCodeAdapter(
 
       const agent = getModelSelectionStringOptionValue(modelSelection, "agent");
       const variant = getModelSelectionStringOptionValue(modelSelection, "variant");
+      const baselineAssistantMessageIds = yield* readAssistantMessageIds(context).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("opencode turn baseline read failed", {
+            threadId: input.threadId,
+            cause: Cause.pretty(cause),
+          }).pipe(Effect.as(new Set<string>())),
+        ),
+      );
 
       context.activeTurnId = turnId;
       context.activeAgent = agent ?? (input.interactionMode === "plan" ? "plan" : undefined);
@@ -1248,6 +1457,10 @@ export function makeOpenCodeAdapter(
         ),
       );
 
+      yield* startTurnReconciler(context, turnId, baselineAssistantMessageIds).pipe(
+        Effect.forkIn(context.sessionScope),
+      );
+
       return {
         threadId: input.threadId,
         turnId,
@@ -1257,14 +1470,26 @@ export function makeOpenCodeAdapter(
     const interruptTurn: OpenCodeAdapterShape["interruptTurn"] = Effect.fn("interruptTurn")(
       function* (threadId, turnId) {
         const context = ensureSessionContext(sessions, threadId);
+        const activeTurnId = turnId ?? context.activeTurnId;
         yield* runOpenCodeSdk("session.abort", () =>
           context.client.session.abort({ sessionID: context.openCodeSessionId }),
         ).pipe(Effect.mapError(toRequestError));
-        if (turnId ?? context.activeTurnId) {
+        if (activeTurnId) {
+          context.activeTurnId = undefined;
+          context.activeAgent = undefined;
+          context.activeVariant = undefined;
+          yield* updateProviderSession(
+            context,
+            {
+              status: "ready",
+              lastError: "Interrupted by user.",
+            },
+            { clearActiveTurnId: true },
+          );
           yield* emit({
             ...(yield* buildEventBase({
               threadId,
-              turnId: turnId ?? context.activeTurnId,
+              turnId: activeTurnId,
             })),
             type: "turn.aborted",
             payload: {
