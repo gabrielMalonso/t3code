@@ -19,6 +19,7 @@ import * as Exit from "effect/Exit";
 import * as Queue from "effect/Queue";
 import * as Random from "effect/Random";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import type { OpencodeClient, Part, PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2";
@@ -53,6 +54,7 @@ import * as Option from "effect/Option";
 const PROVIDER = ProviderDriverKind.make("opencode");
 const OPENCODE_RECONCILE_POLL_INTERVAL = "1 second";
 const OPENCODE_RECONCILE_STABLE_POLLS_TO_COMPLETE = 2;
+const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 
 interface OpenCodeTurnSnapshot {
   readonly id: TurnId;
@@ -1091,6 +1093,13 @@ export function makeOpenCodeAdapter(
           break;
         }
 
+        case "session.idle": {
+          if (turnId) {
+            yield* completeActiveTurnFromReconcile(context, turnId, event);
+          }
+          break;
+        }
+
         case "session.error": {
           const message = sessionErrorMessage(event.properties.error);
           const activeTurnId = context.activeTurnId;
@@ -1394,6 +1403,10 @@ export function makeOpenCodeAdapter(
         },
       });
 
+      yield* startTurnReconciler(context, turnId, baselineAssistantMessageIds).pipe(
+        Effect.forkIn(context.sessionScope),
+      );
+
       yield* runOpenCodeSdk("session.promptAsync", () =>
         context.client.session.promptAsync({
           sessionID: context.openCodeSessionId,
@@ -1404,39 +1417,40 @@ export function makeOpenCodeAdapter(
         }),
       ).pipe(
         Effect.mapError(toRequestError),
-        // On failure: clear active-turn state, flip the session back to ready
-        // with lastError set, emit turn.aborted, then let the typed error
-        // propagate. We don't need to rebuild the error here — `toRequestError`
-        // already produced the right shape.
-        Effect.tapError((requestError) =>
-          Effect.gen(function* () {
-            context.activeTurnId = undefined;
-            context.activeAgent = undefined;
-            context.activeVariant = undefined;
-            yield* updateProviderSession(
-              context,
-              {
-                status: "ready",
-                model: modelSelection?.model ?? context.session.model,
-                lastError: requestError.detail,
-              },
-              { clearActiveTurnId: true },
-            );
-            yield* emit({
-              ...(yield* buildEventBase({
-                threadId: input.threadId,
-                turnId,
-              })),
-              type: "turn.aborted",
-              payload: {
-                reason: requestError.detail,
-              },
+        Effect.catchCause((cause) => {
+          const requestError = Cause.squash(cause);
+          if (isProviderAdapterRequestError(requestError)) {
+            return Effect.gen(function* () {
+              context.activeTurnId = undefined;
+              context.activeAgent = undefined;
+              context.activeVariant = undefined;
+              yield* updateProviderSession(
+                context,
+                {
+                  status: "ready",
+                  model: modelSelection?.model ?? context.session.model,
+                  lastError: requestError.detail,
+                },
+                { clearActiveTurnId: true },
+              );
+              yield* emit({
+                ...(yield* buildEventBase({
+                  threadId: input.threadId,
+                  turnId,
+                })),
+                type: "turn.aborted",
+                payload: {
+                  reason: requestError.detail,
+                },
+              });
             });
-          }),
-        ),
-      );
-
-      yield* startTurnReconciler(context, turnId, baselineAssistantMessageIds).pipe(
+          }
+          return Effect.logWarning("opencode promptAsync background submission failed", {
+            threadId: input.threadId,
+            turnId,
+            cause: Cause.pretty(cause),
+          });
+        }),
         Effect.forkIn(context.sessionScope),
       );
 
