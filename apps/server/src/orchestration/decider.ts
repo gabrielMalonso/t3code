@@ -543,6 +543,27 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "thread.compact.start": {
+      yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      return {
+        ...withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        }),
+        type: "thread.compact-start-requested",
+        payload: {
+          threadId: command.threadId,
+          createdAt: command.createdAt,
+        },
+      };
+    }
+
     case "thread.approval.respond": {
       yield* requireThread({
         readModel,

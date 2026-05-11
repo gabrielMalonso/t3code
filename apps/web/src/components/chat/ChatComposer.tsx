@@ -84,6 +84,7 @@ import { Separator } from "../ui/separator";
 import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { toastManager } from "../ui/toast";
 import {
   BotIcon,
   CircleAlertIcon,
@@ -116,6 +117,7 @@ import {
 } from "../../t3code-custom/chat";
 import { useComposerSkillExtension } from "../../t3code-custom/hooks";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { ensureEnvironmentApi } from "../../environmentApi";
 
 const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB`;
 
@@ -511,7 +513,7 @@ export const ChatComposer = memo(
       activeThreadId,
       activeThreadEnvironmentId: _activeThreadEnvironmentId,
       activeThread,
-      isServerThread: _isServerThread,
+      isServerThread,
       isLocalDraftThread: _isLocalDraftThread,
       phase,
       isConnecting,
@@ -825,6 +827,7 @@ export const ChatComposer = memo(
     const [isComposerPrimaryActionsCompact, setIsComposerPrimaryActionsCompact] = useState(false);
     const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
     const [isComposerFocused, setIsComposerFocused] = useState(false);
+    const [isCompactingContext, setIsCompactingContext] = useState(false);
     const isMobileViewport = useMediaQuery("max-sm");
     const isComposerCollapsedMobile = isMobileViewport && !isComposerFocused;
 
@@ -1280,7 +1283,7 @@ export const ChatComposer = memo(
 
     const footerCompactnessAllowancePx = resolveComposerCustomFooterCompactnessAllowancePx({
       activeThread,
-      isServerThread: _isServerThread,
+      isServerThread,
     });
 
     // ------------------------------------------------------------------
@@ -1560,7 +1563,7 @@ export const ChatComposer = memo(
       environmentId,
       activeThreadId,
       activeThread,
-      isServerThread: _isServerThread,
+      isServerThread,
       workspaceRoot: activeWorkspaceRoot,
       pendingUserInputCount: pendingUserInputs.length,
       envMode,
@@ -1832,6 +1835,40 @@ export const ChatComposer = memo(
     const handleImplementPlanInNewThreadPrimaryAction = useCallback(() => {
       void onImplementPlanInNewThread();
     }, [onImplementPlanInNewThread]);
+    const canCompactContext =
+      activeThreadId !== null &&
+      isServerThread &&
+      !isSendBusy &&
+      !isPreparingWorktree &&
+      !isCompactingContext;
+
+    const handleCompactContext = useCallback(() => {
+      if (!activeThreadId || !canCompactContext) {
+        return;
+      }
+
+      setIsCompactingContext(true);
+      void ensureEnvironmentApi(environmentId)
+        .orchestration.compactThread({ threadId: activeThreadId })
+        .then(() => {
+          toastManager.add({
+            title: "Context compaction started",
+            description: "Codex is compacting this thread's context.",
+            type: "success",
+          });
+        })
+        .catch((error: unknown) => {
+          toastManager.add({
+            title: "Could not compact context",
+            description:
+              error instanceof Error ? error.message : "The provider rejected the request.",
+            type: "error",
+          });
+        })
+        .finally(() => {
+          setIsCompactingContext(false);
+        });
+    }, [activeThreadId, canCompactContext, environmentId]);
     const scheduleComposerCollapseCheck = useCallback(() => {
       if (!isMobileViewport) {
         return;
@@ -2413,6 +2450,8 @@ export const ChatComposer = memo(
                           composerProviderControls.showInteractionModeToggle
                         }
                         traitsMenuContent={providerTraitsMenuContent}
+                        compactContextDisabled={!canCompactContext}
+                        onCompactContext={handleCompactContext}
                         onToggleInteractionMode={toggleInteractionMode}
                         onTogglePlanSidebar={togglePlanSidebar}
                         onRuntimeModeChange={handleRuntimeModeChange}
