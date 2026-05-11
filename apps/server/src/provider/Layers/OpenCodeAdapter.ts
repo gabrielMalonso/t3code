@@ -427,16 +427,6 @@ function normalizeOpenCodeMessageEntry(entry: unknown): OpenCodeMessageEntry | n
   };
 }
 
-function assistantMessageIdsFromMessages(messages: ReadonlyArray<unknown>): ReadonlySet<string> {
-  return new Set(
-    messages
-      .map(normalizeOpenCodeMessageEntry)
-      .filter((entry): entry is OpenCodeMessageEntry => entry !== null)
-      .filter((entry) => entry.info.role === "assistant")
-      .map((entry) => entry.info.id),
-  );
-}
-
 function sessionErrorMessage(error: unknown): string {
   if (!error || typeof error !== "object") {
     return "OpenCode session failed.";
@@ -661,6 +651,7 @@ export function makeOpenCodeAdapter(
         !context.completedAssistantPartIds.has(part.id)
       ) {
         context.completedAssistantPartIds.add(part.id);
+        context.completedAssistantMessageIds.add(part.messageID);
         yield* emit({
           ...(yield* buildEventBase({
             threadId: context.session.threadId,
@@ -678,17 +669,6 @@ export function makeOpenCodeAdapter(
           },
         });
       }
-    });
-
-    const readAssistantMessageIds = Effect.fn("readAssistantMessageIds")(function* (
-      context: OpenCodeSessionContext,
-    ) {
-      const messages = yield* runOpenCodeSdk("session.messages", () =>
-        context.client.session.messages({
-          sessionID: context.openCodeSessionId,
-        }),
-      );
-      return assistantMessageIdsFromMessages(messages.data ?? []);
     });
 
     const completeActiveTurnFromReconcile = Effect.fn("completeActiveTurnFromReconcile")(function* (
@@ -729,6 +709,7 @@ export function makeOpenCodeAdapter(
         );
         let sawAssistantText = false;
         let sawCompletedAssistantText = false;
+        const assistantMessageIdsWithText = new Set<string>();
         const fingerprintParts: string[] = [];
 
         for (const rawEntry of messages.data ?? []) {
@@ -769,6 +750,7 @@ export function makeOpenCodeAdapter(
             context.completedAssistantMessageIds.add(entry.info.id);
           }
           if (messageText.length > 0) {
+            assistantMessageIdsWithText.add(entry.info.id);
             fingerprintParts.push(`${entry.info.id}:${messageText}`);
           }
         }
@@ -776,6 +758,7 @@ export function makeOpenCodeAdapter(
         return {
           hasAssistantText: sawAssistantText,
           hasCompletedAssistantText: sawCompletedAssistantText,
+          assistantMessageIdsWithText,
           fingerprint: fingerprintParts.join("\n"),
           raw: messages,
         };
@@ -825,6 +808,9 @@ export function makeOpenCodeAdapter(
             result.hasCompletedAssistantText ||
             stablePolls >= OPENCODE_RECONCILE_STABLE_POLLS_TO_COMPLETE
           ) {
+            for (const messageId of result.assistantMessageIdsWithText) {
+              context.completedAssistantMessageIds.add(messageId);
+            }
             yield* completeActiveTurnFromReconcile(context, turnId, result.raw);
             return yield* Effect.interrupt;
           }
@@ -1384,14 +1370,7 @@ export function makeOpenCodeAdapter(
 
       const agent = getModelSelectionStringOptionValue(modelSelection, "agent");
       const variant = getModelSelectionStringOptionValue(modelSelection, "variant");
-      const baselineAssistantMessageIds = yield* readAssistantMessageIds(context).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning("opencode turn baseline read failed", {
-            threadId: input.threadId,
-            cause: Cause.pretty(cause),
-          }).pipe(Effect.as(new Set<string>())),
-        ),
-      );
+      const baselineAssistantMessageIds = new Set(context.completedAssistantMessageIds);
 
       context.activeTurnId = turnId;
       context.activeAgent = agent ?? (input.interactionMode === "plan" ? "plan" : undefined);
