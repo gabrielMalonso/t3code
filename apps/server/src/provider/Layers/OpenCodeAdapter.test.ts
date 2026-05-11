@@ -654,6 +654,70 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
     }),
   );
 
+  it.effect(
+    "reconciles completed assistant text from session messages when the event stream is silent",
+    () =>
+      Effect.gen(function* () {
+        const adapter = yield* OpenCodeAdapter;
+        const threadId = asThreadId("thread-opencode-reconcile");
+        const eventsFiber = yield* adapter.streamEvents.pipe(
+          Stream.filter((event) => event.threadId === threadId),
+          Stream.take(6),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+
+        yield* adapter.startSession({
+          provider: ProviderDriverKind.make("opencode"),
+          threadId,
+          runtimeMode: "full-access",
+        });
+        yield* adapter.sendTurn({
+          threadId,
+          input: "Say hi",
+          modelSelection: createModelSelection(
+            ProviderInstanceId.make("opencode"),
+            "opencode-go/kimi-k2.6",
+          ),
+        });
+
+        runtimeMock.state.messages = [
+          {
+            info: { id: "assistant-reconcile", role: "assistant" },
+            parts: [
+              {
+                id: "part-reconcile",
+                sessionID: "http://127.0.0.1:9999/session",
+                messageID: "assistant-reconcile",
+                type: "text",
+                text: "Oi pelo histórico.",
+                time: { start: 1, end: 2 },
+              },
+            ],
+          },
+        ];
+        yield* advanceTestClock(1000);
+
+        const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("1 second")));
+        assert.deepEqual(
+          events.map((event) => event.type),
+          [
+            "session.started",
+            "thread.started",
+            "turn.started",
+            "content.delta",
+            "item.completed",
+            "turn.completed",
+          ],
+        );
+        const delta = events.find((event) => event.type === "content.delta");
+        if (delta?.type !== "content.delta") {
+          throw new Error("Expected content.delta");
+        }
+        assert.equal(delta.payload.delta, "Oi pelo histórico.");
+      }),
+  );
+
   it.effect("writes provider-native observability records using the session thread id", () =>
     Effect.gen(function* () {
       const nativeEvents: Array<{
