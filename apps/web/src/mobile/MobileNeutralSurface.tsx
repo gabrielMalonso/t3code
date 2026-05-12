@@ -194,6 +194,7 @@ export function MobileNeutralSurface() {
   const [neutralView, setNeutralView] = useState<NeutralView>("connections");
   const [profileToRemove, setProfileToRemove] = useState<MobileConnectionProfile | null>(null);
   const handledDeepLinksRef = useRef<Set<string>>(new Set());
+  const pendingDeepLinksRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     void profileStore.hydrate();
@@ -300,8 +301,10 @@ export function MobileNeutralSurface() {
         await activateMobileProfile(profile.profileId);
         setPairingPanel(null);
         setNeutralView("connections");
+        return true;
       } catch (error) {
         setErrorMessage(error instanceof Error ? error.message : String(error));
+        return false;
       } finally {
         setBusyAction(null);
       }
@@ -311,7 +314,7 @@ export function MobileNeutralSurface() {
 
   const handleIncomingPairingDeepLink = useCallback(
     async (url: string) => {
-      if (handledDeepLinksRef.current.has(url)) {
+      if (handledDeepLinksRef.current.has(url) || pendingDeepLinksRef.current.has(url)) {
         return;
       }
 
@@ -320,17 +323,24 @@ export function MobileNeutralSurface() {
         return;
       }
 
-      handledDeepLinksRef.current.add(url);
+      pendingDeepLinksRef.current.add(url);
       setNeutralView("pair");
       setPairingPanel("code");
       setPairingInput(parsed.pairingInput);
       setHost(parsed.host);
       setMode(parsed.mode);
-      await pairWithInput({
-        pairingInput: parsed.pairingInput,
-        host: parsed.host,
-        mode: parsed.mode,
-      });
+      try {
+        const paired = await pairWithInput({
+          pairingInput: parsed.pairingInput,
+          host: parsed.host,
+          mode: parsed.mode,
+        });
+        if (paired) {
+          handledDeepLinksRef.current.add(url);
+        }
+      } finally {
+        pendingDeepLinksRef.current.delete(url);
+      }
     },
     [pairWithInput],
   );
