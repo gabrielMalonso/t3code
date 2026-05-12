@@ -854,6 +854,49 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       }),
   );
 
+  it.effect("does not complete a reconciled turn until assistant text is finished", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-reconcile-unfinished-text");
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId,
+        input: "Say hi",
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("opencode"),
+          "opencode-go/kimi-k2.6",
+        ),
+      });
+
+      runtimeMock.state.messages = [
+        {
+          info: { id: "assistant-unfinished", role: "assistant" },
+          parts: [
+            {
+              id: "part-unfinished",
+              sessionID: "http://127.0.0.1:9999/session",
+              messageID: "assistant-unfinished",
+              type: "text",
+              text: "Still working while a tool runs.",
+              time: { start: 1 },
+            },
+          ],
+        },
+      ];
+      yield* advanceTestClock(4_000);
+
+      const sessions = yield* adapter.listSessions();
+      const session = sessions.find((entry) => entry.threadId === threadId);
+      assert.equal(session?.status, "running");
+      assert.notEqual(session?.activeTurnId, undefined);
+    }),
+  );
+
   it.effect("writes provider-native observability records using the session thread id", () =>
     Effect.gen(function* () {
       const nativeEvents: Array<{

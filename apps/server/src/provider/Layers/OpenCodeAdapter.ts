@@ -53,7 +53,6 @@ import * as Option from "effect/Option";
 
 const PROVIDER = ProviderDriverKind.make("opencode");
 const OPENCODE_RECONCILE_POLL_INTERVAL = "1 second";
-const OPENCODE_RECONCILE_STABLE_POLLS_TO_COMPLETE = 2;
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 
 interface OpenCodeTurnSnapshot {
@@ -712,7 +711,6 @@ export function makeOpenCodeAdapter(
         let sawAssistantText = false;
         let sawCompletedAssistantText = false;
         const assistantMessageIdsWithText = new Set<string>();
-        const fingerprintParts: string[] = [];
 
         for (const rawEntry of messages.data ?? []) {
           const entry = normalizeOpenCodeMessageEntry(rawEntry);
@@ -753,7 +751,6 @@ export function makeOpenCodeAdapter(
           }
           if (messageText.length > 0) {
             assistantMessageIdsWithText.add(entry.info.id);
-            fingerprintParts.push(`${entry.info.id}:${messageText}`);
           }
         }
 
@@ -761,7 +758,6 @@ export function makeOpenCodeAdapter(
           hasAssistantText: sawAssistantText,
           hasCompletedAssistantText: sawCompletedAssistantText,
           assistantMessageIdsWithText,
-          fingerprint: fingerprintParts.join("\n"),
           raw: messages,
         };
       },
@@ -772,9 +768,6 @@ export function makeOpenCodeAdapter(
       turnId: TurnId,
       baselineAssistantMessageIds: ReadonlySet<string>,
     ) {
-      let lastFingerprint = "";
-      let stablePolls = 0;
-
       return yield* Effect.forever(
         Effect.gen(function* () {
           yield* Effect.sleep(OPENCODE_RECONCILE_POLL_INTERVAL);
@@ -799,17 +792,7 @@ export function makeOpenCodeAdapter(
             return;
           }
 
-          if (result.fingerprint === lastFingerprint) {
-            stablePolls += 1;
-          } else {
-            stablePolls = 0;
-            lastFingerprint = result.fingerprint;
-          }
-
-          if (
-            result.hasCompletedAssistantText ||
-            stablePolls >= OPENCODE_RECONCILE_STABLE_POLLS_TO_COMPLETE
-          ) {
+          if (result.hasCompletedAssistantText) {
             for (const messageId of result.assistantMessageIdsWithText) {
               context.completedAssistantMessageIds.add(messageId);
             }
