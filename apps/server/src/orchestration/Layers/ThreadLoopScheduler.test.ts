@@ -644,6 +644,7 @@ describe("ThreadLoopScheduler", () => {
               compactThread: () => Effect.void,
             } as never),
           ),
+          Layer.provide(NodeServices.layer),
         ),
       );
     };

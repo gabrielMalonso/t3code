@@ -10,7 +10,7 @@ import {
   Unplug,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "../components/ui/button";
 import {
@@ -28,6 +28,7 @@ import {
   fetchRemoteEnvironmentDescriptor,
 } from "../environments/remote/api";
 import { activateMobileProfile, closeActiveMobileProfile, useMobileRuntimeStore } from "./runtime";
+import { parseMobilePairingDeepLink } from "./deepLink";
 import { getMobilePlatformLabel } from "./platform";
 import {
   createMobileProfileId,
@@ -43,6 +44,8 @@ import {
 type BusyAction = "pair" | "connect" | "close" | "scan" | "remove" | null;
 type PairingPanel = "code" | "paste" | null;
 type NeutralView = "connections" | "pair";
+
+const PENDING_NATIVE_DEEP_LINK_STORAGE_KEY = "t3code:pending-mobile-deep-link:v1";
 
 function modeLabel(mode: MobileConnectionMode): string {
   return mode === "tailscale" ? "Tailscale" : "LAN";
@@ -152,6 +155,32 @@ async function readClipboardText(): Promise<string> {
   return (await navigator.clipboard?.readText?.()) ?? "";
 }
 
+async function takePendingNativeDeepLink(): Promise<string | null> {
+  try {
+    const module = (await import("@capacitor/preferences")) as unknown as {
+      Preferences?: {
+        get: (options: { key: string }) => Promise<{ value: string | null }>;
+        remove: (options: { key: string }) => Promise<void>;
+      };
+    };
+    const preferences = module.Preferences;
+    if (!preferences) {
+      return null;
+    }
+
+    const result = await preferences.get({ key: PENDING_NATIVE_DEEP_LINK_STORAGE_KEY });
+    const value = result.value?.trim() ?? "";
+    if (value) {
+      await preferences.remove({ key: PENDING_NATIVE_DEEP_LINK_STORAGE_KEY });
+      return value;
+    }
+  } catch {
+    // Non-Capacitor previews do not expose native preferences.
+  }
+
+  return null;
+}
+
 export function MobileNeutralSurface() {
   const profileStore = useMobileProfileStore();
   const runtime = useMobileRuntimeStore();
@@ -164,6 +193,8 @@ export function MobileNeutralSurface() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [neutralView, setNeutralView] = useState<NeutralView>("connections");
   const [profileToRemove, setProfileToRemove] = useState<MobileConnectionProfile | null>(null);
+  const handledDeepLinksRef = useRef<Set<string>>(new Set());
+  const pendingDeepLinksRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     void profileStore.hydrate();
@@ -215,65 +246,195 @@ export function MobileNeutralSurface() {
     }
   }, [profileStore.hydrated, savedProfiles.length]);
 
-  async function pairWithInput(input: {
-    readonly pairingInput: string;
-    readonly host: string;
-    readonly mode: MobileConnectionMode;
-  }) {
-    setBusyAction("pair");
-    setErrorMessage(null);
-    try {
-      const pairingInputValue = input.pairingInput.trim();
-      const hostValue = input.host.trim();
-      if (input.mode === "lan" && !isPairingUrl(pairingInputValue)) {
-        throw new Error("For LAN, paste the full pairing link.");
-      }
-      if (
-        requiresTailscaleHost({
+  const pairWithInput = useCallback(
+    async function pairWithInput(input: {
+      readonly pairingInput: string;
+      readonly host: string;
+      readonly mode: MobileConnectionMode;
+    }) {
+      setBusyAction("pair");
+      setErrorMessage(null);
+      try {
+        const pairingInputValue = input.pairingInput.trim();
+        const hostValue = input.host.trim();
+        if (input.mode === "lan" && !isPairingUrl(pairingInputValue)) {
+          throw new Error("For LAN, paste the full pairing link.");
+        }
+        if (
+          requiresTailscaleHost({
+            mode: input.mode,
+          }) &&
+          !hostValue
+        ) {
+          throw new Error("Enter the desktop's 100.x IP or .ts.net address.");
+        }
+
+        const target = resolveMobilePairingTarget({
+          pairingUrlOrToken: pairingInputValue,
+          host: input.mode === "lan" ? "" : hostValue,
+        });
+        const descriptor = await fetchRemoteEnvironmentDescriptor({
+          httpBaseUrl: target.httpBaseUrl,
+        });
+        const bearerSession = await bootstrapRemoteBearerSession({
+          httpBaseUrl: target.httpBaseUrl,
+          credential: target.credential,
+        });
+        const profile: MobileConnectionProfile = {
+          profileId: createMobileProfileId(input.mode),
+          environmentId: descriptor.environmentId,
+          label:
+            label.trim() ||
+            defaultProfileLabel({ backendLabel: descriptor.label, mode: input.mode }),
           mode: input.mode,
-        }) &&
-        !hostValue
-      ) {
-        throw new Error("Enter the desktop's 100.x IP or .ts.net address.");
+          httpBaseUrl: target.httpBaseUrl,
+          wsBaseUrl: target.wsBaseUrl,
+          bearerToken: bearerSession.sessionToken,
+          sessionExpiresAt: String(bearerSession.expiresAt),
+          createdAt: new Date().toISOString(),
+          lastConnectedAt: null,
+        };
+        await profileStore.upsert(profile);
+        setPairingInput("");
+        setLabel("");
+        setHost(target.httpBaseUrl);
+        await activateMobileProfile(profile.profileId);
+        setPairingPanel(null);
+        setNeutralView("connections");
+        return true;
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : String(error));
+        return false;
+      } finally {
+        setBusyAction(null);
+      }
+    },
+    [label, profileStore],
+  );
+
+  const handleIncomingPairingDeepLink = useCallback(
+    async (url: string) => {
+      if (handledDeepLinksRef.current.has(url) || pendingDeepLinksRef.current.has(url)) {
+        return;
       }
 
-      const target = resolveMobilePairingTarget({
-        pairingUrlOrToken: pairingInputValue,
-        host: input.mode === "lan" ? "" : hostValue,
-      });
-      const descriptor = await fetchRemoteEnvironmentDescriptor({
-        httpBaseUrl: target.httpBaseUrl,
-      });
-      const bearerSession = await bootstrapRemoteBearerSession({
-        httpBaseUrl: target.httpBaseUrl,
-        credential: target.credential,
-      });
-      const profile: MobileConnectionProfile = {
-        profileId: createMobileProfileId(input.mode),
-        environmentId: descriptor.environmentId,
-        label:
-          label.trim() || defaultProfileLabel({ backendLabel: descriptor.label, mode: input.mode }),
-        mode: input.mode,
-        httpBaseUrl: target.httpBaseUrl,
-        wsBaseUrl: target.wsBaseUrl,
-        bearerToken: bearerSession.sessionToken,
-        sessionExpiresAt: String(bearerSession.expiresAt),
-        createdAt: new Date().toISOString(),
-        lastConnectedAt: null,
-      };
-      await profileStore.upsert(profile);
-      setPairingInput("");
-      setLabel("");
-      setHost(target.httpBaseUrl);
-      await activateMobileProfile(profile.profileId);
-      setPairingPanel(null);
-      setNeutralView("connections");
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusyAction(null);
+      const parsed = parseMobilePairingDeepLink(url);
+      if (!parsed) {
+        return;
+      }
+
+      pendingDeepLinksRef.current.add(url);
+      setNeutralView("pair");
+      setPairingPanel("code");
+      setPairingInput(parsed.pairingInput);
+      setHost(parsed.host);
+      setMode(parsed.mode);
+      try {
+        const paired = await pairWithInput({
+          pairingInput: parsed.pairingInput,
+          host: parsed.host,
+          mode: parsed.mode,
+        });
+        if (paired) {
+          handledDeepLinksRef.current.add(url);
+        }
+      } finally {
+        pendingDeepLinksRef.current.delete(url);
+      }
+    },
+    [pairWithInput],
+  );
+
+  useEffect(() => {
+    let disposed = false;
+    let pendingPoll: number | null = null;
+    let pendingPollStop: number | null = null;
+    const listeners: Array<{ remove: () => Promise<void> }> = [];
+
+    function stopPendingPoll() {
+      if (pendingPoll !== null) {
+        window.clearInterval(pendingPoll);
+        pendingPoll = null;
+      }
+      if (pendingPollStop !== null) {
+        window.clearTimeout(pendingPollStop);
+        pendingPollStop = null;
+      }
     }
-  }
+
+    async function takeAndHandlePendingNativeDeepLink() {
+      const pendingUrl = await takePendingNativeDeepLink();
+      if (!disposed && pendingUrl) {
+        void handleIncomingPairingDeepLink(pendingUrl);
+      }
+    }
+
+    async function registerAppUrlHandlers() {
+      try {
+        const module = (await import("@capacitor/app")) as {
+          App?: {
+            addListener: (
+              eventName: "appUrlOpen" | "resume",
+              listenerFunc: (event: unknown) => void,
+            ) => Promise<{ remove: () => Promise<void> }>;
+            getLaunchUrl: () => Promise<{ url?: string }>;
+          };
+        };
+        const app = module.App;
+        if (!app || disposed) {
+          return;
+        }
+
+        void takeAndHandlePendingNativeDeepLink();
+
+        const launch = await app.getLaunchUrl();
+        if (!disposed && launch.url) {
+          void handleIncomingPairingDeepLink(launch.url);
+        }
+
+        listeners.push(
+          await app.addListener("appUrlOpen", (event) => {
+            const url =
+              typeof event === "object" &&
+              event !== null &&
+              "url" in event &&
+              typeof event.url === "string"
+                ? event.url
+                : "";
+            if (!disposed) {
+              if (url) {
+                void handleIncomingPairingDeepLink(url);
+              }
+              void takeAndHandlePendingNativeDeepLink();
+            }
+          }),
+        );
+        listeners.push(
+          await app.addListener("resume", () => {
+            if (!disposed) {
+              void takeAndHandlePendingNativeDeepLink();
+            }
+          }),
+        );
+
+        pendingPoll = window.setInterval(() => {
+          void takeAndHandlePendingNativeDeepLink();
+        }, 500);
+        pendingPollStop = window.setTimeout(stopPendingPoll, 5000);
+      } catch {
+        void takeAndHandlePendingNativeDeepLink();
+      }
+    }
+
+    void registerAppUrlHandlers();
+    return () => {
+      disposed = true;
+      stopPendingPoll();
+      for (const listener of listeners) {
+        void listener.remove();
+      }
+    };
+  }, [handleIncomingPairingDeepLink]);
 
   async function handlePair() {
     await pairWithInput({ pairingInput, host, mode });
@@ -590,7 +751,7 @@ export function MobileNeutralSurface() {
               </DialogDescription>
             </DialogHeader>
 
-            <DialogPanel className="min-w-0 overflow-hidden">
+            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-6 py-1 pb-4">
               <form
                 className="grid min-w-0 gap-6"
                 onSubmit={(event) => {
@@ -603,7 +764,6 @@ export function MobileNeutralSurface() {
                   description="Helps you recognize this connection later."
                 >
                   <Input
-                    autoFocus
                     value={label}
                     onChange={(event) => setLabel(event.target.value)}
                     placeholder="Optional connection name"
@@ -692,7 +852,7 @@ export function MobileNeutralSurface() {
                   </div>
                 ) : null}
               </form>
-            </DialogPanel>
+            </div>
 
             <DialogFooter>
               <Button
