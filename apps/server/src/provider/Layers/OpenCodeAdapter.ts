@@ -13,6 +13,7 @@ import {
   type UserInputQuestion,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -64,6 +65,10 @@ interface OpenCodeMessageEntry {
   readonly info: {
     readonly id: string;
     readonly role: "user" | "assistant";
+    readonly time?: {
+      readonly created: number;
+      readonly completed?: number;
+    };
   };
   readonly parts: ReadonlyArray<Part>;
 }
@@ -423,9 +428,30 @@ function normalizeOpenCodeMessageEntry(entry: unknown): OpenCodeMessageEntry | n
     info: {
       id: record.info.id,
       role: record.info.role,
+      ...("time" in record.info &&
+      record.info.time &&
+      typeof record.info.time === "object" &&
+      typeof (record.info.time as { readonly created?: unknown }).created === "number"
+        ? {
+            time: {
+              created: (record.info.time as { readonly created: number }).created,
+              ...("completed" in record.info.time &&
+              typeof (record.info.time as { readonly completed?: unknown }).completed === "number"
+                ? { completed: (record.info.time as { readonly completed: number }).completed }
+                : {}),
+            },
+          }
+        : {}),
     },
     parts: record.parts as ReadonlyArray<Part>,
   };
+}
+
+function isPreTurnAssistantMessage(entry: OpenCodeMessageEntry, turnStartedAtMs: number): boolean {
+  return (
+    entry.info.role === "assistant" &&
+    (entry.info.time?.created ?? turnStartedAtMs) < turnStartedAtMs
+  );
 }
 
 function sessionErrorMessage(error: unknown): string {
@@ -702,6 +728,7 @@ export function makeOpenCodeAdapter(
         context: OpenCodeSessionContext,
         turnId: TurnId,
         baselineAssistantMessageIds: ReadonlySet<string>,
+        turnStartedAtMs: number,
       ) {
         const messages = yield* runOpenCodeSdk("session.messages", () =>
           context.client.session.messages({
@@ -720,6 +747,7 @@ export function makeOpenCodeAdapter(
           context.messageRoleById.set(entry.info.id, entry.info.role);
           if (
             entry.info.role !== "assistant" ||
+            isPreTurnAssistantMessage(entry, turnStartedAtMs) ||
             baselineAssistantMessageIds.has(entry.info.id) ||
             context.completedAssistantMessageIds.has(entry.info.id)
           ) {
@@ -767,6 +795,7 @@ export function makeOpenCodeAdapter(
       context: OpenCodeSessionContext,
       turnId: TurnId,
       baselineAssistantMessageIds: ReadonlySet<string>,
+      turnStartedAtMs: number,
     ) {
       return yield* Effect.forever(
         Effect.gen(function* () {
@@ -779,6 +808,7 @@ export function makeOpenCodeAdapter(
             context,
             turnId,
             baselineAssistantMessageIds,
+            turnStartedAtMs,
           ).pipe(
             Effect.catchCause((cause) =>
               Effect.logWarning("opencode turn reconcile failed", {
@@ -1363,6 +1393,7 @@ export function makeOpenCodeAdapter(
       const agent = getModelSelectionStringOptionValue(modelSelection, "agent");
       const variant = getModelSelectionStringOptionValue(modelSelection, "variant");
       const baselineAssistantMessageIds = new Set(context.completedAssistantMessageIds);
+      const turnStartedAtMs = yield* Clock.currentTimeMillis;
 
       context.activeTurnId = turnId;
       context.activeAgent = agent ?? (input.interactionMode === "plan" ? "plan" : undefined);
@@ -1386,9 +1417,12 @@ export function makeOpenCodeAdapter(
         },
       });
 
-      yield* startTurnReconciler(context, turnId, baselineAssistantMessageIds).pipe(
-        Effect.forkIn(context.sessionScope),
-      );
+      yield* startTurnReconciler(
+        context,
+        turnId,
+        baselineAssistantMessageIds,
+        turnStartedAtMs,
+      ).pipe(Effect.forkIn(context.sessionScope));
 
       yield* runOpenCodeSdk("session.promptAsync", () =>
         context.client.session.promptAsync({
