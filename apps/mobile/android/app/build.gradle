@@ -1,5 +1,15 @@
 apply plugin: 'com.android.application'
 
+def releaseSigningValue = { name ->
+    def value = System.getenv(name) ?: findProperty(name)
+    return value == null ? null : value.toString()
+}
+def releaseStoreFilePath = releaseSigningValue('T3CODE_ANDROID_KEYSTORE_PATH')
+def releaseStorePassword = releaseSigningValue('T3CODE_ANDROID_KEYSTORE_PASSWORD')
+def releaseKeyAlias = releaseSigningValue('T3CODE_ANDROID_KEY_ALIAS')
+def releaseKeyPassword = releaseSigningValue('T3CODE_ANDROID_KEY_PASSWORD')
+def releaseSigningConfigured = releaseStoreFilePath && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
+
 android {
     namespace = "tools.t3code.mobile"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,10 +26,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            release {
+                storeFile file(releaseStoreFilePath)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (releaseSigningConfigured) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

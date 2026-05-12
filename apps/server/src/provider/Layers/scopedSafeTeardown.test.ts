@@ -7,7 +7,7 @@ import { describe, expect } from "vitest";
 import { scopedSafeTeardown } from "./scopedSafeTeardown.ts";
 
 describe("scopedSafeTeardown", () => {
-  it.effect("returns the body's value when teardown is clean", () =>
+  it.effect("returns the body value when teardown is clean", () =>
     Effect.gen(function* () {
       const finalizers: string[] = [];
       const wrapped = Effect.gen(function* () {
@@ -26,9 +26,6 @@ describe("scopedSafeTeardown", () => {
   );
 
   it.effect("preserves body success when a finalizer dies", () =>
-    // The production failure mode: `Layer.build(...)` registers a finalizer
-    // that kills a subprocess; if the kill fails, the defect would otherwise
-    // override a successful probe body.
     Effect.gen(function* () {
       const finalizers: string[] = [];
       const wrapped = Effect.gen(function* () {
@@ -45,7 +42,6 @@ describe("scopedSafeTeardown", () => {
 
       const value = yield* wrapped;
       expect(value).toBe("body-ok");
-      // The clean finalizer still ran; teardown defect was logged + swallowed.
       expect(finalizers).toEqual(["ran-before-die"]);
     }),
   );
@@ -63,17 +59,13 @@ describe("scopedSafeTeardown", () => {
       const exit = yield* Effect.exit(wrapped);
       expect(Exit.isFailure(exit)).toBe(true);
       if (Exit.isFailure(exit)) {
-        // Body's typed failure should surface, not a defect.
         const squashed = Cause.squash(exit.cause);
         expect(squashed).toBeInstanceOf(BodyError);
       }
     }),
   );
 
-  it.effect("prefers the body's typed failure over a teardown defect", () =>
-    // Even when both the body fails AND teardown defects, the body's typed
-    // failure is what callers see. This matters because `Effect.result` /
-    // `.pipe(Effect.exit)` in callers expects a typed Failure, not a Die.
+  it.effect("prefers the body failure over a teardown defect", () =>
     Effect.gen(function* () {
       class BodyError {
         readonly _tag = "BodyError" as const;

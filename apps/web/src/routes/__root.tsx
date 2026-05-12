@@ -37,6 +37,7 @@ import { useSettings } from "../hooks/useSettings";
 import {
   deriveLogicalProjectKeyFromSettings,
   derivePhysicalProjectKeyFromPath,
+  selectProjectGroupingSettings,
 } from "../logicalProject";
 import {
   getServerConfigUpdatedNotification,
@@ -340,10 +341,7 @@ function EventRouter(input: { readonly syncPrimaryDescriptor?: boolean }) {
   const setActiveEnvironmentId = useStore((store) => store.setActiveEnvironmentId);
   const navigate = useNavigate();
   const pathname = useLocation({ select: (loc) => loc.pathname });
-  const projectGroupingSettings = useSettings((settings) => ({
-    sidebarProjectGroupingMode: settings.sidebarProjectGroupingMode,
-    sidebarProjectGroupingOverrides: settings.sidebarProjectGroupingOverrides,
-  }));
+  const projectGroupingSettings = useSettings(selectProjectGroupingSettings);
   const readPathname = useEffectEvent(() => pathname);
   const handledBootstrapThreadIdRef = useRef<string | null>(null);
   const seenServerConfigUpdateIdRef = useRef(getServerConfigUpdatedNotification()?.id ?? 0);
