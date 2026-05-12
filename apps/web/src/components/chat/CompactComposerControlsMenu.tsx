@@ -1,6 +1,6 @@
 import { ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
 import { memo, type ReactNode } from "react";
-import { EllipsisIcon, ListTodoIcon } from "lucide-react";
+import { EllipsisIcon, ListTodoIcon, Minimize2Icon } from "lucide-react";
 import { Button } from "../ui/button";
 import {
   Menu,
@@ -21,6 +21,8 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   runtimeMode: RuntimeMode;
   showInteractionModeToggle: boolean;
   traitsMenuContent?: ReactNode;
+  compactContextDisabled?: boolean;
+  onCompactContext?: () => void;
   onToggleInteractionMode: () => void;
   onTogglePlanSidebar: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -74,6 +76,18 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
           <MenuRadioItem value="auto-accept-edits">Auto-accept edits</MenuRadioItem>
           <MenuRadioItem value="full-access">Full access</MenuRadioItem>
         </MenuRadioGroup>
+        {props.onCompactContext ? (
+          <>
+            <MenuDivider />
+            <MenuItem
+              disabled={props.compactContextDisabled}
+              onClick={() => props.onCompactContext?.()}
+            >
+              <Minimize2Icon className="size-4 shrink-0" />
+              Compact context
+            </MenuItem>
+          </>
+        ) : null}
         {props.loopMenuContent ? (
           <>
             <MenuDivider />

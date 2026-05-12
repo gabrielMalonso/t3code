@@ -16,6 +16,7 @@ import {
   type DesktopSshEnvironmentTarget,
   type DesktopServerExposureState,
   type EnvironmentId,
+  type OpenPetsRuntimeStatus,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
@@ -30,6 +31,7 @@ import {
   useRelativeTimeTick,
 } from "./settingsLayout";
 import { Input } from "../ui/input";
+import { DraftInput } from "../ui/draft-input";
 import {
   Dialog,
   DialogClose,
@@ -98,6 +100,9 @@ import {
 import { useUiStateStore } from "~/uiStateStore";
 import { resolveServerConfigVersionMismatch } from "~/versionSkew";
 import { useServerConfig } from "~/rpc/serverState";
+import { ensureLocalApi } from "~/localApi";
+import { useSettings, useUpdateSettings } from "~/hooks/useSettings";
+import { describeOpenPetsStatus, type OpenPetsStatusTone } from "./openPetsStatus";
 
 const DEFAULT_TAILSCALE_SERVE_PORT = 443;
 
@@ -105,6 +110,19 @@ const accessTimestampFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
   timeStyle: "short",
 });
+
+function openPetsStatusClassName(tone: OpenPetsStatusTone): string {
+  switch (tone) {
+    case "success":
+      return "text-success";
+    case "warning":
+      return "text-warning";
+    case "error":
+      return "text-destructive";
+    case "muted":
+      return "text-muted-foreground";
+  }
+}
 
 function formatAccessTimestamp(value: string): string {
   const parsed = new Date(value);
@@ -1395,6 +1413,9 @@ const DesktopSshHostRow = memo(function DesktopSshHostRow({
 
 export function ConnectionsSettings() {
   const desktopBridge = window.desktopBridge;
+  const settings = useSettings();
+  const { updateSettings } = useUpdateSettings();
+  const openPetsSettings = settings.openPets;
   const [currentSessionRole, setCurrentSessionRole] = useState<"owner" | "client" | null>(
     desktopBridge ? "owner" : null,
   );
@@ -1456,6 +1477,9 @@ export function ConnectionsSettings() {
     null,
   );
   const [isLoadingDesktopAccessManagement, setIsLoadingDesktopAccessManagement] = useState(false);
+  const [openPetsStatus, setOpenPetsStatus] = useState<OpenPetsRuntimeStatus | null>(null);
+  const [isLoadingOpenPetsStatus, setIsLoadingOpenPetsStatus] = useState(false);
+  const [openPetsStatusError, setOpenPetsStatusError] = useState<string | null>(null);
   const [revokingDesktopPairingLinkId, setRevokingDesktopPairingLinkId] = useState<string | null>(
     null,
   );
@@ -1521,6 +1545,43 @@ export function ConnectionsSettings() {
     Number.isInteger(parsedTailscaleServePort) &&
     parsedTailscaleServePort >= 1 &&
     parsedTailscaleServePort <= 65_535;
+
+  const refreshOpenPetsStatus = useCallback(() => {
+    setIsLoadingOpenPetsStatus(true);
+    setOpenPetsStatusError(null);
+    let statusPromise: Promise<OpenPetsRuntimeStatus>;
+    try {
+      statusPromise = ensureLocalApi().server.getOpenPetsStatus();
+    } catch (error) {
+      setOpenPetsStatusError(
+        error instanceof Error ? error.message : "Failed to load OpenPets status.",
+      );
+      setIsLoadingOpenPetsStatus(false);
+      return;
+    }
+    void statusPromise
+      .then((status) => {
+        setOpenPetsStatus(status);
+      })
+      .catch((error: unknown) => {
+        setOpenPetsStatusError(
+          error instanceof Error ? error.message : "Failed to load OpenPets status.",
+        );
+      })
+      .finally(() => {
+        setIsLoadingOpenPetsStatus(false);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!canManageLocalBackend) return;
+    refreshOpenPetsStatus();
+  }, [
+    canManageLocalBackend,
+    openPetsSettings.binaryPath,
+    openPetsSettings.enabled,
+    refreshOpenPetsStatus,
+  ]);
 
   const pendingTailscaleServeBaseUrl = useMemo(() => {
     if (!pendingTailscaleServeEndpoint) return null;
@@ -2439,6 +2500,76 @@ export function ConnectionsSettings() {
       }
     />
   );
+  const renderOpenPetsSection = () => {
+    const presentation = describeOpenPetsStatus(
+      openPetsStatus,
+      isLoadingOpenPetsStatus,
+      openPetsStatusError,
+    );
+    return (
+      <SettingsSection title="OpenPets">
+        <SettingsRow
+          title="Enable OpenPets"
+          description="Send T3 Code progress, review prompts, and completion states to the local desktop pet."
+          status={
+            <span className={cn("font-medium", openPetsStatusClassName(presentation.tone))}>
+              {presentation.label}: {presentation.description}
+            </span>
+          }
+          control={
+            <div className="flex items-center gap-2">
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Refresh OpenPets status"
+                onClick={refreshOpenPetsStatus}
+                disabled={isLoadingOpenPetsStatus}
+              >
+                {isLoadingOpenPetsStatus ? (
+                  <Spinner className="size-3.5" />
+                ) : (
+                  <RefreshCwIcon className="size-3.5" />
+                )}
+              </Button>
+              <Switch
+                checked={openPetsSettings.enabled}
+                onCheckedChange={(checked) =>
+                  updateSettings({
+                    openPets: {
+                      ...openPetsSettings,
+                      enabled: Boolean(checked),
+                    },
+                  })
+                }
+                aria-label="Enable OpenPets"
+              />
+            </div>
+          }
+        />
+        <SettingsRow
+          title="CLI path"
+          description="Use the bundled CLI shim installed from the OpenPets paw menu."
+          control={
+            <DraftInput
+              className="w-full sm:w-64"
+              value={openPetsSettings.binaryPath}
+              onCommit={(binaryPath) =>
+                updateSettings({
+                  openPets: {
+                    ...openPetsSettings,
+                    binaryPath,
+                  },
+                })
+              }
+              placeholder="openpets"
+              spellCheck={false}
+              aria-label="OpenPets CLI path"
+            />
+          }
+        />
+      </SettingsSection>
+    );
+  };
 
   return (
     <SettingsPageContainer>
@@ -2483,6 +2614,7 @@ export function ConnectionsSettings() {
               {renderAuthorizedClients("current")}
             </SettingsSection>
           ) : null}
+          {renderOpenPetsSection()}
           <AlertDialog
             open={isDesktopServerExposureDialogOpen}
             onOpenChange={(open) => {
