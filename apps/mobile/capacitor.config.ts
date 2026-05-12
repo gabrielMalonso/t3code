@@ -5,6 +5,7 @@ const config: CapacitorConfig = {
   appId: "tools.t3code.mobile",
   appName: "T3 Code",
   webDir: "../web/dist",
+  loggingBehavior: "none",
   server: {
     cleartext: true,
     androidScheme: "http",
