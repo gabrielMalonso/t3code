@@ -46,6 +46,10 @@ type MessageEntry = {
   info: {
     id: string;
     role: "user" | "assistant";
+    time?: {
+      created: number;
+      completed?: number;
+    };
   };
   parts: Array<unknown>;
 };
@@ -60,8 +64,11 @@ const runtimeMock = {
     revertCalls: [] as Array<{ sessionID: string; messageID?: string }>,
     promptCalls: [] as Array<unknown>,
     promptAsyncError: null as Error | null,
+    promptAsyncHang: false,
     closeError: null as Error | null,
     messages: [] as MessageEntry[],
+    messagesCalls: 0,
+    messagesHang: false,
     subscribedEvents: [] as unknown[],
   },
   reset() {
@@ -73,8 +80,11 @@ const runtimeMock = {
     this.state.revertCalls.length = 0;
     this.state.promptCalls.length = 0;
     this.state.promptAsyncError = null;
+    this.state.promptAsyncHang = false;
     this.state.closeError = null;
     this.state.messages = [];
+    this.state.messagesCalls = 0;
+    this.state.messagesHang = false;
     this.state.subscribedEvents = [];
   },
 };
@@ -137,8 +147,17 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
           if (runtimeMock.state.promptAsyncError) {
             throw runtimeMock.state.promptAsyncError;
           }
+          if (runtimeMock.state.promptAsyncHang) {
+            return new Promise(() => {});
+          }
         },
-        messages: async () => ({ data: runtimeMock.state.messages }),
+        messages: async () => {
+          runtimeMock.state.messagesCalls += 1;
+          if (runtimeMock.state.messagesHang) {
+            return new Promise(() => {});
+          }
+          return { data: runtimeMock.state.messages };
+        },
         revert: async ({ sessionID, messageID }: { sessionID: string; messageID?: string }) => {
           runtimeMock.state.revertCalls.push({
             sessionID,
@@ -226,6 +245,16 @@ beforeEach(() => {
 
 const advanceTestClock = (ms: number) =>
   TestClock.adjust(`${ms} millis`).pipe(Effect.andThen(Effect.yieldNow));
+
+const waitForPromptCall = Effect.gen(function* () {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (runtimeMock.state.promptCalls.length > 0) {
+      return;
+    }
+    yield* Effect.yieldNow;
+  }
+  throw new Error("Timed out waiting for promptAsync to be invoked.");
+});
 
 it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
   it.effect("reuses a configured OpenCode server URL instead of spawning a local server", () =>
@@ -357,37 +386,45 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
     }),
   );
 
-  it.effect("rolls back session state when sendTurn fails before OpenCode accepts the prompt", () =>
+  it.effect("emits an aborted turn when OpenCode rejects the async prompt submission", () =>
     Effect.gen(function* () {
       const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-send-turn-failure");
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.threadId === threadId),
+        Stream.take(4),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
       yield* adapter.startSession({
         provider: ProviderDriverKind.make("opencode"),
-        threadId: asThreadId("thread-send-turn-failure"),
+        threadId,
         runtimeMode: "full-access",
       });
 
       runtimeMock.state.promptAsyncError = new Error("prompt failed");
-      const error = yield* adapter
-        .sendTurn({
-          threadId: asThreadId("thread-send-turn-failure"),
-          input: "Fix it",
-          modelSelection: {
-            instanceId: ProviderInstanceId.make("opencode"),
-            model: "openai/gpt-5",
-          },
-        })
-        .pipe(Effect.flip);
+      yield* adapter.sendTurn({
+        threadId,
+        input: "Fix it",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("opencode"),
+          model: "openai/gpt-5",
+        },
+      });
+
+      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("1 second")));
       const sessions = yield* adapter.listSessions();
 
-      assert.equal(error._tag, "ProviderAdapterRequestError");
-      if (error._tag !== "ProviderAdapterRequestError") {
-        throw new Error("Unexpected error type");
-      }
-      assert.equal(error.detail, "prompt failed");
-      assert.equal(
-        error.message,
-        "Provider adapter request failed (opencode) for session.promptAsync: prompt failed",
+      assert.deepEqual(
+        events.map((event) => event.type),
+        ["session.started", "thread.started", "turn.started", "turn.aborted"],
       );
+      const aborted = events.at(-1);
+      if (aborted?.type !== "turn.aborted") {
+        throw new Error("Expected turn.aborted");
+      }
+      assert.equal(aborted.payload.reason, "prompt failed");
       assert.equal(sessions.length, 1);
       assert.equal(sessions[0]?.status, "ready");
       assert.equal(sessions[0]?.activeTurnId, undefined);
@@ -428,6 +465,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
           ],
         ),
       });
+      yield* waitForPromptCall;
 
       assert.deepEqual(runtimeMock.state.promptCalls.at(-1), {
         sessionID: "http://127.0.0.1:9999/session",
@@ -472,6 +510,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         threadId,
         input: "Fix it",
       });
+      yield* waitForPromptCall;
 
       assert.deepEqual(runtimeMock.state.promptCalls.at(-1), {
         sessionID: "http://127.0.0.1:9999/session",
@@ -483,6 +522,107 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       });
     }).pipe(Effect.provide(adapterLayer));
   });
+
+  it.effect("sends prompts without waiting for session message history", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-history-hangs");
+      runtimeMock.state.messagesHang = true;
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter
+        .sendTurn({
+          threadId,
+          input: "Fix it",
+          modelSelection: createModelSelection(
+            ProviderInstanceId.make("opencode"),
+            "opencode-go/kimi-k2.6",
+          ),
+        })
+        .pipe(Effect.timeout("100 millis"));
+      yield* waitForPromptCall;
+
+      assert.equal(runtimeMock.state.messagesCalls, 0);
+      assert.deepEqual(runtimeMock.state.promptCalls.at(-1), {
+        sessionID: "http://127.0.0.1:9999/session",
+        model: {
+          providerID: "opencode-go",
+          modelID: "kimi-k2.6",
+        },
+        parts: [{ type: "text", text: "Fix it" }],
+      });
+    }),
+  );
+
+  it.effect("reconciles assistant text even when promptAsync never resolves", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-prompt-hangs");
+      runtimeMock.state.promptAsyncHang = true;
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.threadId === threadId),
+        Stream.take(6),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      yield* adapter
+        .sendTurn({
+          threadId,
+          input: "Say hi",
+          modelSelection: createModelSelection(
+            ProviderInstanceId.make("opencode"),
+            "opencode-go/kimi-k2.6",
+          ),
+        })
+        .pipe(Effect.timeout("100 millis"));
+
+      runtimeMock.state.messages = [
+        {
+          info: { id: "assistant-prompt-hang", role: "assistant" },
+          parts: [
+            {
+              id: "part-prompt-hang",
+              sessionID: "http://127.0.0.1:9999/session",
+              messageID: "assistant-prompt-hang",
+              type: "text",
+              text: "Oi mesmo com submit pendurado.",
+              time: { start: 1, end: 2 },
+            },
+          ],
+        },
+      ];
+      yield* advanceTestClock(1000);
+
+      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("1 second")));
+      assert.deepEqual(
+        events.map((event) => event.type),
+        [
+          "session.started",
+          "thread.started",
+          "turn.started",
+          "content.delta",
+          "item.completed",
+          "turn.completed",
+        ],
+      );
+      const delta = events.find((event) => event.type === "content.delta");
+      if (delta?.type !== "content.delta") {
+        throw new Error("Expected content.delta");
+      }
+      assert.equal(delta.payload.delta, "Oi mesmo com submit pendurado.");
+    }),
+  );
 
   it.effect("rejects sendTurn model selections for another instance id", () => {
     const instanceId = ProviderInstanceId.make("opencode_zen");
@@ -651,6 +791,160 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
       if (completed?.type === "item.completed") {
         assert.equal(completed.payload.detail, "A BBonus");
       }
+    }),
+  );
+
+  it.effect(
+    "reconciles completed assistant text from session messages when the event stream is silent",
+    () =>
+      Effect.gen(function* () {
+        const adapter = yield* OpenCodeAdapter;
+        const threadId = asThreadId("thread-opencode-reconcile");
+        const eventsFiber = yield* adapter.streamEvents.pipe(
+          Stream.filter((event) => event.threadId === threadId),
+          Stream.take(6),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+
+        yield* adapter.startSession({
+          provider: ProviderDriverKind.make("opencode"),
+          threadId,
+          runtimeMode: "full-access",
+        });
+        yield* adapter.sendTurn({
+          threadId,
+          input: "Say hi",
+          modelSelection: createModelSelection(
+            ProviderInstanceId.make("opencode"),
+            "opencode-go/kimi-k2.6",
+          ),
+        });
+
+        runtimeMock.state.messages = [
+          {
+            info: { id: "assistant-reconcile", role: "assistant" },
+            parts: [
+              {
+                id: "part-reconcile",
+                sessionID: "http://127.0.0.1:9999/session",
+                messageID: "assistant-reconcile",
+                type: "text",
+                text: "Oi pelo histórico.",
+                time: { start: 1, end: 2 },
+              },
+            ],
+          },
+        ];
+        yield* advanceTestClock(1000);
+
+        const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("1 second")));
+        assert.deepEqual(
+          events.map((event) => event.type),
+          [
+            "session.started",
+            "thread.started",
+            "turn.started",
+            "content.delta",
+            "item.completed",
+            "turn.completed",
+          ],
+        );
+        const delta = events.find((event) => event.type === "content.delta");
+        if (delta?.type !== "content.delta") {
+          throw new Error("Expected content.delta");
+        }
+        assert.equal(delta.payload.delta, "Oi pelo histórico.");
+      }),
+  );
+
+  it.effect("does not complete a reconciled turn until assistant text is finished", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-reconcile-unfinished-text");
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId,
+        input: "Say hi",
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("opencode"),
+          "opencode-go/kimi-k2.6",
+        ),
+      });
+
+      runtimeMock.state.messages = [
+        {
+          info: { id: "assistant-unfinished", role: "assistant" },
+          parts: [
+            {
+              id: "part-unfinished",
+              sessionID: "http://127.0.0.1:9999/session",
+              messageID: "assistant-unfinished",
+              type: "text",
+              text: "Still working while a tool runs.",
+              time: { start: 1 },
+            },
+          ],
+        },
+      ];
+      yield* advanceTestClock(4_000);
+
+      const sessions = yield* adapter.listSessions();
+      const session = sessions.find((entry) => entry.threadId === threadId);
+      assert.equal(session?.status, "running");
+      assert.notEqual(session?.activeTurnId, undefined);
+    }),
+  );
+
+  it.effect("ignores pre-turn assistant messages during reconciliation", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-reconcile-stale-message");
+      runtimeMock.state.messages = [
+        {
+          info: {
+            id: "assistant-before-turn",
+            role: "assistant",
+            time: { created: 1, completed: 2 },
+          },
+          parts: [
+            {
+              id: "part-before-turn",
+              sessionID: "http://127.0.0.1:9999/session",
+              messageID: "assistant-before-turn",
+              type: "text",
+              text: "Old assistant text from an interrupted turn.",
+              time: { start: 1, end: 2 },
+            },
+          ],
+        },
+      ];
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      yield* advanceTestClock(1_000);
+      yield* adapter.sendTurn({
+        threadId,
+        input: "Say something new",
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("opencode"),
+          "opencode-go/kimi-k2.6",
+        ),
+      });
+      yield* advanceTestClock(1_000);
+
+      const sessions = yield* adapter.listSessions();
+      const session = sessions.find((entry) => entry.threadId === threadId);
+      assert.equal(session?.status, "running");
+      assert.notEqual(session?.activeTurnId, undefined);
     }),
   );
 

@@ -38,6 +38,7 @@ import type {
   ServerSignalProcessResult,
   ServerTraceDiagnosticsResult,
   ServerUpsertKeybindingResult,
+  OpenPetsRuntimeStatus,
 } from "./server.ts";
 import type {
   TerminalClearInput,
@@ -53,6 +54,7 @@ import type { ServerRemoveKeybindingInput, ServerUpsertKeybindingInput } from ".
 import * as Schema from "effect/Schema";
 import type {
   ClientOrchestrationCommand,
+  OrchestrationCompactThreadInput,
   OrchestrationGetFullThreadDiffInput,
   OrchestrationGetFullThreadDiffResult,
   OrchestrationGetTurnDiffInput,
@@ -482,6 +484,7 @@ export interface LocalApi {
     removeKeybinding: (input: ServerRemoveKeybindingInput) => Promise<ServerRemoveKeybindingResult>;
     getSettings: () => Promise<ServerSettings>;
     updateSettings: (patch: ServerSettingsPatch) => Promise<ServerSettings>;
+    getOpenPetsStatus: () => Promise<OpenPetsRuntimeStatus>;
     discoverSourceControl: () => Promise<SourceControlDiscoveryResult>;
     getTraceDiagnostics: () => Promise<ServerTraceDiagnosticsResult>;
     getProcessDiagnostics: () => Promise<ServerProcessDiagnosticsResult>;
@@ -556,6 +559,7 @@ export interface EnvironmentApi {
   };
   orchestration: {
     dispatchCommand: (command: ClientOrchestrationCommand) => Promise<{ sequence: number }>;
+    compactThread: (input: OrchestrationCompactThreadInput) => Promise<void>;
     getTurnDiff: (input: OrchestrationGetTurnDiffInput) => Promise<OrchestrationGetTurnDiffResult>;
     getFullThreadDiff: (
       input: OrchestrationGetFullThreadDiffInput,

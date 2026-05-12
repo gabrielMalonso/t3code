@@ -19,6 +19,7 @@ import {
   type GitActionProgressEvent,
   type GitManagerServiceError,
   OrchestrationDispatchCommandError,
+  OrchestrationCompactThreadError,
   type OrchestrationEvent,
   type OrchestrationShellStreamEvent,
   OrchestrationGetFullThreadDiffError,
@@ -65,6 +66,7 @@ import { ServerLifecycleEvents } from "./serverLifecycleEvents.ts";
 import { ServerRuntimeStartup } from "./serverRuntimeStartup.ts";
 import { redactServerSettingsForClient, ServerSettingsService } from "./serverSettings.ts";
 import { TerminalManager } from "./terminal/Services/Manager.ts";
+import { OpenPetsBridge } from "./openpets/Services/OpenPetsBridge.ts";
 import { WorkspaceEntries } from "./workspace/Services/WorkspaceEntries.ts";
 import { WorkspaceFileSystem } from "./workspace/Services/WorkspaceFileSystem.ts";
 import { WorkspacePathOutsideRootError } from "./workspace/Services/WorkspacePaths.ts";
@@ -239,6 +241,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const repositoryIdentityResolver = yield* RepositoryIdentityResolver;
       const serverEnvironment = yield* ServerEnvironment;
       const serverAuth = yield* ServerAuth;
+      const openPetsBridge = yield* OpenPetsBridge;
       const sourceControlDiscovery = yield* SourceControlDiscoveryLayer.SourceControlDiscovery;
       const automaticGitFetchInterval = serverSettings.getSettings.pipe(
         Effect.map((settings) => settings.automaticGitFetchInterval),
@@ -303,6 +306,12 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               cause,
             });
       };
+
+      const toCompactThreadError = (error: unknown) =>
+        new OrchestrationCompactThreadError({
+          message: error instanceof Error ? error.message : "Failed to compact thread context.",
+          cause: error,
+        });
 
       const enrichProjectEvent = (
         event: OrchestrationEvent,
@@ -934,6 +943,20 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             ),
             { "rpc.aggregate": "orchestration" },
           ),
+        [ORCHESTRATION_WS_METHODS.compactThread]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.compactThread,
+            Effect.gen(function* () {
+              const command = yield* normalizeDispatchCommand({
+                type: "thread.compact.start",
+                commandId: serverCommandId("compact-thread"),
+                threadId: input.threadId,
+                createdAt: yield* nowIso,
+              });
+              yield* dispatchNormalizedCommand(command);
+            }).pipe(Effect.mapError(toCompactThreadError)),
+            { "rpc.aggregate": "orchestration" },
+          ),
         [ORCHESTRATION_WS_METHODS.getTurnDiff]: (input) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.getTurnDiff,
@@ -1219,6 +1242,10 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               "rpc.aggregate": "server",
             },
           ),
+        [WS_METHODS.serverGetOpenPetsStatus]: (_input) =>
+          observeRpcEffect(WS_METHODS.serverGetOpenPetsStatus, openPetsBridge.refreshStatus, {
+            "rpc.aggregate": "server",
+          }),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) =>
           observeRpcEffect(
             WS_METHODS.serverDiscoverSourceControl,

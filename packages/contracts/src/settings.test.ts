@@ -13,6 +13,13 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     expect(DEFAULT_SERVER_SETTINGS.providerInstances).toEqual({});
   });
 
+  it("defaults OpenPets integration off with the default CLI path", () => {
+    expect(DEFAULT_SERVER_SETTINGS.openPets).toEqual({
+      enabled: false,
+      binaryPath: "openpets",
+    });
+  });
+
   it("decodes a fully empty config (legacy on-disk shape) without complaint", () => {
     const decoded = decodeServerSettings({});
     expect(decoded.providerInstances).toEqual({});
@@ -94,6 +101,22 @@ describe("ServerSettingsPatch.providerInstances", () => {
   });
 });
 
+describe("ServerSettingsPatch.openPets", () => {
+  it("accepts OpenPets enabled and binary path updates", () => {
+    const patch = decodeServerSettingsPatch({
+      openPets: {
+        enabled: true,
+        binaryPath: "  /opt/homebrew/bin/openpets  ",
+      },
+    });
+
+    expect(patch.openPets).toEqual({
+      enabled: true,
+      binaryPath: "/opt/homebrew/bin/openpets",
+    });
+  });
+});
+
 describe("ServerSettingsPatch string normalization", () => {
   it("trims string settings while decoding patches", () => {
     const patch = decodeServerSettingsPatch({
@@ -107,6 +130,9 @@ describe("ServerSettingsPatch string normalization", () => {
           binaryPath: "  /opt/homebrew/bin/codex  ",
           homePath: "  ~/.codex  ",
         },
+      },
+      openPets: {
+        binaryPath: "  /Users/gabriel/.local/bin/openpets  ",
       },
       providerInstances: {
         codex_personal: {
@@ -122,6 +148,7 @@ describe("ServerSettingsPatch string normalization", () => {
     expect(patch.observability?.otlpTracesUrl).toBe("http://localhost:4318/v1/traces");
     expect(patch.providers?.codex?.binaryPath).toBe("/opt/homebrew/bin/codex");
     expect(patch.providers?.codex?.homePath).toBe("~/.codex");
+    expect(patch.openPets?.binaryPath).toBe("/Users/gabriel/.local/bin/openpets");
     expect(patch.providerInstances?.[ProviderInstanceId.make("codex_personal")]?.driver).toBe(
       "codex",
     );

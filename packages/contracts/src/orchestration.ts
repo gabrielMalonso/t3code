@@ -25,6 +25,7 @@ import { ProviderInstanceId } from "./providerInstance.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
+  compactThread: "orchestration.compactThread",
   getTurnDiff: "orchestration.getTurnDiff",
   getFullThreadDiff: "orchestration.getFullThreadDiff",
   replayEvents: "orchestration.replayEvents",
@@ -679,6 +680,13 @@ const ThreadTurnInterruptCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadCompactStartCommand = Schema.Struct({
+  type: Schema.Literal("thread.compact.start"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  createdAt: IsoDateTime,
+});
+
 const ThreadApprovalRespondCommand = Schema.Struct({
   type: Schema.Literal("thread.approval.respond"),
   commandId: CommandId,
@@ -727,6 +735,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadLoopDeleteCommand,
   ThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
+  ThreadCompactStartCommand,
   ThreadApprovalRespondCommand,
   ThreadUserInputRespondCommand,
   ThreadCheckpointRevertCommand,
@@ -750,6 +759,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadLoopDeleteCommand,
   ClientThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
+  ThreadCompactStartCommand,
   ThreadApprovalRespondCommand,
   ThreadUserInputRespondCommand,
   ThreadCheckpointRevertCommand,
@@ -871,6 +881,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.message-sent",
   "thread.turn-start-requested",
   "thread.turn-interrupt-requested",
+  "thread.compact-start-requested",
   "thread.approval-response-requested",
   "thread.user-input-response-requested",
   "thread.checkpoint-revert-requested",
@@ -1012,6 +1023,11 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
 export const ThreadTurnInterruptRequestedPayload = Schema.Struct({
   threadId: ThreadId,
   turnId: Schema.optional(TurnId),
+  createdAt: IsoDateTime,
+});
+
+export const ThreadCompactStartRequestedPayload = Schema.Struct({
+  threadId: ThreadId,
   createdAt: IsoDateTime,
 });
 
@@ -1170,6 +1186,11 @@ export const OrchestrationEvent = Schema.Union([
   }),
   Schema.Struct({
     ...EventBaseFields,
+    type: Schema.Literal("thread.compact-start-requested"),
+    payload: ThreadCompactStartRequestedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
     type: Schema.Literal("thread.approval-response-requested"),
     payload: ThreadApprovalResponseRequestedPayload,
   }),
@@ -1319,6 +1340,11 @@ export const OrchestrationReplayEventsInput = Schema.Struct({
 });
 export type OrchestrationReplayEventsInput = typeof OrchestrationReplayEventsInput.Type;
 
+export const OrchestrationCompactThreadInput = Schema.Struct({
+  threadId: ThreadId,
+});
+export type OrchestrationCompactThreadInput = typeof OrchestrationCompactThreadInput.Type;
+
 const OrchestrationReplayEventsResult = Schema.Array(OrchestrationEvent);
 export type OrchestrationReplayEventsResult = typeof OrchestrationReplayEventsResult.Type;
 
@@ -1326,6 +1352,9 @@ export const OrchestrationRpcSchemas = {
   dispatchCommand: {
     input: ClientOrchestrationCommand,
     output: DispatchResult,
+  },
+  compactThread: {
+    input: OrchestrationCompactThreadInput,
   },
   getTurnDiff: {
     input: OrchestrationGetTurnDiffInput,
@@ -1363,6 +1392,14 @@ export class OrchestrationGetSnapshotError extends Schema.TaggedErrorClass<Orche
 
 export class OrchestrationDispatchCommandError extends Schema.TaggedErrorClass<OrchestrationDispatchCommandError>()(
   "OrchestrationDispatchCommandError",
+  {
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect),
+  },
+) {}
+
+export class OrchestrationCompactThreadError extends Schema.TaggedErrorClass<OrchestrationCompactThreadError>()(
+  "OrchestrationCompactThreadError",
   {
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect),
