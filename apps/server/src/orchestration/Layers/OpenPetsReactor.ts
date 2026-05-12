@@ -19,12 +19,14 @@ import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts"
 const DEFAULT_TITLE = "T3 Code";
 const MAX_TITLE_LENGTH = 80;
 const MAX_TEXT_LENGTH = 180;
+const MAX_TEXT_BUFFER_LENGTH = MAX_TEXT_LENGTH * 2;
+const MAX_THREAD_RECORDS = 1_000;
 const CONTENT_NOTIFY_INTERVAL_MS = 2_000;
 const MIN_CONTENT_NOTIFY_CHARS = 32;
 
 interface OpenPetsContentProgress {
-  readonly assistantText: string;
-  readonly reasoningSummaryText: string;
+  readonly assistantSnippet: string;
+  readonly reasoningSummarySnippet: string;
   readonly assistantLastNotifiedAtMs: number;
   readonly reasoningSummaryLastNotifiedAtMs: number;
 }
@@ -66,6 +68,29 @@ function tailText(value: string): string {
     compacted.slice(Math.max(0, compacted.length - MAX_TEXT_LENGTH)),
     MAX_TEXT_LENGTH,
   );
+}
+
+function appendBoundedTail(previous: string, delta: string): string {
+  const compacted = compactText(`${previous}${delta}`);
+  return compacted.slice(Math.max(0, compacted.length - MAX_TEXT_BUFFER_LENGTH));
+}
+
+function setBoundedMapEntry<TKey, TValue>(
+  map: Map<TKey, TValue>,
+  key: TKey,
+  value: TValue,
+): Map<TKey, TValue> {
+  const next = new Map(map);
+  next.delete(key);
+  next.set(key, value);
+  while (next.size > MAX_THREAD_RECORDS) {
+    const oldestKey = next.keys().next().value as TKey | undefined;
+    if (oldestKey === undefined) {
+      break;
+    }
+    next.delete(oldestKey);
+  }
+  return next;
 }
 
 function completionText(event: Extract<ProviderRuntimeEvent, { type: "turn.completed" }>): string {
@@ -169,9 +194,10 @@ const make = Effect.gen(function* () {
       if (event.type === "thread.metadata.updated" && event.payload.name) {
         const title = truncate(event.payload.name, MAX_TITLE_LENGTH);
         yield* Ref.update(stateRef, (state) => {
-          const titles = new Map(state.titles);
-          titles.set(threadKey, title);
-          return { ...state, titles };
+          return {
+            ...state,
+            titles: setBoundedMapEntry(state.titles, threadKey, title),
+          };
         });
         return title;
       }
@@ -194,9 +220,10 @@ const make = Effect.gen(function* () {
 
       if (title !== DEFAULT_TITLE) {
         yield* Ref.update(stateRef, (current) => {
-          const titles = new Map(current.titles);
-          titles.set(threadKey, title);
-          return { ...current, titles };
+          return {
+            ...current,
+            titles: setBoundedMapEntry(current.titles, threadKey, title),
+          };
         });
       }
       return title;
@@ -215,8 +242,8 @@ const make = Effect.gen(function* () {
       return yield* Ref.modify(stateRef, (state) => {
         const key = notificationKey(event);
         const previous = state.content.get(key) ?? {
-          assistantText: "",
-          reasoningSummaryText: "",
+          assistantSnippet: "",
+          reasoningSummarySnippet: "",
           assistantLastNotifiedAtMs: 0,
           reasoningSummaryLastNotifiedAtMs: 0,
         };
@@ -224,15 +251,18 @@ const make = Effect.gen(function* () {
         const nextProgress: OpenPetsContentProgress = isAssistantText
           ? {
               ...previous,
-              assistantText: previous.assistantText + event.payload.delta,
+              assistantSnippet: appendBoundedTail(previous.assistantSnippet, event.payload.delta),
             }
           : {
               ...previous,
-              reasoningSummaryText: previous.reasoningSummaryText + event.payload.delta,
+              reasoningSummarySnippet: appendBoundedTail(
+                previous.reasoningSummarySnippet,
+                event.payload.delta,
+              ),
             };
         const sourceText = isAssistantText
-          ? nextProgress.assistantText
-          : nextProgress.reasoningSummaryText;
+          ? nextProgress.assistantSnippet
+          : nextProgress.reasoningSummarySnippet;
         const snippet = tailText(sourceText);
         const lastNotifiedAtMs = isAssistantText
           ? previous.assistantLastNotifiedAtMs
@@ -240,8 +270,7 @@ const make = Effect.gen(function* () {
         const shouldNotify =
           snippet.length >= MIN_CONTENT_NOTIFY_CHARS &&
           (lastNotifiedAtMs === 0 || nowMs - lastNotifiedAtMs >= CONTENT_NOTIFY_INTERVAL_MS);
-        const content = new Map(state.content);
-        content.set(key, {
+        const content = setBoundedMapEntry(state.content, key, {
           ...nextProgress,
           assistantLastNotifiedAtMs:
             shouldNotify && isAssistantText ? nowMs : previous.assistantLastNotifiedAtMs,
@@ -251,6 +280,13 @@ const make = Effect.gen(function* () {
         const text = shouldNotify ? snippet : null;
         return [text, { ...state, content }] as const;
       });
+    });
+
+  const clearContentForThread = (event: ProviderRuntimeEvent) =>
+    Ref.update(stateRef, (state) => {
+      const content = new Map(state.content);
+      content.delete(notificationKey(event));
+      return { ...state, content };
     });
 
   const processEvent = (event: ProviderRuntimeEvent) =>
@@ -275,6 +311,13 @@ const make = Effect.gen(function* () {
         return;
       }
       yield* openPets.notify(notification);
+      if (
+        event.type === "turn.completed" ||
+        event.type === "turn.aborted" ||
+        event.type === "runtime.error"
+      ) {
+        yield* clearContentForThread(event);
+      }
     });
 
   const processEventSafely = (event: ProviderRuntimeEvent) =>

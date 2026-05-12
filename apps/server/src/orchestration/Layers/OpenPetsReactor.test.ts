@@ -244,6 +244,40 @@ describe("OpenPetsReactor", () => {
     ]);
   });
 
+  it("clears streamed content state after a turn finishes", async () => {
+    const harness = makeHarness([
+      makeEvent("content.delta", {
+        streamKind: "assistant_text",
+        delta: "First turn produced enough assistant text to notify the pet immediately.",
+      }),
+      makeEvent("turn.completed", { state: "completed" }),
+      makeEvent(
+        "content.delta",
+        {
+          streamKind: "assistant_text",
+          delta: "Second turn should not inherit the previous turn notification throttle.",
+        },
+        { turnId: TurnId.make("turn-2") },
+      ),
+    ]);
+    await harness.run(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const reactor = yield* OpenPetsReactor;
+          yield* reactor.start();
+          yield* drainFibers;
+          yield* reactor.drain;
+        }),
+      ),
+    );
+
+    expect(harness.notifications.map((notification) => notification.text)).toEqual([
+      "First turn produced enough assistant text to notify the pet immediately.",
+      "Completed.",
+      "Second turn should not inherit the previous turn notification throttle.",
+    ]);
+  });
+
   it("ignores tool and item lifecycle noise", async () => {
     const harness = makeHarness([
       makeEvent("item.completed", {
