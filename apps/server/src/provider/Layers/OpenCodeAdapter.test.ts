@@ -46,6 +46,10 @@ type MessageEntry = {
   info: {
     id: string;
     role: "user" | "assistant";
+    time?: {
+      created: number;
+      completed?: number;
+    };
   };
   parts: Array<unknown>;
 };
@@ -889,6 +893,53 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         },
       ];
       yield* advanceTestClock(4_000);
+
+      const sessions = yield* adapter.listSessions();
+      const session = sessions.find((entry) => entry.threadId === threadId);
+      assert.equal(session?.status, "running");
+      assert.notEqual(session?.activeTurnId, undefined);
+    }),
+  );
+
+  it.effect("ignores pre-turn assistant messages during reconciliation", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-reconcile-stale-message");
+      runtimeMock.state.messages = [
+        {
+          info: {
+            id: "assistant-before-turn",
+            role: "assistant",
+            time: { created: 1, completed: 2 },
+          },
+          parts: [
+            {
+              id: "part-before-turn",
+              sessionID: "http://127.0.0.1:9999/session",
+              messageID: "assistant-before-turn",
+              type: "text",
+              text: "Old assistant text from an interrupted turn.",
+              time: { start: 1, end: 2 },
+            },
+          ],
+        },
+      ];
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("opencode"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      yield* advanceTestClock(1_000);
+      yield* adapter.sendTurn({
+        threadId,
+        input: "Say something new",
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("opencode"),
+          "opencode-go/kimi-k2.6",
+        ),
+      });
+      yield* advanceTestClock(1_000);
 
       const sessions = yield* adapter.listSessions();
       const session = sessions.find((entry) => entry.threadId === threadId);
