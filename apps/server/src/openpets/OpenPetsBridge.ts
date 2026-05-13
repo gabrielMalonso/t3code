@@ -5,7 +5,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
 
-import { runProcess, type ProcessRunResult } from "../processRunner.ts";
+import type { ProcessRunInput, ProcessRunOutput } from "../processRunner.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import type { OpenPetsBridgeShape, OpenPetsNotifyInput } from "./Services/OpenPetsBridge.ts";
 
@@ -16,7 +16,7 @@ const MAX_THREAD_RECORDS = 1_000;
 const MAX_TEXT_LENGTH = 180;
 const MAX_ERROR_LENGTH = 240;
 
-class OpenPetsProcessError extends Data.TaggedError("OpenPetsProcessError")<{
+export class OpenPetsProcessError extends Data.TaggedError("OpenPetsProcessError")<{
   readonly cause: unknown;
   readonly message: string;
 }> {}
@@ -36,7 +36,9 @@ interface OpenPetsRuntimeState {
 
 export interface OpenPetsBridgeOptions {
   readonly platform?: NodeJS.Platform;
-  readonly runProcess?: typeof runProcess;
+  readonly runProcess?: (
+    input: ProcessRunInput,
+  ) => Effect.Effect<ProcessRunOutput, OpenPetsProcessError>;
 }
 
 const initialState: OpenPetsRuntimeState = {
@@ -98,7 +100,10 @@ export const makeOpenPetsBridge = (options: OpenPetsBridgeOptions = {}) =>
     const serverSettings = yield* ServerSettingsService;
     const stateRef = yield* Ref.make<OpenPetsRuntimeState>(initialState);
     const platform = options.platform ?? process.platform;
-    const run = options.runProcess ?? runProcess;
+    const run =
+      options.runProcess ??
+      (() =>
+        Effect.die(new Error("OpenPets process runner was not provided. Use OpenPetsBridgeLive.")));
     const supported = platform === "darwin";
 
     const readOpenPetsSettings = serverSettings.getSettings.pipe(
@@ -139,19 +144,13 @@ export const makeOpenPetsBridge = (options: OpenPetsBridgeOptions = {}) =>
       binaryPath: string,
       args: readonly string[],
       timeoutMs: number,
-    ): Effect.Effect<ProcessRunResult, OpenPetsProcessError> =>
-      Effect.tryPromise({
-        try: () =>
-          run(binaryPath, args, {
-            timeoutMs,
-            maxBufferBytes: 4_096,
-            outputMode: "truncate",
-          }),
-        catch: (error) =>
-          new OpenPetsProcessError({
-            cause: error,
-            message: errorMessage(error),
-          }),
+    ): Effect.Effect<ProcessRunOutput, OpenPetsProcessError> =>
+      run({
+        command: binaryPath,
+        args,
+        timeout: timeoutMs,
+        maxOutputBytes: 4_096,
+        outputMode: "truncate",
       });
 
     const refreshStatus: OpenPetsBridgeShape["refreshStatus"] = Effect.gen(function* () {

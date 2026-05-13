@@ -11,8 +11,6 @@ export const fileReferenceCopy = {
       "Arquivo referenciado fora do workspace. O modelo recebe apenas o path e pode não conseguir acessar esse arquivo.",
   },
   error: {
-    unsupportedType: (name: string) =>
-      `'${name}' não pode ser referenciado nesta versão. Use PDF ou arquivos de texto/código compatíveis.`,
     unavailableOnWeb: "Referências por path estão disponíveis apenas no app desktop por enquanto.",
     unresolvedPath: (name: string) =>
       `Não foi possível resolver o caminho real de '${name}' no desktop.`,
