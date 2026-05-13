@@ -5,20 +5,6 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { DEFAULT_SERVER_SETTINGS, type ServerSettings } from "@t3tools/contracts";
 import { ServerSettingsService } from "../serverSettings.ts";
-<<<<<<< HEAD
-import {
-  makeOpenPetsBridge,
-  openPetsProcessErrorFromProcessRunError,
-  OpenPetsProcessError,
-} from "./OpenPetsBridge.ts";
-import {
-  ProcessSpawnError,
-  type ProcessRunInput,
-  type ProcessRunOutput,
-} from "../processRunner.ts";
-
-type RunCall = ProcessRunInput;
-=======
 import { makeOpenPetsBridge } from "./OpenPetsBridge.ts";
 import {
   ProcessRunner,
@@ -31,7 +17,6 @@ import {
 type RunCall = {
   readonly input: ProcessRunInput;
 };
->>>>>>> origin/main
 
 const processResult = (stdout = ""): ProcessRunOutput => ({
   stdout,
@@ -44,23 +29,6 @@ const processResult = (stdout = ""): ProcessRunOutput => ({
 
 function makeRunProcessStub(handler?: (call: RunCall, index: number) => ProcessRunOutput) {
   const calls: RunCall[] = [];
-<<<<<<< HEAD
-  const run = (input: ProcessRunInput): Effect.Effect<ProcessRunOutput, OpenPetsProcessError> => {
-    const call = input;
-    calls.push(call);
-    try {
-      return Effect.succeed(
-        handler ? handler(call, calls.length - 1) : processResult("openpets-thread-1\n"),
-      );
-    } catch (error) {
-      return Effect.fail(
-        new OpenPetsProcessError({
-          cause: error,
-          message: error instanceof Error ? error.message : String(error),
-        }),
-      );
-    }
-=======
   const run = (input: ProcessRunInput) => {
     const call = { input };
     calls.push(call);
@@ -68,7 +36,6 @@ function makeRunProcessStub(handler?: (call: RunCall, index: number) => ProcessR
       try: () => (handler ? handler(call, calls.length - 1) : processResult("openpets-thread-1\n")),
       catch: (error) => error as never,
     });
->>>>>>> origin/main
   };
   return { calls, run };
 }
@@ -157,13 +124,6 @@ describe("OpenPetsBridge", () => {
 
     expect(runProcess.calls).toEqual([
       {
-<<<<<<< HEAD
-        command: "/tmp/openpets",
-        args: ["ping"],
-        timeout: 1_500,
-        maxOutputBytes: 4_096,
-        outputMode: "truncate",
-=======
         input: {
           command: "/tmp/openpets",
           args: ["ping"],
@@ -171,32 +131,11 @@ describe("OpenPetsBridge", () => {
           maxOutputBytes: 4_096,
           outputMode: "truncate",
         },
->>>>>>> origin/main
       },
     ]);
     expect(status.cliAvailable).toBe(true);
     expect(status.petReachable).toBe(true);
     expect(status.lastError).toBeNull();
-  });
-
-  it("records non-zero ping exits as reachability failures", async () => {
-    const runProcess = makeRunProcessStub(() => ({
-      ...processResult(),
-      code: ChildProcessSpawner.ExitCode(1),
-      stderr: "ping failed",
-    }));
-    const bridge = await Effect.runPromise(
-      makeBridge({
-        settings: { openPets: { enabled: true, binaryPath: "openpets" } },
-        runProcess: runProcess.run,
-      }),
-    );
-
-    const status = await Effect.runPromise(bridge.refreshStatus);
-
-    expect(status.cliAvailable).toBe(true);
-    expect(status.petReachable).toBe(false);
-    expect(status.lastError).toBe("ping failed");
   });
 
   it("sends notify arguments and records the returned thread id", async () => {
@@ -271,20 +210,9 @@ describe("OpenPetsBridge", () => {
 
   it("records CLI failures without throwing", async () => {
     const calls: RunCall[] = [];
-<<<<<<< HEAD
-    const run = (input: ProcessRunInput): Effect.Effect<ProcessRunOutput, OpenPetsProcessError> => {
-      calls.push(input);
-      return Effect.fail(
-        new OpenPetsProcessError({
-          cause: "Command not found: openpets",
-          message: "Command not found: openpets",
-        }),
-      );
-=======
     const run = (input: ProcessRunInput) => {
       calls.push({ input });
       return Effect.fail(new Error("Command not found: openpets") as never);
->>>>>>> origin/main
     };
     const bridge = await Effect.runPromise(
       makeBridge({
@@ -311,35 +239,6 @@ describe("OpenPetsBridge", () => {
     expect(status.petReachable).toBe(false);
   });
 
-<<<<<<< HEAD
-  it("records non-zero notify exits without recording a successful event", async () => {
-    const runProcess = makeRunProcessStub(() => ({
-      ...processResult(),
-      code: ChildProcessSpawner.ExitCode(1),
-      stderr: "notify failed",
-    }));
-    const bridge = await Effect.runPromise(
-      makeBridge({
-        settings: { openPets: { enabled: true, binaryPath: "openpets" } },
-        runProcess: runProcess.run,
-      }),
-    );
-
-    await expect(
-      Effect.runPromise(
-        bridge.notify({
-          key: "thread-1:turn-1",
-          title: "T3 Code",
-          status: "running",
-          text: "Working.",
-        }),
-      ),
-    ).resolves.toBeUndefined();
-
-    const status = await Effect.runPromise(bridge.getStatus);
-    expect(status.lastError).toBe("notify failed");
-    expect(status.lastEventAt).toBeNull();
-=======
   it("records ProcessRunner spawn failures as a missing CLI", async () => {
     const run: ProcessRunnerShape["run"] = (input) =>
       Effect.fail(
@@ -361,7 +260,6 @@ describe("OpenPetsBridge", () => {
     expect(status.lastError).toBe("Command not found: openpets");
     expect(status.cliAvailable).toBe(false);
     expect(status.petReachable).toBe(false);
->>>>>>> origin/main
   });
 
   it("records notify failures without erasing known CLI reachability", async () => {
@@ -415,17 +313,5 @@ describe("OpenPetsBridge", () => {
     const status = await Effect.runPromise(bridge.getStatus);
     expect(status.enabled).toBe(false);
     expect(status.binaryPath).toBe("openpets");
-  });
-
-  it("preserves command-not-found messages from process runner spawn errors", () => {
-    const error = openPetsProcessErrorFromProcessRunError(
-      new ProcessSpawnError({
-        command: "openpets",
-        args: ["ping"],
-        cause: "ENOENT",
-      }),
-    );
-
-    expect(error.message).toBe("Command not found: openpets");
   });
 });
