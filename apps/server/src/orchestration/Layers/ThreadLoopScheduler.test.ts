@@ -83,6 +83,7 @@ describe("ThreadLoopScheduler", () => {
     runsSinceCompaction?: number;
     includeSecondDueLoop?: boolean;
     completeCompaction?: (threadId: ThreadId) => boolean;
+    busyAfterCompaction?: boolean;
   }) {
     const commandsRef = Effect.runSync(Ref.make<Array<OrchestrationCommand>>([]));
     const loopsRef = Effect.runSync(
@@ -341,6 +342,17 @@ describe("ThreadLoopScheduler", () => {
                                 createdAt: command.createdAt,
                               },
                             ],
+                            ...(input.busyAfterCompaction
+                              ? {
+                                  session: thread.session
+                                    ? {
+                                        ...thread.session,
+                                        status: "running" as const,
+                                        activeTurnId: TurnId.make("turn-manual-after-compact"),
+                                      }
+                                    : null,
+                                }
+                              : {}),
                           },
                     ),
                   }));
@@ -491,6 +503,33 @@ describe("ThreadLoopScheduler", () => {
     assert.isAtLeast(compactStartIndex, 0);
     assert.isAtLeast(turnStartIndex, 0);
     assert.isBelow(compactStartIndex, turnStartIndex);
+    assert.isTrue(
+      commands.some(
+        (command) => command.type === "thread.loop.sync" && command.patch.runsSinceCompaction === 0,
+      ),
+    );
+  });
+
+  it("resets the compaction counter when a completed compaction is preempted", async () => {
+    const harness = await createHarness({
+      sessionStatus: "ready",
+      activeTurnId: null,
+      compactTiming: "before",
+      compactEveryRuns: 3,
+      runsSinceCompaction: 2,
+      busyAfterCompaction: true,
+    });
+
+    await waitFor(async () => {
+      const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
+      return commands.some(
+        (command) => command.type === "thread.loop.sync" && command.patch.runsSinceCompaction === 0,
+      );
+    });
+
+    const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
+    assert.isTrue(commands.some((command) => command.type === "thread.compact.start"));
+    assert.isFalse(commands.some((command) => command.type === "thread.turn.start"));
     assert.isTrue(
       commands.some(
         (command) => command.type === "thread.loop.sync" && command.patch.runsSinceCompaction === 0,

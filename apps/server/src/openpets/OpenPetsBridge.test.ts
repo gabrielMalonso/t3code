@@ -6,7 +6,13 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import { DEFAULT_SERVER_SETTINGS, type ServerSettings } from "@t3tools/contracts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { makeOpenPetsBridge } from "./OpenPetsBridge.ts";
-import { ProcessRunner, type ProcessRunInput, type ProcessRunOutput } from "../processRunner.ts";
+import {
+  ProcessRunner,
+  ProcessSpawnError,
+  type ProcessRunInput,
+  type ProcessRunOutput,
+  type ProcessRunnerShape,
+} from "../processRunner.ts";
 
 type RunCall = {
   readonly input: ProcessRunInput;
@@ -37,7 +43,7 @@ function makeRunProcessStub(handler?: (call: RunCall, index: number) => ProcessR
 function makeBridge(input: {
   readonly settings?: Partial<ServerSettings>;
   readonly platform?: NodeJS.Platform;
-  readonly runProcess?: ReturnType<typeof makeRunProcessStub>["run"];
+  readonly runProcess?: ProcessRunnerShape["run"];
 }) {
   return makeOpenPetsBridge({
     platform: input.platform ?? "darwin",
@@ -229,6 +235,29 @@ describe("OpenPetsBridge", () => {
     const status = await Effect.runPromise(bridge.getStatus);
     expect(calls).toHaveLength(1);
     expect(status.lastError).toContain("Command not found");
+    expect(status.cliAvailable).toBe(false);
+    expect(status.petReachable).toBe(false);
+  });
+
+  it("records ProcessRunner spawn failures as a missing CLI", async () => {
+    const run: ProcessRunnerShape["run"] = (input) =>
+      Effect.fail(
+        new ProcessSpawnError({
+          command: input.command,
+          args: input.args,
+          cause: new Error("ENOENT"),
+        }),
+      );
+    const bridge = await Effect.runPromise(
+      makeBridge({
+        settings: { openPets: { enabled: true, binaryPath: "openpets" } },
+        runProcess: run,
+      }),
+    );
+
+    const status = await Effect.runPromise(bridge.refreshStatus);
+
+    expect(status.lastError).toBe("Command not found: openpets");
     expect(status.cliAvailable).toBe(false);
     expect(status.petReachable).toBe(false);
   });
