@@ -15,16 +15,12 @@ import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 
 import { ProjectionThreadLoopRepositoryLive } from "../../persistence/Layers/ProjectionThreadLoops.ts";
-import { ProjectionTurnRepositoryLive } from "../../persistence/Layers/ProjectionTurns.ts";
 import {
   ProjectionThreadLoopRepository,
   type ProjectionThreadLoop,
 } from "../../persistence/Services/ProjectionThreadLoops.ts";
-import { ProjectionTurnRepository } from "../../persistence/Services/ProjectionTurns.ts";
-import type { ProjectionRepositoryError } from "../../persistence/Errors.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
-import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import {
   ThreadLoopScheduler,
   type ThreadLoopSchedulerShape,
@@ -41,7 +37,6 @@ class ThreadLoopSchedulerError extends Data.TaggedError("ThreadLoopSchedulerErro
 }> {}
 
 const serverCommandId = (tag: string) => CommandId.make(`server:${tag}:${crypto.randomUUID()}`);
-const currentIso = Effect.map(DateTime.now, DateTime.formatIso);
 
 const isThreadLoopBusy = (thread: {
   readonly session: {
@@ -50,12 +45,45 @@ const isThreadLoopBusy = (thread: {
   } | null;
 }) => thread.session !== null && sessionStatusAllowsActiveTurn(thread.session.status);
 
+function getPayloadDetail(payload: unknown): string | null {
+  if (typeof payload !== "object" || payload === null || !("detail" in payload)) {
+    return null;
+  }
+  const detail = (payload as { readonly detail?: unknown }).detail;
+  return typeof detail === "string" && detail.trim().length > 0 ? detail : null;
+}
+
+function shouldCompactBeforeRun(loop: {
+  readonly compactTiming?: "disabled" | "before" | "after" | undefined;
+  readonly compactEveryRuns?: number | undefined;
+  readonly runsSinceCompaction?: number | undefined;
+}): boolean {
+  if ((loop.compactTiming ?? "disabled") === "disabled") {
+    return false;
+  }
+  const compactEveryRuns = Math.max(1, loop.compactEveryRuns ?? 1);
+  const runsSinceCompaction = Math.max(0, loop.runsSinceCompaction ?? 0);
+  return runsSinceCompaction + 1 >= compactEveryRuns;
+}
+
+function nextRunsSinceCompactionAfterRun(loop: {
+  readonly compactTiming?: "disabled" | "before" | "after" | undefined;
+  readonly compactEveryRuns?: number | undefined;
+  readonly runsSinceCompaction?: number | undefined;
+}): number {
+  if ((loop.compactTiming ?? "disabled") === "disabled") {
+    return 0;
+  }
+  if (shouldCompactBeforeRun(loop)) {
+    return 0;
+  }
+  return Math.max(0, loop.runsSinceCompaction ?? 0) + 1;
+}
+
 export const makeThreadLoopScheduler = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const projectionThreadLoopRepository = yield* ProjectionThreadLoopRepository;
-  const projectionTurnRepository = yield* ProjectionTurnRepository;
-  const providerService = yield* ProviderService;
 
   const appendLoopActivity = (input: {
     readonly threadId: ThreadId;
@@ -89,6 +117,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
       readonly nextRunAt?: string | null;
       readonly lastRunAt?: string | null;
       readonly lastError?: string | null;
+      readonly runsSinceCompaction?: number;
     };
   }) =>
     orchestrationEngine.dispatch({
@@ -223,99 +252,73 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
       return;
     }
 
-    const waitForCondition = Effect.fn("waitForCondition")(function* (
-      startedAtMs: number,
-      predicate: () => Effect.Effect<boolean, ProjectionRepositoryError>,
-      timeoutMessage: string,
-    ) {
+    const waitForContextCompaction = Effect.fn("waitForContextCompaction")(function* (input: {
+      readonly threadId: ThreadId;
+      readonly compactRequestedAt: string;
+    }) {
+      const startedAtMs = yield* Clock.currentTimeMillis;
+      const requestedAtMs = Date.parse(input.compactRequestedAt);
+
       for (;;) {
-        if (yield* predicate()) {
+        const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
+        const latestThread = readModel.threads.find((entry) => entry.id === input.threadId);
+        const activity = latestThread?.activities
+          .filter(
+            (candidate) =>
+              Date.parse(candidate.createdAt) >= requestedAtMs &&
+              (candidate.kind === "context-compaction" ||
+                candidate.kind === "provider.compact.failed"),
+          )
+          .toSorted((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt))
+          .at(0);
+
+        if (activity?.kind === "context-compaction") {
           return;
         }
+        if (activity?.kind === "provider.compact.failed") {
+          return yield* new ThreadLoopSchedulerError({
+            message: getPayloadDetail(activity.payload) ?? activity.summary,
+          });
+        }
+
         const elapsedMs = (yield* Clock.currentTimeMillis) - startedAtMs;
         if (elapsedMs > THREAD_LOOP_COMPACT_TIMEOUT_MS) {
-          return yield* new ThreadLoopSchedulerError({ message: timeoutMessage });
+          return yield* new ThreadLoopSchedulerError({
+            message: "Timed out waiting for loop context compaction to finish.",
+          });
         }
         yield* Effect.sleep(`${THREAD_LOOP_COMPACT_POLL_MS} millis`);
       }
     });
 
-    const waitForContextCompaction = Effect.fn("waitForContextCompaction")(function* (input: {
-      readonly threadId: ThreadId;
-      readonly compactRequestedAt: string;
-    }) {
-      yield* waitForCondition(
-        yield* Clock.currentTimeMillis,
-        Effect.fn("hasContextCompactionActivity")(function* () {
-          const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
-          const latestThread = readModel.threads.find((entry) => entry.id === input.threadId);
-          return (
-            latestThread?.activities.some(
-              (activity) =>
-                activity.kind === "context-compaction" &&
-                Date.parse(activity.createdAt) >= Date.parse(input.compactRequestedAt),
-            ) ?? false
-          );
-        }),
-        "Timed out waiting for loop context compaction to finish.",
-      );
-    });
-
-    const waitForLoopTurnSettled = Effect.fn("waitForLoopTurnSettled")(function* (input: {
-      readonly threadId: ThreadId;
-      readonly messageId: MessageId;
-    }) {
-      yield* waitForCondition(
-        yield* Clock.currentTimeMillis,
-        Effect.fn("isLoopTurnSettled")(function* () {
-          const turns = yield* projectionTurnRepository.listByThreadId({
-            threadId: input.threadId,
-          });
-          const loopTurn = turns.find(
-            (turn) => turn.pendingMessageId === input.messageId && turn.turnId !== null,
-          );
-          if (loopTurn) {
-            return loopTurn.state !== "running" && loopTurn.state !== "pending";
-          }
-
-          const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
-          const latestThread = readModel.threads.find((entry) => entry.id === input.threadId);
-          return latestThread?.session?.status === "error";
-        }),
-        "Timed out waiting for loop turn to finish.",
-      );
-    });
-
     const compactThreadForLoop = Effect.fn("compactThreadForLoop")(function* (input: {
       readonly threadId: ThreadId;
-      readonly timing: "before" | "after";
       readonly createdAt: string;
     }) {
       yield* appendLoopActivity({
         threadId: input.threadId,
         kind: "loop.tick.started",
-        summary:
-          input.timing === "before"
-            ? "Loop context compaction started before the run"
-            : "Loop context compaction started after the run",
+        summary: "Loop context compaction started before the run",
         createdAt: input.createdAt,
       });
-      if (!providerService.compactThread) {
-        return yield* new ThreadLoopSchedulerError({
-          message: "Provider service does not support compaction.",
-        });
-      }
-      yield* providerService.compactThread({ threadId: input.threadId });
+      yield* orchestrationEngine.dispatch({
+        type: "thread.compact.start",
+        commandId: serverCommandId("thread-loop-compact-start"),
+        threadId: input.threadId,
+        createdAt: input.createdAt,
+      });
       yield* waitForContextCompaction({
         threadId: input.threadId,
         compactRequestedAt: input.createdAt,
       });
     });
 
-    if (thread.loop.compactTiming === "before") {
+    const shouldCompact = shouldCompactBeforeRun(thread.loop);
+    const runsSinceCompactionAfterRun = nextRunsSinceCompactionAfterRun(thread.loop);
+
+    if (shouldCompact) {
       const compactedBefore = yield* compactThreadForLoop({
         threadId: loop.threadId,
-        timing: "before",
         createdAt: nowIso,
       }).pipe(
         Effect.as(true),
@@ -347,7 +350,17 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
 
       const refreshed = yield* projectionSnapshotQuery.getCommandReadModel();
       const refreshedThread = refreshed.threads.find((entry) => entry.id === loop.threadId);
-      if (!refreshedThread || isThreadLoopBusy(refreshedThread)) {
+      if (!refreshedThread) {
+        return;
+      }
+      if (isThreadLoopBusy(refreshedThread)) {
+        yield* syncLoopPatch({
+          threadId: loop.threadId,
+          createdAt: nowIso,
+          patch: {
+            runsSinceCompaction: runsSinceCompactionAfterRun,
+          },
+        });
         return;
       }
     }
@@ -359,6 +372,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         nextRunAt,
         lastRunAt: nowIso,
         lastError: null,
+        runsSinceCompaction: runsSinceCompactionAfterRun,
       },
     });
     yield* appendLoopActivity({
@@ -369,7 +383,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
     });
 
     const loopMessageId = MessageId.make(`loop-msg:${crypto.randomUUID()}`);
-    const turnStarted = yield* orchestrationEngine
+    yield* orchestrationEngine
       .dispatch({
         type: "thread.turn.start",
         commandId: serverCommandId("thread-loop-turn-start"),
@@ -386,7 +400,6 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         createdAt: nowIso,
       })
       .pipe(
-        Effect.as(true),
         Effect.catchCause((cause) =>
           Effect.gen(function* () {
             const detail = Cause.pretty(cause);
@@ -405,53 +418,9 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
               tone: "error",
               createdAt: nowIso,
             });
-            return false;
           }),
         ),
       );
-
-    if (!turnStarted) {
-      return;
-    }
-
-    if (thread.loop.compactTiming === "after") {
-      yield* Effect.forkScoped(
-        Effect.gen(function* () {
-          yield* waitForLoopTurnSettled({
-            threadId: loop.threadId,
-            messageId: loopMessageId,
-          });
-          const compactAt = yield* currentIso;
-          yield* compactThreadForLoop({
-            threadId: loop.threadId,
-            timing: "after",
-            createdAt: compactAt,
-          });
-        }).pipe(
-          Effect.catchCause((cause) =>
-            Effect.gen(function* () {
-              const failedAt = yield* currentIso;
-              const detail = Cause.pretty(cause);
-              yield* syncLoopPatch({
-                threadId: loop.threadId,
-                createdAt: failedAt,
-                patch: {
-                  lastError: detail,
-                },
-              });
-              yield* appendLoopActivity({
-                threadId: loop.threadId,
-                kind: "loop.tick.failed",
-                summary: "Loop context compaction failed",
-                detail,
-                tone: "error",
-                createdAt: failedAt,
-              });
-            }),
-          ),
-        ),
-      );
-    }
   });
 
   const runDueThreadLoops = Effect.fn("runDueThreadLoops")(function* (nowIso: string) {
@@ -530,7 +499,4 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
 export const ThreadLoopSchedulerLive = Layer.effect(
   ThreadLoopScheduler,
   makeThreadLoopScheduler,
-).pipe(
-  Layer.provideMerge(ProjectionThreadLoopRepositoryLive),
-  Layer.provideMerge(ProjectionTurnRepositoryLive),
-);
+).pipe(Layer.provideMerge(ProjectionThreadLoopRepositoryLive));

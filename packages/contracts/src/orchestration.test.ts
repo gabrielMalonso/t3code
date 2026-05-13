@@ -544,6 +544,7 @@ it.effect("decodes thread.loop.upsert commands", () =>
       enabled: true,
       prompt: "check the deploy",
       intervalMinutes: 30,
+      compactEveryRuns: 3,
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.type, "thread.loop.upsert");
@@ -551,6 +552,7 @@ it.effect("decodes thread.loop.upsert commands", () =>
       throw new Error("Expected thread.loop.upsert command.");
     }
     assert.strictEqual(parsed.intervalMinutes, 30);
+    assert.strictEqual(parsed.compactEveryRuns, 3);
     assert.strictEqual(parsed.prompt, "check the deploy");
   }),
 );
