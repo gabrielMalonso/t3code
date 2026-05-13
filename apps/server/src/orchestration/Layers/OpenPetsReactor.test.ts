@@ -121,8 +121,8 @@ function makeHarness(events: ReadonlyArray<ProviderRuntimeEvent>) {
     getActiveProjectByWorkspaceRoot: () => unsupportedQuery(),
     getProjectShellById: () => unsupportedQuery(),
     getFirstActiveThreadIdByProjectId: () => unsupportedQuery(),
-    getFullThreadDiffContext: () => unsupportedQuery(),
     getThreadCheckpointContext: () => unsupportedQuery(),
+    getFullThreadDiffContext: () => unsupportedQuery(),
     getThreadShellById: (threadId) =>
       Effect.succeed(
         threadId === ThreadId.make("thread-1") ? Option.some(threadShell) : Option.none(),
