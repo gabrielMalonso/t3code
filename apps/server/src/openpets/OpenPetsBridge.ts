@@ -6,17 +6,6 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
 
-<<<<<<< HEAD
-import type {
-  ProcessOutputLimitError,
-  ProcessReadError,
-  ProcessRunError,
-  ProcessRunInput,
-  ProcessRunOutput,
-  ProcessSpawnError,
-  ProcessStdinError,
-  ProcessTimeoutError,
-=======
 import {
   ProcessRunner,
   type ProcessOutputLimitError,
@@ -28,7 +17,6 @@ import {
   type ProcessSpawnError,
   type ProcessStdinError,
   type ProcessTimeoutError,
->>>>>>> origin/main
 } from "../processRunner.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import type { OpenPetsBridgeShape, OpenPetsNotifyInput } from "./Services/OpenPetsBridge.ts";
@@ -40,7 +28,7 @@ const MAX_THREAD_RECORDS = 1_000;
 const MAX_TEXT_LENGTH = 180;
 const MAX_ERROR_LENGTH = 240;
 
-export class OpenPetsProcessError extends Data.TaggedError("OpenPetsProcessError")<{
+class OpenPetsProcessError extends Data.TaggedError("OpenPetsProcessError")<{
   readonly cause: unknown;
   readonly message: string;
 }> {}
@@ -60,13 +48,7 @@ interface OpenPetsRuntimeState {
 
 export interface OpenPetsBridgeOptions {
   readonly platform?: NodeJS.Platform;
-<<<<<<< HEAD
-  readonly runProcess?: (
-    input: ProcessRunInput,
-  ) => Effect.Effect<ProcessRunOutput, OpenPetsProcessError>;
-=======
   readonly runProcess?: ProcessRunnerShape["run"];
->>>>>>> origin/main
 }
 
 const initialState: OpenPetsRuntimeState = {
@@ -104,28 +86,6 @@ function processRunErrorMessage(error: ProcessRunError): string {
   }
 }
 
-<<<<<<< HEAD
-function isProcessRunError(error: unknown): error is ProcessRunError {
-  if (typeof error !== "object" || error === null || !("_tag" in error)) {
-    return false;
-  }
-  const tag = (error as { readonly _tag?: unknown })._tag;
-  return (
-    tag === "ProcessSpawnError" ||
-    tag === "ProcessTimeoutError" ||
-    tag === "ProcessOutputLimitError" ||
-    tag === "ProcessReadError" ||
-    tag === "ProcessStdinError"
-  );
-}
-
-function errorMessage(error: unknown): string {
-  if (isProcessRunError(error)) {
-    return truncate(processRunErrorMessage(error), MAX_ERROR_LENGTH);
-  }
-  if (error instanceof OpenPetsProcessError && isProcessRunError(error.cause)) {
-    return truncate(processRunErrorMessage(error.cause), MAX_ERROR_LENGTH);
-=======
 function errorMessage(error: unknown): string {
   if (typeof error === "object" && error !== null && "_tag" in error) {
     const tag = (error as { readonly _tag?: unknown })._tag;
@@ -138,21 +98,10 @@ function errorMessage(error: unknown): string {
     ) {
       return truncate(processRunErrorMessage(error as ProcessRunError), MAX_ERROR_LENGTH);
     }
->>>>>>> origin/main
   }
   const message = error instanceof Error ? error.message : String(error);
   const fallback = message.trim().length > 0 ? message : String(error);
   return truncate(fallback, MAX_ERROR_LENGTH);
-<<<<<<< HEAD
-}
-
-export function openPetsProcessErrorFromProcessRunError(error: ProcessRunError) {
-  return new OpenPetsProcessError({
-    cause: error,
-    message: processRunErrorMessage(error),
-  });
-=======
->>>>>>> origin/main
 }
 
 function isCommandNotFoundMessage(message: string): boolean {
@@ -198,14 +147,7 @@ export const makeOpenPetsBridge = (options: OpenPetsBridgeOptions = {}) =>
     const processRunner = yield* ProcessRunner;
     const stateRef = yield* Ref.make<OpenPetsRuntimeState>(initialState);
     const platform = options.platform ?? process.platform;
-<<<<<<< HEAD
-    const run =
-      options.runProcess ??
-      (() =>
-        Effect.die(new Error("OpenPets process runner was not provided. Use OpenPetsBridgeLive.")));
-=======
     const run = options.runProcess ?? processRunner.run;
->>>>>>> origin/main
     const supported = platform === "darwin";
 
     const readOpenPetsSettings = serverSettings.getSettings.pipe(
@@ -250,12 +192,6 @@ export const makeOpenPetsBridge = (options: OpenPetsBridgeOptions = {}) =>
       run({
         command: binaryPath,
         args,
-<<<<<<< HEAD
-        timeout: timeoutMs,
-        maxOutputBytes: 4_096,
-        outputMode: "truncate",
-      }).pipe(
-=======
         timeout: Duration.millis(timeoutMs),
         maxOutputBytes: 4_096,
         outputMode: "truncate",
@@ -267,7 +203,6 @@ export const makeOpenPetsBridge = (options: OpenPetsBridgeOptions = {}) =>
               message: errorMessage(error),
             }),
         ),
->>>>>>> origin/main
         Effect.flatMap((result) => {
           if (result.timedOut || result.code === null || result.code !== 0) {
             return Effect.fail(
