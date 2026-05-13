@@ -350,7 +350,17 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
 
       const refreshed = yield* projectionSnapshotQuery.getCommandReadModel();
       const refreshedThread = refreshed.threads.find((entry) => entry.id === loop.threadId);
-      if (!refreshedThread || isThreadLoopBusy(refreshedThread)) {
+      if (!refreshedThread) {
+        return;
+      }
+      if (isThreadLoopBusy(refreshedThread)) {
+        yield* syncLoopPatch({
+          threadId: loop.threadId,
+          createdAt: nowIso,
+          patch: {
+            runsSinceCompaction: runsSinceCompactionAfterRun,
+          },
+        });
         return;
       }
     }

@@ -8,10 +8,15 @@ import * as Ref from "effect/Ref";
 
 import {
   ProcessRunner,
+  type ProcessOutputLimitError,
+  type ProcessReadError,
   type ProcessRunError,
   type ProcessRunInput,
   type ProcessRunOutput,
   type ProcessRunnerShape,
+  type ProcessSpawnError,
+  type ProcessStdinError,
+  type ProcessTimeoutError,
 } from "../processRunner.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import type { OpenPetsBridgeShape, OpenPetsNotifyInput } from "./Services/OpenPetsBridge.ts";
@@ -58,9 +63,45 @@ function truncate(value: string, limit: number): string {
   return value.length > limit ? `${value.slice(0, limit - 3)}...` : value;
 }
 
+function processRunErrorMessage(error: ProcessRunError): string {
+  switch (error._tag) {
+    case "ProcessSpawnError":
+      return `Command not found: ${(error as ProcessSpawnError).command}`;
+    case "ProcessTimeoutError": {
+      const timeoutError = error as ProcessTimeoutError;
+      return `${timeoutError.command} timed out after ${timeoutError.timeoutMs}ms.`;
+    }
+    case "ProcessOutputLimitError": {
+      const outputError = error as ProcessOutputLimitError;
+      return `${outputError.command} ${outputError.stream} exceeded ${outputError.maxBytes} bytes.`;
+    }
+    case "ProcessReadError": {
+      const readError = error as ProcessReadError;
+      return `Failed to read ${readError.stream} from ${readError.command}.`;
+    }
+    case "ProcessStdinError": {
+      const stdinError = error as ProcessStdinError;
+      return `Failed to write stdin to ${stdinError.command}.`;
+    }
+  }
+}
+
 function errorMessage(error: unknown): string {
+  if (typeof error === "object" && error !== null && "_tag" in error) {
+    const tag = (error as { readonly _tag?: unknown })._tag;
+    if (
+      tag === "ProcessSpawnError" ||
+      tag === "ProcessTimeoutError" ||
+      tag === "ProcessOutputLimitError" ||
+      tag === "ProcessReadError" ||
+      tag === "ProcessStdinError"
+    ) {
+      return truncate(processRunErrorMessage(error as ProcessRunError), MAX_ERROR_LENGTH);
+    }
+  }
   const message = error instanceof Error ? error.message : String(error);
-  return truncate(message, MAX_ERROR_LENGTH);
+  const fallback = message.trim().length > 0 ? message : String(error);
+  return truncate(fallback, MAX_ERROR_LENGTH);
 }
 
 function isCommandNotFoundMessage(message: string): boolean {
