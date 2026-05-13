@@ -3,6 +3,7 @@ import * as Layer from "effect/Layer";
 
 import { ProcessRunner, layer as ProcessRunnerLive } from "../../processRunner.ts";
 import { OpenPetsBridge } from "../Services/OpenPetsBridge.ts";
+<<<<<<< HEAD
 import { makeOpenPetsBridge, openPetsProcessErrorFromProcessRunError } from "../OpenPetsBridge.ts";
 
 const makeLive = Effect.gen(function* () {
@@ -14,5 +15,11 @@ const makeLive = Effect.gen(function* () {
 });
 
 export const OpenPetsBridgeLive = Layer.effect(OpenPetsBridge, makeLive).pipe(
+=======
+import { makeOpenPetsBridge } from "../OpenPetsBridge.ts";
+import { layer as ProcessRunnerLive } from "../../processRunner.ts";
+
+export const OpenPetsBridgeLive = Layer.effect(OpenPetsBridge, makeOpenPetsBridge()).pipe(
+>>>>>>> origin/main
   Layer.provide(ProcessRunnerLive),
 );
