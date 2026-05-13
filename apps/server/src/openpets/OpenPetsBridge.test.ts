@@ -1,35 +1,35 @@
 import { describe, expect, it } from "vitest";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { DEFAULT_SERVER_SETTINGS, type ServerSettings } from "@t3tools/contracts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { makeOpenPetsBridge } from "./OpenPetsBridge.ts";
-import type { ProcessRunOptions, ProcessRunResult } from "../processRunner.ts";
+import { ProcessRunner, type ProcessRunInput, type ProcessRunOutput } from "../processRunner.ts";
 
 type RunCall = {
-  readonly command: string;
-  readonly args: readonly string[];
-  readonly options: ProcessRunOptions;
+  readonly input: ProcessRunInput;
 };
 
-const processResult = (stdout = ""): ProcessRunResult => ({
+const processResult = (stdout = ""): ProcessRunOutput => ({
   stdout,
   stderr: "",
-  code: 0,
-  signal: null,
+  code: ChildProcessSpawner.ExitCode(0),
   timedOut: false,
+  stdoutTruncated: false,
+  stderrTruncated: false,
 });
 
-function makeRunProcessStub(handler?: (call: RunCall, index: number) => ProcessRunResult) {
+function makeRunProcessStub(handler?: (call: RunCall, index: number) => ProcessRunOutput) {
   const calls: RunCall[] = [];
-  const run = async (
-    command: string,
-    args: readonly string[],
-    options: ProcessRunOptions = {},
-  ): Promise<ProcessRunResult> => {
-    const call = { command, args, options };
+  const run = (input: ProcessRunInput) => {
+    const call = { input };
     calls.push(call);
-    return handler ? handler(call, calls.length - 1) : processResult("openpets-thread-1\n");
+    return Effect.try({
+      try: () => (handler ? handler(call, calls.length - 1) : processResult("openpets-thread-1\n")),
+      catch: (error) => error as never,
+    });
   };
   return { calls, run };
 }
@@ -42,7 +42,10 @@ function makeBridge(input: {
   return makeOpenPetsBridge({
     platform: input.platform ?? "darwin",
     ...(input.runProcess ? { runProcess: input.runProcess } : {}),
-  }).pipe(Effect.provide(ServerSettingsService.layerTest(input.settings ?? {})));
+  }).pipe(
+    Effect.provide(ServerSettingsService.layerTest(input.settings ?? {})),
+    Effect.provideService(ProcessRunner, { run: makeRunProcessStub().run }),
+  );
 }
 
 describe("OpenPetsBridge", () => {
@@ -115,11 +118,11 @@ describe("OpenPetsBridge", () => {
 
     expect(runProcess.calls).toEqual([
       {
-        command: "/tmp/openpets",
-        args: ["ping"],
-        options: {
-          timeoutMs: 1_500,
-          maxBufferBytes: 4_096,
+        input: {
+          command: "/tmp/openpets",
+          args: ["ping"],
+          timeout: Duration.millis(1_500),
+          maxOutputBytes: 4_096,
           outputMode: "truncate",
         },
       },
@@ -147,7 +150,7 @@ describe("OpenPetsBridge", () => {
       }),
     );
 
-    expect(runProcess.calls[0]?.args).toEqual([
+    expect(runProcess.calls[0]?.input.args).toEqual([
       "notify",
       "--title",
       "T3 Code",
@@ -186,7 +189,7 @@ describe("OpenPetsBridge", () => {
       }),
     );
 
-    expect(runProcess.calls[1]?.args).toEqual([
+    expect(runProcess.calls[1]?.input.args).toEqual([
       "notify",
       "--thread",
       "openpets-thread-1",
@@ -201,13 +204,9 @@ describe("OpenPetsBridge", () => {
 
   it("records CLI failures without throwing", async () => {
     const calls: RunCall[] = [];
-    const run = async (
-      command: string,
-      args: readonly string[],
-      options: ProcessRunOptions = {},
-    ): Promise<ProcessRunResult> => {
-      calls.push({ command, args, options });
-      throw new Error("Command not found: openpets");
+    const run = (input: ProcessRunInput) => {
+      calls.push({ input });
+      return Effect.fail(new Error("Command not found: openpets") as never);
     };
     const bridge = await Effect.runPromise(
       makeBridge({

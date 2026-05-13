@@ -369,7 +369,12 @@ export function projectEvent(
         Effect.map((payload) => ({
           ...nextBase,
           threads: updateThread(nextBase.threads, payload.threadId, {
-            loop: payload.loop,
+            loop: {
+              ...payload.loop,
+              compactTiming: payload.loop.compactTiming ?? "disabled",
+              compactEveryRuns: payload.loop.compactEveryRuns ?? 1,
+              runsSinceCompaction: payload.loop.runsSinceCompaction ?? 0,
+            },
             updatedAt: event.occurredAt,
           }),
         })),
