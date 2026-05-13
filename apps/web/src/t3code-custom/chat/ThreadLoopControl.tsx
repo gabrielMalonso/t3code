@@ -32,11 +32,18 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../../components/ui/toolt
 import type { ThreadLoop } from "~/types";
 
 const THREAD_LOOP_INTERVAL_PRESETS = [1, 5, 15, 30, 60, 240] as const;
+const THREAD_LOOP_COMPACT_EVERY_PRESETS = [1, 2, 3, 4] as const;
 const THREAD_LOOP_COMPACT_TIMINGS = [
   { value: "disabled", label: "Off" },
   { value: "before", label: "Before" },
-  { value: "after", label: "After" },
 ] as const;
+type EditableCompactTiming = (typeof THREAD_LOOP_COMPACT_TIMINGS)[number]["value"];
+
+function normalizeCompactTiming(
+  timing: "disabled" | "before" | "after" | undefined,
+): EditableCompactTiming {
+  return timing === undefined || timing === "disabled" ? "disabled" : "before";
+}
 
 function formatInterval(intervalMinutes: number): string {
   if (intervalMinutes >= 60 && intervalMinutes % 60 === 0) {
@@ -147,6 +154,7 @@ export default function ThreadLoopControl(props: {
       prompt: string;
       intervalMinutes: number;
       compactTiming: "disabled" | "before" | "after";
+      compactEveryRuns: number;
     },
   ) => Promise<void>;
   onDeleteLoop: (threadId: ThreadId) => Promise<void>;
@@ -156,8 +164,11 @@ export default function ThreadLoopControl(props: {
   const [enabled, setEnabled] = useState(props.loop?.enabled ?? true);
   const [prompt, setPrompt] = useState(props.loop?.prompt ?? "");
   const [intervalMinutes, setIntervalMinutes] = useState(String(props.loop?.intervalMinutes ?? 30));
-  const [compactTiming, setCompactTiming] = useState<"disabled" | "before" | "after">(
-    props.loop?.compactTiming ?? "disabled",
+  const [compactTiming, setCompactTiming] = useState<EditableCompactTiming>(
+    normalizeCompactTiming(props.loop?.compactTiming),
+  );
+  const [compactEveryRuns, setCompactEveryRuns] = useState(
+    String(props.loop?.compactEveryRuns ?? 1),
   );
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -170,7 +181,8 @@ export default function ThreadLoopControl(props: {
     setEnabled(props.loop?.enabled ?? true);
     setPrompt(props.loop?.prompt ?? "");
     setIntervalMinutes(String(props.loop?.intervalMinutes ?? 30));
-    setCompactTiming(props.loop?.compactTiming ?? "disabled");
+    setCompactTiming(normalizeCompactTiming(props.loop?.compactTiming));
+    setCompactEveryRuns(String(props.loop?.compactEveryRuns ?? 1));
     setError(null);
   }, [open, props.loop]);
 
@@ -184,7 +196,8 @@ export default function ThreadLoopControl(props: {
     ];
     if (props.loop.nextRunAt) lines.push(`Next: ${formatRelativeTime(props.loop.nextRunAt)}`);
     if ((props.loop.compactTiming ?? "disabled") !== "disabled") {
-      lines.push(`Compact: ${props.loop.compactTiming}`);
+      const every = props.loop.compactEveryRuns ?? 1;
+      lines.push(`Compact: before every ${every} ${every === 1 ? "run" : "runs"}`);
     }
     if (props.loop.lastError) lines.push(`Error: ${props.loop.lastError}`);
     return lines.join("\n");
@@ -201,7 +214,8 @@ export default function ThreadLoopControl(props: {
           enabled: !props.loop.enabled,
           prompt: props.loop.prompt,
           intervalMinutes: props.loop.intervalMinutes,
-          compactTiming: props.loop.compactTiming ?? "disabled",
+          compactTiming: normalizeCompactTiming(props.loop.compactTiming),
+          compactEveryRuns: props.loop.compactEveryRuns ?? 1,
         });
       } finally {
         setIsTogglingPause(false);
@@ -213,6 +227,7 @@ export default function ThreadLoopControl(props: {
   const handleSave = async () => {
     const trimmedPrompt = prompt.trim();
     const parsedInterval = Number.parseInt(intervalMinutes, 10);
+    const parsedCompactEveryRuns = Number.parseInt(compactEveryRuns, 10);
 
     if (trimmedPrompt.length === 0) {
       setError("Prompt is required.");
@@ -220,6 +235,13 @@ export default function ThreadLoopControl(props: {
     }
     if (!Number.isInteger(parsedInterval) || parsedInterval < 1) {
       setError("Interval must be at least 1 minute.");
+      return;
+    }
+    if (
+      compactTiming !== "disabled" &&
+      (!Number.isInteger(parsedCompactEveryRuns) || parsedCompactEveryRuns < 1)
+    ) {
+      setError("Compaction counter must be at least 1 run.");
       return;
     }
 
@@ -231,6 +253,10 @@ export default function ThreadLoopControl(props: {
         prompt: trimmedPrompt,
         intervalMinutes: parsedInterval,
         compactTiming,
+        compactEveryRuns:
+          compactTiming === "disabled"
+            ? Math.max(1, parsedCompactEveryRuns || 1)
+            : parsedCompactEveryRuns,
       });
       setOpen(false);
     } catch (nextError) {
@@ -475,8 +501,77 @@ export default function ThreadLoopControl(props: {
               })}
             </div>
             <p className="text-muted-foreground text-xs leading-relaxed">
-              Before saves context for the next run. After keeps the run lean once it finishes.
+              Runs before the scheduled loop when the counter is reached.
             </p>
+            {compactTiming !== "disabled" ? (
+              <div className="space-y-2 rounded-lg border border-border/60 bg-muted/10 px-3.5 py-3">
+                <Label htmlFor="thread-loop-compact-every" className="text-xs">
+                  Compact every
+                </Label>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-xs"
+                    onClick={() => {
+                      const current = Number.parseInt(compactEveryRuns, 10);
+                      if (Number.isInteger(current) && current > 1) {
+                        setCompactEveryRuns(String(current - 1));
+                      }
+                    }}
+                    disabled={Number.parseInt(compactEveryRuns, 10) <= 1}
+                    aria-label="Decrease compaction counter"
+                  >
+                    <MinusIcon className="size-3.5" />
+                  </Button>
+                  <Input
+                    id="thread-loop-compact-every"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={compactEveryRuns}
+                    onChange={(event) => setCompactEveryRuns(event.target.value)}
+                    className="h-7 w-16 font-mono text-xs sm:h-6 sm:text-[0.6875rem] [&_input]:h-full [&_input]:leading-[inherit] [&_input]:px-0 [&_input]:text-center [&_input]:[appearance:textfield] [&_input]:[-moz-appearance:textfield] [&_input::-webkit-inner-spin-button]:appearance-none [&_input::-webkit-outer-spin-button]:appearance-none"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon-xs"
+                    onClick={() => {
+                      const current = Number.parseInt(compactEveryRuns, 10);
+                      if (Number.isInteger(current)) {
+                        setCompactEveryRuns(String(current + 1));
+                      }
+                    }}
+                    aria-label="Increase compaction counter"
+                  >
+                    <PlusIcon className="size-3.5" />
+                  </Button>
+                  <span className="text-muted-foreground text-xs">runs</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {THREAD_LOOP_COMPACT_EVERY_PRESETS.map((preset) => {
+                    const selected = compactEveryRuns === String(preset);
+                    return (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setCompactEveryRuns(String(preset))}
+                        className={[
+                          "inline-flex h-7 items-center rounded-md border px-2.5 font-mono text-xs transition-colors duration-100 sm:h-6 sm:text-[0.6875rem]",
+                          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                          selected
+                            ? "border-primary/30 bg-primary/10 text-primary font-medium dark:border-primary/20 dark:bg-primary/16"
+                            : "border-input bg-background text-muted-foreground hover:bg-accent/50 dark:bg-input/32 dark:hover:bg-input/48",
+                        ].join(" ")}
+                      >
+                        {preset}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="space-y-2">
@@ -511,6 +606,14 @@ export default function ThreadLoopControl(props: {
                     {formatTimestamp(props.loop.lastRunAt)}
                   </span>
                 </div>
+                {(props.loop.compactTiming ?? "disabled") !== "disabled" ? (
+                  <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                    <span className="text-muted-foreground text-xs">Compaction count</span>
+                    <span className="text-xs tabular-nums">
+                      {props.loop.runsSinceCompaction ?? 0}/{props.loop.compactEveryRuns ?? 1}
+                    </span>
+                  </div>
+                ) : null}
               </div>
               {props.loop.lastError ? (
                 <div className="rounded-lg border border-warning/20 bg-warning/6 px-3.5 py-2.5 dark:border-warning/14 dark:bg-warning/10">

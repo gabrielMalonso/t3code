@@ -2,10 +2,22 @@ import { DEFAULT_SERVER_SETTINGS, type OpenPetsRuntimeStatus } from "@t3tools/co
 import * as Clock from "effect/Clock";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
 
-import { runProcess, type ProcessRunResult } from "../processRunner.ts";
+import {
+  ProcessRunner,
+  type ProcessOutputLimitError,
+  type ProcessReadError,
+  type ProcessRunError,
+  type ProcessRunInput,
+  type ProcessRunOutput,
+  type ProcessRunnerShape,
+  type ProcessSpawnError,
+  type ProcessStdinError,
+  type ProcessTimeoutError,
+} from "../processRunner.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import type { OpenPetsBridgeShape, OpenPetsNotifyInput } from "./Services/OpenPetsBridge.ts";
 
@@ -36,7 +48,7 @@ interface OpenPetsRuntimeState {
 
 export interface OpenPetsBridgeOptions {
   readonly platform?: NodeJS.Platform;
-  readonly runProcess?: typeof runProcess;
+  readonly runProcess?: ProcessRunnerShape["run"];
 }
 
 const initialState: OpenPetsRuntimeState = {
@@ -51,9 +63,45 @@ function truncate(value: string, limit: number): string {
   return value.length > limit ? `${value.slice(0, limit - 3)}...` : value;
 }
 
+function processRunErrorMessage(error: ProcessRunError): string {
+  switch (error._tag) {
+    case "ProcessSpawnError":
+      return `Command not found: ${(error as ProcessSpawnError).command}`;
+    case "ProcessTimeoutError": {
+      const timeoutError = error as ProcessTimeoutError;
+      return `${timeoutError.command} timed out after ${timeoutError.timeoutMs}ms.`;
+    }
+    case "ProcessOutputLimitError": {
+      const outputError = error as ProcessOutputLimitError;
+      return `${outputError.command} ${outputError.stream} exceeded ${outputError.maxBytes} bytes.`;
+    }
+    case "ProcessReadError": {
+      const readError = error as ProcessReadError;
+      return `Failed to read ${readError.stream} from ${readError.command}.`;
+    }
+    case "ProcessStdinError": {
+      const stdinError = error as ProcessStdinError;
+      return `Failed to write stdin to ${stdinError.command}.`;
+    }
+  }
+}
+
 function errorMessage(error: unknown): string {
+  if (typeof error === "object" && error !== null && "_tag" in error) {
+    const tag = (error as { readonly _tag?: unknown })._tag;
+    if (
+      tag === "ProcessSpawnError" ||
+      tag === "ProcessTimeoutError" ||
+      tag === "ProcessOutputLimitError" ||
+      tag === "ProcessReadError" ||
+      tag === "ProcessStdinError"
+    ) {
+      return truncate(processRunErrorMessage(error as ProcessRunError), MAX_ERROR_LENGTH);
+    }
+  }
   const message = error instanceof Error ? error.message : String(error);
-  return truncate(message, MAX_ERROR_LENGTH);
+  const fallback = message.trim().length > 0 ? message : String(error);
+  return truncate(fallback, MAX_ERROR_LENGTH);
 }
 
 function isCommandNotFoundMessage(message: string): boolean {
@@ -96,9 +144,10 @@ function statusFromState(input: {
 export const makeOpenPetsBridge = (options: OpenPetsBridgeOptions = {}) =>
   Effect.gen(function* () {
     const serverSettings = yield* ServerSettingsService;
+    const processRunner = yield* ProcessRunner;
     const stateRef = yield* Ref.make<OpenPetsRuntimeState>(initialState);
     const platform = options.platform ?? process.platform;
-    const run = options.runProcess ?? runProcess;
+    const run = options.runProcess ?? processRunner.run;
     const supported = platform === "darwin";
 
     const readOpenPetsSettings = serverSettings.getSettings.pipe(
@@ -139,20 +188,33 @@ export const makeOpenPetsBridge = (options: OpenPetsBridgeOptions = {}) =>
       binaryPath: string,
       args: readonly string[],
       timeoutMs: number,
-    ): Effect.Effect<ProcessRunResult, OpenPetsProcessError> =>
-      Effect.tryPromise({
-        try: () =>
-          run(binaryPath, args, {
-            timeoutMs,
-            maxBufferBytes: 4_096,
-            outputMode: "truncate",
-          }),
-        catch: (error) =>
-          new OpenPetsProcessError({
-            cause: error,
-            message: errorMessage(error),
-          }),
-      });
+    ): Effect.Effect<ProcessRunOutput, OpenPetsProcessError> =>
+      run({
+        command: binaryPath,
+        args,
+        timeout: Duration.millis(timeoutMs),
+        maxOutputBytes: 4_096,
+        outputMode: "truncate",
+      } satisfies ProcessRunInput).pipe(
+        Effect.mapError(
+          (error: ProcessRunError) =>
+            new OpenPetsProcessError({
+              cause: error,
+              message: errorMessage(error),
+            }),
+        ),
+        Effect.flatMap((result) => {
+          if (result.timedOut || result.code === null || result.code !== 0) {
+            return Effect.fail(
+              new OpenPetsProcessError({
+                cause: result,
+                message: result.stderr.trim() || `openpets exited with code ${result.code}.`,
+              }),
+            );
+          }
+          return Effect.succeed(result);
+        }),
+      );
 
     const refreshStatus: OpenPetsBridgeShape["refreshStatus"] = Effect.gen(function* () {
       const settings = yield* readOpenPetsSettings;

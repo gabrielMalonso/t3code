@@ -28,6 +28,7 @@ export function useThreadLoopActions() {
         prompt: string;
         intervalMinutes: number;
         compactTiming: "disabled" | "before" | "after";
+        compactEveryRuns: number;
       },
     ) => {
       const { api } = getThreadLoopTarget(threadId);
@@ -39,6 +40,7 @@ export function useThreadLoopActions() {
         prompt: input.prompt,
         intervalMinutes: input.intervalMinutes,
         compactTiming: input.compactTiming,
+        compactEveryRuns: input.compactEveryRuns,
         createdAt: new Date().toISOString(),
       });
     },
