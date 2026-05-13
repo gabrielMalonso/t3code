@@ -1,35 +1,40 @@
 import { describe, expect, it } from "vitest";
 import * as Effect from "effect/Effect";
+import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { DEFAULT_SERVER_SETTINGS, type ServerSettings } from "@t3tools/contracts";
 import { ServerSettingsService } from "../serverSettings.ts";
-import { makeOpenPetsBridge } from "./OpenPetsBridge.ts";
-import type { ProcessRunOptions, ProcessRunResult } from "../processRunner.ts";
+import { makeOpenPetsBridge, OpenPetsProcessError } from "./OpenPetsBridge.ts";
+import type { ProcessRunInput, ProcessRunOutput } from "../processRunner.ts";
 
-type RunCall = {
-  readonly command: string;
-  readonly args: readonly string[];
-  readonly options: ProcessRunOptions;
-};
+type RunCall = ProcessRunInput;
 
-const processResult = (stdout = ""): ProcessRunResult => ({
+const processResult = (stdout = ""): ProcessRunOutput => ({
   stdout,
   stderr: "",
-  code: 0,
-  signal: null,
+  code: ChildProcessSpawner.ExitCode(0),
   timedOut: false,
+  stdoutTruncated: false,
+  stderrTruncated: false,
 });
 
-function makeRunProcessStub(handler?: (call: RunCall, index: number) => ProcessRunResult) {
+function makeRunProcessStub(handler?: (call: RunCall, index: number) => ProcessRunOutput) {
   const calls: RunCall[] = [];
-  const run = async (
-    command: string,
-    args: readonly string[],
-    options: ProcessRunOptions = {},
-  ): Promise<ProcessRunResult> => {
-    const call = { command, args, options };
+  const run = (input: ProcessRunInput): Effect.Effect<ProcessRunOutput, OpenPetsProcessError> => {
+    const call = input;
     calls.push(call);
-    return handler ? handler(call, calls.length - 1) : processResult("openpets-thread-1\n");
+    try {
+      return Effect.succeed(
+        handler ? handler(call, calls.length - 1) : processResult("openpets-thread-1\n"),
+      );
+    } catch (error) {
+      return Effect.fail(
+        new OpenPetsProcessError({
+          cause: error,
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
   };
   return { calls, run };
 }
@@ -117,11 +122,9 @@ describe("OpenPetsBridge", () => {
       {
         command: "/tmp/openpets",
         args: ["ping"],
-        options: {
-          timeoutMs: 1_500,
-          maxBufferBytes: 4_096,
-          outputMode: "truncate",
-        },
+        timeout: 1_500,
+        maxOutputBytes: 4_096,
+        outputMode: "truncate",
       },
     ]);
     expect(status.cliAvailable).toBe(true);
@@ -201,13 +204,14 @@ describe("OpenPetsBridge", () => {
 
   it("records CLI failures without throwing", async () => {
     const calls: RunCall[] = [];
-    const run = async (
-      command: string,
-      args: readonly string[],
-      options: ProcessRunOptions = {},
-    ): Promise<ProcessRunResult> => {
-      calls.push({ command, args, options });
-      throw new Error("Command not found: openpets");
+    const run = (input: ProcessRunInput): Effect.Effect<ProcessRunOutput, OpenPetsProcessError> => {
+      calls.push(input);
+      return Effect.fail(
+        new OpenPetsProcessError({
+          cause: "Command not found: openpets",
+          message: "Command not found: openpets",
+        }),
+      );
     };
     const bridge = await Effect.runPromise(
       makeBridge({

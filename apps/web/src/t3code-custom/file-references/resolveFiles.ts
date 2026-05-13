@@ -2,7 +2,7 @@ import { randomUUID } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 
 import { fileReferenceCopy } from "./i18n";
-import { fileReferenceDedupKey, isSupportedFileReferenceCandidate } from "./paths";
+import { fileReferenceDedupKey } from "./paths";
 import type { ComposerFileReference } from "./types";
 
 export async function resolveComposerFileReferencesFromFiles(files: ReadonlyArray<File>): Promise<{
@@ -29,11 +29,6 @@ export async function resolveComposerFileReferencesFromFiles(files: ReadonlyArra
   const dedupKeys = new Set<string>();
 
   for (const file of files) {
-    if (!isSupportedFileReferenceCandidate(file)) {
-      errors.push(fileReferenceCopy.error.unsupportedType(file.name));
-      continue;
-    }
-
     const path = await api.dialogs.getPathForFile(file);
     if (!path) {
       errors.push(fileReferenceCopy.error.unresolvedPath(file.name));
