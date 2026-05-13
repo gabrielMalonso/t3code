@@ -356,6 +356,12 @@ export const ThreadLoop = Schema.Struct({
       Schema.withDecodingDefault(Effect.succeed("disabled" as const)),
     ),
   ),
+  compactEveryRuns: Schema.optional(
+    PositiveInt.pipe(Schema.withDecodingDefault(Effect.succeed(1))),
+  ),
+  runsSinceCompaction: Schema.optional(
+    NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+  ),
   nextRunAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   lastRunAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   lastError: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
@@ -595,6 +601,7 @@ const ThreadLoopUpsertCommand = Schema.Struct({
   prompt: TrimmedNonEmptyString,
   intervalMinutes: PositiveInt,
   compactTiming: Schema.optional(Schema.Literals(["disabled", "before", "after"])),
+  compactEveryRuns: Schema.optional(PositiveInt),
   createdAt: IsoDateTime,
 });
 
@@ -829,6 +836,7 @@ const ThreadLoopSyncPatch = Schema.Struct({
   nextRunAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   lastRunAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   lastError: Schema.optional(Schema.NullOr(Schema.String)),
+  runsSinceCompaction: Schema.optional(NonNegativeInt),
 });
 
 const ThreadLoopSyncCommand = Schema.Struct({

@@ -1002,6 +1002,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             prompt: event.payload.loop.prompt,
             intervalMinutes: event.payload.loop.intervalMinutes,
             compactTiming: event.payload.loop.compactTiming ?? "disabled",
+            compactEveryRuns: event.payload.loop.compactEveryRuns ?? 1,
+            runsSinceCompaction: event.payload.loop.runsSinceCompaction ?? 0,
             nextRunAt: event.payload.loop.nextRunAt,
             lastRunAt: event.payload.loop.lastRunAt,
             lastError: event.payload.loop.lastError,

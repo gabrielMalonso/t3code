@@ -32,6 +32,11 @@ function buildThreadLoopFromUpsert(input: {
     existingLoop === null ||
     existingLoop === undefined ||
     existingLoop.intervalMinutes !== command.intervalMinutes;
+  const compactTiming = command.compactTiming ?? existingLoop?.compactTiming ?? "disabled";
+  const compactEveryRuns = command.compactEveryRuns ?? existingLoop?.compactEveryRuns ?? 1;
+  const compactSettingsChanged =
+    (existingLoop?.compactTiming ?? "disabled") !== compactTiming ||
+    (existingLoop?.compactEveryRuns ?? 1) !== compactEveryRuns;
   const nextRunAt = command.enabled
     ? intervalChanged || existingLoop?.nextRunAt === null || existingLoop?.nextRunAt === undefined
       ? advanceLoopRunAt(command.createdAt, command.intervalMinutes)
@@ -42,7 +47,12 @@ function buildThreadLoopFromUpsert(input: {
     enabled: command.enabled,
     prompt: command.prompt,
     intervalMinutes: command.intervalMinutes,
-    compactTiming: command.compactTiming ?? existingLoop?.compactTiming ?? "disabled",
+    compactTiming,
+    compactEveryRuns,
+    runsSinceCompaction:
+      compactTiming === "disabled" || compactSettingsChanged
+        ? 0
+        : (existingLoop?.runsSinceCompaction ?? 0),
     nextRunAt,
     lastRunAt: existingLoop?.lastRunAt ?? null,
     lastError: existingLoop?.lastError ?? null,
@@ -715,6 +725,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
               : {}),
             ...(command.patch.lastError !== undefined
               ? { lastError: command.patch.lastError }
+              : {}),
+            ...(command.patch.runsSinceCompaction !== undefined
+              ? { runsSinceCompaction: command.patch.runsSinceCompaction }
               : {}),
             updatedAt: command.createdAt,
           },
