@@ -27,10 +27,6 @@ import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Lay
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
 import { layerConfig as SqlitePersistenceLive } from "../../persistence/Layers/Sqlite.ts";
 import { ProjectionThreadLoopRepository } from "../../persistence/Services/ProjectionThreadLoops.ts";
-import {
-  ProjectionTurnRepository,
-  type ProjectionTurn,
-} from "../../persistence/Services/ProjectionTurns.ts";
 import { RepositoryIdentityResolverLive } from "../../project/Layers/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
@@ -38,7 +34,6 @@ import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQu
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ThreadLoopScheduler } from "../Services/ThreadLoopScheduler.ts";
-import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { makeThreadLoopScheduler, ThreadLoopSchedulerLive } from "./ThreadLoopScheduler.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 
@@ -84,12 +79,12 @@ describe("ThreadLoopScheduler", () => {
     sessionStatus: "ready" | "running" | "interrupted" | "stopped" | "error";
     activeTurnId: string | null;
     compactTiming?: "disabled" | "before" | "after";
+    compactEveryRuns?: number;
+    runsSinceCompaction?: number;
     includeSecondDueLoop?: boolean;
-    compactThread?: (input: { readonly threadId: ThreadId }) => Effect.Effect<void>;
+    completeCompaction?: (threadId: ThreadId) => boolean;
   }) {
     const commandsRef = Effect.runSync(Ref.make<Array<OrchestrationCommand>>([]));
-    const compactCallsRef = Effect.runSync(Ref.make<Array<ThreadId>>([]));
-    const turnRowsRef = Effect.runSync(Ref.make<Array<ProjectionTurn>>([]));
     const loopsRef = Effect.runSync(
       Ref.make([
         {
@@ -98,6 +93,8 @@ describe("ThreadLoopScheduler", () => {
           prompt: "Check the deployment",
           intervalMinutes: 30,
           compactTiming: input.compactTiming ?? ("disabled" as const),
+          compactEveryRuns: input.compactEveryRuns ?? 1,
+          runsSinceCompaction: input.runsSinceCompaction ?? 0,
           nextRunAt: "2026-04-07T11:00:00.000Z",
           lastRunAt: null,
           lastError: null,
@@ -161,6 +158,8 @@ describe("ThreadLoopScheduler", () => {
               prompt: "Check the deployment",
               intervalMinutes: 30,
               compactTiming: input.compactTiming ?? "disabled",
+              compactEveryRuns: input.compactEveryRuns ?? 1,
+              runsSinceCompaction: input.runsSinceCompaction ?? 0,
               nextRunAt: "2026-04-07T11:00:00.000Z",
               lastRunAt: null,
               lastError: null,
@@ -181,6 +180,8 @@ describe("ThreadLoopScheduler", () => {
             prompt: "Check the second deployment",
             intervalMinutes: 30,
             compactTiming: "disabled" as const,
+            compactEveryRuns: 1,
+            runsSinceCompaction: 0,
             nextRunAt: "2026-04-07T11:00:00.000Z",
             lastRunAt: null,
             lastError: null,
@@ -216,6 +217,8 @@ describe("ThreadLoopScheduler", () => {
                   ...template.loop,
                   prompt: "Check the second deployment",
                   compactTiming: "disabled" as const,
+                  compactEveryRuns: 1,
+                  runsSinceCompaction: 0,
                 },
               },
             ],
@@ -274,26 +277,6 @@ describe("ThreadLoopScheduler", () => {
           }),
         ),
         Layer.provideMerge(
-          Layer.succeed(ProjectionTurnRepository, {
-            upsertByTurnId: () => Effect.void,
-            replacePendingTurnStart: () => Effect.void,
-            getPendingTurnStartByThreadId: () => Effect.succeed({ _tag: "None" }),
-            deletePendingTurnStartByThreadId: () => Effect.void,
-            listByThreadId: () => Ref.get(turnRowsRef),
-            getByTurnId: () => Effect.succeed({ _tag: "None" }),
-            clearCheckpointTurnConflict: () => Effect.void,
-            deleteByThreadId: () => Effect.void,
-          } as never),
-        ),
-        Layer.provideMerge(
-          Layer.succeed(ProviderService, {
-            compactThread: (compactInput: { readonly threadId: ThreadId }) =>
-              Ref.update(compactCallsRef, (calls) => [...calls, compactInput.threadId]).pipe(
-                Effect.andThen(input.compactThread?.(compactInput) ?? Effect.void),
-              ),
-          } as never),
-        ),
-        Layer.provideMerge(
           Layer.mock(ProjectionSnapshotQuery)({
             getCommandReadModel: () => Ref.get(readModelRef),
           }),
@@ -326,8 +309,38 @@ describe("ThreadLoopScheduler", () => {
                               ...(command.patch.lastError !== undefined
                                 ? { lastError: command.patch.lastError }
                                 : {}),
+                              ...(command.patch.runsSinceCompaction !== undefined
+                                ? { runsSinceCompaction: command.patch.runsSinceCompaction }
+                                : {}),
                               updatedAt: command.createdAt,
                             },
+                          },
+                    ),
+                  }));
+                }
+                if (
+                  command.type === "thread.compact.start" &&
+                  (input.completeCompaction?.(command.threadId) ?? true)
+                ) {
+                  yield* Ref.update(readModelRef, (readModel) => ({
+                    ...readModel,
+                    threads: readModel.threads.map((thread) =>
+                      thread.id !== command.threadId
+                        ? thread
+                        : {
+                            ...thread,
+                            activities: [
+                              ...thread.activities,
+                              {
+                                id: EventId.make(`evt-compact-${String(thread.id)}`),
+                                tone: "info" as const,
+                                kind: "context-compaction",
+                                summary: "Context compacted",
+                                payload: {},
+                                turnId: null,
+                                createdAt: command.createdAt,
+                              },
+                            ],
                           },
                     ),
                   }));
@@ -346,10 +359,8 @@ describe("ThreadLoopScheduler", () => {
 
     return {
       commandsRef,
-      compactCallsRef,
       loopsRef,
       readModelRef,
-      turnRowsRef,
       eventPubSub,
     };
   }
@@ -455,11 +466,45 @@ describe("ThreadLoopScheduler", () => {
     );
   });
 
-  it("waits for the loop turn itself before after-run compaction", async () => {
+  it("uses the compact command before a due loop when the counter is reached", async () => {
     const harness = await createHarness({
       sessionStatus: "ready",
       activeTurnId: null,
-      compactTiming: "after",
+      compactTiming: "before",
+      compactEveryRuns: 3,
+      runsSinceCompaction: 2,
+    });
+
+    await waitFor(async () => {
+      const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
+      return (
+        commands.some((command) => command.type === "thread.compact.start") &&
+        commands.some((command) => command.type === "thread.turn.start")
+      );
+    });
+
+    const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
+    const compactStartIndex = commands.findIndex(
+      (command) => command.type === "thread.compact.start",
+    );
+    const turnStartIndex = commands.findIndex((command) => command.type === "thread.turn.start");
+    assert.isAtLeast(compactStartIndex, 0);
+    assert.isAtLeast(turnStartIndex, 0);
+    assert.isBelow(compactStartIndex, turnStartIndex);
+    assert.isTrue(
+      commands.some(
+        (command) => command.type === "thread.loop.sync" && command.patch.runsSinceCompaction === 0,
+      ),
+    );
+  });
+
+  it("increments the compaction counter until the configured threshold", async () => {
+    const harness = await createHarness({
+      sessionStatus: "ready",
+      activeTurnId: null,
+      compactTiming: "before",
+      compactEveryRuns: 3,
+      runsSinceCompaction: 1,
     });
 
     await waitFor(async () => {
@@ -468,64 +513,12 @@ describe("ThreadLoopScheduler", () => {
     });
 
     const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
-    const turnStart = commands.find((command) => command.type === "thread.turn.start");
-    assert.isDefined(turnStart);
-    if (turnStart?.type !== "thread.turn.start") {
-      throw new Error("Expected thread.turn.start command.");
-    }
-
-    await Effect.runPromise(
-      Ref.set(harness.turnRowsRef, [
-        {
-          threadId: asThreadId("thread-1"),
-          turnId: TurnId.make("turn-loop"),
-          pendingMessageId: turnStart.message.messageId,
-          sourceProposedPlanThreadId: null,
-          sourceProposedPlanId: null,
-          assistantMessageId: null,
-          state: "running",
-          requestedAt: turnStart.createdAt,
-          startedAt: turnStart.createdAt,
-          completedAt: null,
-          checkpointTurnCount: null,
-          checkpointRef: null,
-          checkpointStatus: null,
-          checkpointFiles: [],
-        },
-      ]),
+    assert.isFalse(commands.some((command) => command.type === "thread.compact.start"));
+    assert.isTrue(
+      commands.some(
+        (command) => command.type === "thread.loop.sync" && command.patch.runsSinceCompaction === 2,
+      ),
     );
-    await Effect.runPromise(
-      Ref.update(harness.readModelRef, (readModel) => ({
-        ...readModel,
-        threads: readModel.threads.map((thread) =>
-          thread.id !== asThreadId("thread-1")
-            ? thread
-            : {
-                ...thread,
-                latestTurn: {
-                  turnId: TurnId.make("turn-manual"),
-                  state: "completed" as const,
-                  requestedAt: "2026-04-07T12:00:01.000Z",
-                  startedAt: "2026-04-07T12:00:01.000Z",
-                  completedAt: "2026-04-07T12:00:02.000Z",
-                  assistantMessageId: null,
-                },
-                session: thread.session
-                  ? {
-                      ...thread.session,
-                      status: "ready" as const,
-                      activeTurnId: null,
-                    }
-                  : null,
-              },
-        ),
-      })),
-    );
-
-    await new Promise((resolve) => setTimeout(resolve, 1_100));
-
-    const compactCalls = await Effect.runPromise(Ref.get(harness.compactCallsRef));
-    assert.deepEqual(compactCalls, []);
   });
 
   it("continues processing other due loops while before-run compaction waits", async () => {
@@ -534,8 +527,7 @@ describe("ThreadLoopScheduler", () => {
       activeTurnId: null,
       compactTiming: "before",
       includeSecondDueLoop: true,
-      compactThread: ({ threadId }) =>
-        threadId === asThreadId("thread-1") ? Effect.never : Effect.void,
+      completeCompaction: (threadId) => threadId !== asThreadId("thread-1"),
     });
 
     await waitFor(async () => {
@@ -639,11 +631,6 @@ describe("ThreadLoopScheduler", () => {
           Layer.provideMerge(orchestrationLayer),
           Layer.provideMerge(projectionSnapshotLayer),
           Layer.provideMerge(RepositoryIdentityResolverLive),
-          Layer.provideMerge(
-            Layer.succeed(ProviderService, {
-              compactThread: () => Effect.void,
-            } as never),
-          ),
           Layer.provide(NodeServices.layer),
         ),
       );
