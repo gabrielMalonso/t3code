@@ -4,8 +4,16 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { DEFAULT_SERVER_SETTINGS, type ServerSettings } from "@t3tools/contracts";
 import { ServerSettingsService } from "../serverSettings.ts";
-import { makeOpenPetsBridge, OpenPetsProcessError } from "./OpenPetsBridge.ts";
-import type { ProcessRunInput, ProcessRunOutput } from "../processRunner.ts";
+import {
+  makeOpenPetsBridge,
+  openPetsProcessErrorFromProcessRunError,
+  OpenPetsProcessError,
+} from "./OpenPetsBridge.ts";
+import {
+  ProcessSpawnError,
+  type ProcessRunInput,
+  type ProcessRunOutput,
+} from "../processRunner.ts";
 
 type RunCall = ProcessRunInput;
 
@@ -132,6 +140,26 @@ describe("OpenPetsBridge", () => {
     expect(status.lastError).toBeNull();
   });
 
+  it("records non-zero ping exits as reachability failures", async () => {
+    const runProcess = makeRunProcessStub(() => ({
+      ...processResult(),
+      code: ChildProcessSpawner.ExitCode(1),
+      stderr: "ping failed",
+    }));
+    const bridge = await Effect.runPromise(
+      makeBridge({
+        settings: { openPets: { enabled: true, binaryPath: "openpets" } },
+        runProcess: runProcess.run,
+      }),
+    );
+
+    const status = await Effect.runPromise(bridge.refreshStatus);
+
+    expect(status.cliAvailable).toBe(true);
+    expect(status.petReachable).toBe(false);
+    expect(status.lastError).toBe("ping failed");
+  });
+
   it("sends notify arguments and records the returned thread id", async () => {
     const runProcess = makeRunProcessStub(() => processResult("openpets-thread-1\n"));
     const bridge = await Effect.runPromise(
@@ -238,6 +266,35 @@ describe("OpenPetsBridge", () => {
     expect(status.petReachable).toBe(false);
   });
 
+  it("records non-zero notify exits without recording a successful event", async () => {
+    const runProcess = makeRunProcessStub(() => ({
+      ...processResult(),
+      code: ChildProcessSpawner.ExitCode(1),
+      stderr: "notify failed",
+    }));
+    const bridge = await Effect.runPromise(
+      makeBridge({
+        settings: { openPets: { enabled: true, binaryPath: "openpets" } },
+        runProcess: runProcess.run,
+      }),
+    );
+
+    await expect(
+      Effect.runPromise(
+        bridge.notify({
+          key: "thread-1:turn-1",
+          title: "T3 Code",
+          status: "running",
+          text: "Working.",
+        }),
+      ),
+    ).resolves.toBeUndefined();
+
+    const status = await Effect.runPromise(bridge.getStatus);
+    expect(status.lastError).toBe("notify failed");
+    expect(status.lastEventAt).toBeNull();
+  });
+
   it("records notify failures without erasing known CLI reachability", async () => {
     const runProcess = makeRunProcessStub((_call, index) => {
       if (index === 0) {
@@ -289,5 +346,17 @@ describe("OpenPetsBridge", () => {
     const status = await Effect.runPromise(bridge.getStatus);
     expect(status.enabled).toBe(false);
     expect(status.binaryPath).toBe("openpets");
+  });
+
+  it("preserves command-not-found messages from process runner spawn errors", () => {
+    const error = openPetsProcessErrorFromProcessRunError(
+      new ProcessSpawnError({
+        command: "openpets",
+        args: ["ping"],
+        cause: "ENOENT",
+      }),
+    );
+
+    expect(error.message).toBe("Command not found: openpets");
   });
 });
