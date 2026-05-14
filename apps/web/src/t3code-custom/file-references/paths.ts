@@ -56,19 +56,6 @@ function extensionOfPath(pathValue: string): string {
   return dotIndex === -1 ? "" : base.slice(dotIndex + 1);
 }
 
-export function isSupportedFileReferenceCandidate(file: File): boolean {
-  if (file.type === "application/pdf") {
-    return true;
-  }
-  if (file.type.startsWith("text/")) {
-    return true;
-  }
-  if (file.type === "application/json" || file.type === "application/xml") {
-    return true;
-  }
-  return TEXT_LIKE_EXTENSIONS.has(extensionOfPath(file.name));
-}
-
 export function fileReferenceDedupKey(pathValue: string): string {
   return normalizePathValue(pathValue);
 }
