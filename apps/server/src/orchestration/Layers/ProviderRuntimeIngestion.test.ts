@@ -2979,6 +2979,44 @@ describe("ProviderRuntimeIngestion", () => {
     expect(activity?.tone).toBe("info");
   });
 
+  it("projects completed context compaction items into context compaction activities", async () => {
+    const harness = await createHarness();
+    const now = "2099-01-01T00:00:00.000Z";
+
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-context-compaction-item-completed"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-1"),
+      itemId: asItemId("item-context-compaction"),
+      payload: {
+        itemType: "context_compaction",
+        status: "completed",
+        detail: "Compacted context",
+      },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) =>
+          activity.id === "evt-context-compaction-item-completed",
+      ),
+    );
+
+    const activity = thread.activities.find(
+      (candidate: ProviderRuntimeTestActivity) =>
+        candidate.id === "evt-context-compaction-item-completed",
+    );
+    expect(activity?.kind).toBe("context-compaction");
+    expect(activity?.summary).toBe("Context compacted");
+    expect(activity?.payload).toMatchObject({
+      itemType: "context_compaction",
+      detail: "Compacted context",
+    });
+  });
+
   it("projects Codex task lifecycle chunks into thread activities", async () => {
     const harness = await createHarness();
     const now = "2099-01-01T00:00:00.000Z";

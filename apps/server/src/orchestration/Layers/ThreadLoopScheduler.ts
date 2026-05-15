@@ -12,6 +12,7 @@ import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
 import { ProjectionThreadLoopRepositoryLive } from "../../persistence/Layers/ProjectionThreadLoops.ts";
@@ -31,6 +32,7 @@ import { sessionStatusAllowsActiveTurn } from "../sessionState.ts";
 const THREAD_LOOP_SCHEDULER_INTERVAL_MS = 10_000;
 const THREAD_LOOP_COMPACT_POLL_MS = 1_000;
 const THREAD_LOOP_COMPACT_TIMEOUT_MS = 10 * 60_000;
+const THREAD_LOOP_COMPACT_CONTEXT_USAGE_THRESHOLD = 0.5;
 
 class ThreadLoopSchedulerError extends Data.TaggedError("ThreadLoopSchedulerError")<{
   readonly message: string;
@@ -78,6 +80,37 @@ function nextRunsSinceCompactionAfterRun(loop: {
     return 0;
   }
   return Math.max(0, loop.runsSinceCompaction ?? 0) + 1;
+}
+
+function getPayloadNumber(payload: unknown, key: string): number | null {
+  if (typeof payload !== "object" || payload === null || !(key in payload)) {
+    return null;
+  }
+  const value = (payload as Record<string, unknown>)[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function hasCompactableContextUsage(thread: {
+  readonly activities: ReadonlyArray<{
+    readonly kind: string;
+    readonly createdAt: string;
+    readonly payload: unknown;
+  }>;
+}): boolean {
+  const latestUsage = thread.activities
+    .filter((activity) => activity.kind === "context-window.updated")
+    .toSorted((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+    .at(0);
+  if (!latestUsage) {
+    return false;
+  }
+
+  const usedTokens = getPayloadNumber(latestUsage.payload, "usedTokens");
+  const maxTokens = getPayloadNumber(latestUsage.payload, "maxTokens");
+  if (usedTokens === null || maxTokens === null || maxTokens <= 0) {
+    return false;
+  }
+  return usedTokens / maxTokens >= THREAD_LOOP_COMPACT_CONTEXT_USAGE_THRESHOLD;
 }
 
 export const makeThreadLoopScheduler = Effect.gen(function* () {
@@ -260,8 +293,9 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
       const requestedAtMs = Date.parse(input.compactRequestedAt);
 
       for (;;) {
-        const readModel = yield* projectionSnapshotQuery.getCommandReadModel();
-        const latestThread = readModel.threads.find((entry) => entry.id === input.threadId);
+        const latestThread = yield* projectionSnapshotQuery
+          .getThreadDetailById(input.threadId)
+          .pipe(Effect.map(Option.getOrNull));
         const activity = latestThread?.activities
           .filter(
             (candidate) =>
@@ -313,7 +347,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
       });
     });
 
-    const shouldCompact = shouldCompactBeforeRun(thread.loop);
+    const shouldCompact = shouldCompactBeforeRun(thread.loop) && hasCompactableContextUsage(thread);
     const runsSinceCompactionAfterRun = nextRunsSinceCompactionAfterRun(thread.loop);
 
     if (shouldCompact) {
@@ -322,6 +356,26 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         createdAt: nowIso,
       }).pipe(
         Effect.as(true),
+        Effect.catchTag("ThreadLoopSchedulerError", (error) =>
+          Effect.gen(function* () {
+            yield* syncLoopPatch({
+              threadId: loop.threadId,
+              createdAt: nowIso,
+              patch: {
+                lastError: error.message,
+              },
+            });
+            yield* appendLoopActivity({
+              threadId: loop.threadId,
+              kind: "loop.tick.failed",
+              summary: "Loop context compaction failed",
+              detail: error.message,
+              tone: "error",
+              createdAt: nowIso,
+            });
+            return false;
+          }),
+        ),
         Effect.catchCause((cause) =>
           Effect.gen(function* () {
             const detail = Cause.pretty(cause);
