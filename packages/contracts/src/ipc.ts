@@ -31,6 +31,8 @@ import type {
   ServerListProviderSkillsInput,
   ServerListProviderSkillsResult,
   ServerProcessDiagnosticsResult,
+  ServerProcessResourceHistoryInput,
+  ServerProcessResourceHistoryResult,
   ServerProviderUpdateInput,
   ServerProviderUpdatedPayload,
   ServerRemoveKeybindingResult,
@@ -488,6 +490,9 @@ export interface LocalApi {
     discoverSourceControl: () => Promise<SourceControlDiscoveryResult>;
     getTraceDiagnostics: () => Promise<ServerTraceDiagnosticsResult>;
     getProcessDiagnostics: () => Promise<ServerProcessDiagnosticsResult>;
+    getProcessResourceHistory: (
+      input: ServerProcessResourceHistoryInput,
+    ) => Promise<ServerProcessResourceHistoryResult>;
     signalProcess: (input: ServerSignalProcessInput) => Promise<ServerSignalProcessResult>;
   };
 }
