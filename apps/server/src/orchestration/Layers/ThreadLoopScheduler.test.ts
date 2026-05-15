@@ -83,6 +83,8 @@ describe("ThreadLoopScheduler", () => {
     runsSinceCompaction?: number;
     includeSecondDueLoop?: boolean;
     completeCompaction?: (threadId: ThreadId) => boolean;
+    compactionFailureDetail?: string;
+    contextUsageRatio?: number;
     busyAfterCompaction?: boolean;
   }) {
     const commandsRef = Effect.runSync(Ref.make<Array<OrchestrationCommand>>([]));
@@ -104,6 +106,19 @@ describe("ThreadLoopScheduler", () => {
         },
       ]),
     );
+    const contextUsageRatio = input.contextUsageRatio ?? 0.75;
+    const contextWindowActivity = {
+      id: EventId.make("evt-context-window-thread-1"),
+      tone: "info" as const,
+      kind: "context-window.updated",
+      summary: "Context window updated",
+      payload: {
+        usedTokens: Math.round(200_000 * contextUsageRatio),
+        maxTokens: 200_000,
+      },
+      turnId: null,
+      createdAt: "2026-04-07T10:59:00.000Z",
+    };
     const readModelRef = Effect.runSync(
       Ref.make<OrchestrationReadModel>({
         snapshotSequence: 0,
@@ -143,7 +158,7 @@ describe("ThreadLoopScheduler", () => {
             deletedAt: null,
             messages: [],
             proposedPlans: [],
-            activities: [],
+            activities: [contextWindowActivity],
             checkpoints: [],
             session: {
               threadId: asThreadId("thread-1"),
@@ -280,6 +295,13 @@ describe("ThreadLoopScheduler", () => {
         Layer.provideMerge(
           Layer.mock(ProjectionSnapshotQuery)({
             getCommandReadModel: () => Ref.get(readModelRef),
+            getThreadDetailById: (threadId) =>
+              Ref.get(readModelRef).pipe(
+                Effect.map((readModel) => {
+                  const thread = readModel.threads.find((entry) => entry.id === threadId);
+                  return thread ? { _tag: "Some", value: thread } : { _tag: "None" };
+                }),
+              ) as never,
           }),
         ),
         Layer.provideMerge(
@@ -353,6 +375,30 @@ describe("ThreadLoopScheduler", () => {
                                     : null,
                                 }
                               : {}),
+                          },
+                    ),
+                  }));
+                }
+                if (command.type === "thread.compact.start" && input.compactionFailureDetail) {
+                  yield* Ref.update(readModelRef, (readModel) => ({
+                    ...readModel,
+                    threads: readModel.threads.map((thread) =>
+                      thread.id !== command.threadId
+                        ? thread
+                        : {
+                            ...thread,
+                            activities: [
+                              ...thread.activities,
+                              {
+                                id: EventId.make(`evt-compact-failed-${String(thread.id)}`),
+                                tone: "error" as const,
+                                kind: "provider.compact.failed",
+                                summary: "Context compaction failed",
+                                payload: { detail: input.compactionFailureDetail },
+                                turnId: null,
+                                createdAt: command.createdAt,
+                              },
+                            ],
                           },
                     ),
                   }));
@@ -506,6 +552,57 @@ describe("ThreadLoopScheduler", () => {
     assert.isTrue(
       commands.some(
         (command) => command.type === "thread.loop.sync" && command.patch.runsSinceCompaction === 0,
+      ),
+    );
+  });
+
+  it("skips before-run compaction when context usage is below half", async () => {
+    const harness = await createHarness({
+      sessionStatus: "ready",
+      activeTurnId: null,
+      compactTiming: "before",
+      compactEveryRuns: 1,
+      runsSinceCompaction: 0,
+      contextUsageRatio: 0.25,
+    });
+
+    await waitFor(async () => {
+      const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
+      return commands.some((command) => command.type === "thread.turn.start");
+    });
+
+    const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
+    assert.isFalse(commands.some((command) => command.type === "thread.compact.start"));
+    assert.isTrue(commands.some((command) => command.type === "thread.turn.start"));
+  });
+
+  it("stops waiting when provider compaction fails", async () => {
+    const harness = await createHarness({
+      sessionStatus: "ready",
+      activeTurnId: null,
+      compactTiming: "before",
+      compactEveryRuns: 1,
+      runsSinceCompaction: 0,
+      completeCompaction: () => false,
+      compactionFailureDetail: "Provider rejected compaction",
+    });
+
+    await waitFor(async () => {
+      const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
+      return commands.some(
+        (command) =>
+          command.type === "thread.activity.append" && command.activity.kind === "loop.tick.failed",
+      );
+    });
+
+    const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
+    assert.isTrue(commands.some((command) => command.type === "thread.compact.start"));
+    assert.isFalse(commands.some((command) => command.type === "thread.turn.start"));
+    assert.isTrue(
+      commands.some(
+        (command) =>
+          command.type === "thread.loop.sync" &&
+          command.patch.lastError === "Provider rejected compaction",
       ),
     );
   });
