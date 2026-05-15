@@ -68,7 +68,11 @@ import {
 } from "../environments/primary";
 import { MobileNeutralSurface } from "../mobile/MobileNeutralSurface";
 import { isMobileCapacitorRuntime } from "../mobile/platform";
-import { reconnectActiveMobileProfile, useMobileRuntimeStore } from "../mobile/runtime";
+import {
+  reconnectActiveMobileProfile,
+  reconnectActiveMobileProfileIfStale,
+  useMobileRuntimeStore,
+} from "../mobile/runtime";
 import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
 
 export const Route = createRootRouteWithContext<{
@@ -192,6 +196,7 @@ function MobileRootRouteView() {
       <AnchoredToastProvider>
         <AuthenticatedTracingBootstrap />
         <ServerStateBootstrap environmentId={activeEnvironmentId} />
+        <MobileResumeReconnectBootstrap />
         <EventRouter syncPrimaryDescriptor={false} />
         <WebSocketConnectionCoordinator reconnect={reconnectActiveMobileProfile} />
         <SlowRpcAckToastCoordinator />
@@ -205,6 +210,69 @@ function MobileRootRouteView() {
       </AnchoredToastProvider>
     </ToastProvider>
   );
+}
+
+function MobileResumeReconnectBootstrap() {
+  const reconnectIfStale = useEffectEvent((reason: string) => {
+    void reconnectActiveMobileProfileIfStale().catch((error) => {
+      console.warn("Mobile WebSocket reconnect after app resume failed", {
+        reason,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  });
+
+  useEffect(() => {
+    let disposed = false;
+    let lastHiddenAt: number | null = null;
+    let removeNativeResumeListener: (() => Promise<void>) | null = null;
+
+    const reconnect = (reason: string) => {
+      if (disposed) {
+        return;
+      }
+      reconnectIfStale(reason);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        lastHiddenAt = Date.now();
+        return;
+      }
+      if (document.visibilityState === "visible" && lastHiddenAt !== null) {
+        lastHiddenAt = null;
+        reconnect("visibilitychange");
+      }
+    };
+
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted || lastHiddenAt !== null) {
+        lastHiddenAt = null;
+        reconnect("pageshow");
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pageshow", handlePageShow);
+
+    void import("@capacitor/app")
+      .then(async (module) => {
+        const listener = await module.App.addListener("resume", () => {
+          reconnect("capacitor-resume");
+        });
+        removeNativeResumeListener = () => listener.remove();
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pageshow", handlePageShow);
+      void removeNativeResumeListener?.();
+    };
+  }, []);
+
+  return null;
 }
 
 function HostedStaticEnvironmentBootstrap() {

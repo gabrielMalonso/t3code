@@ -26,6 +26,7 @@
 - O servico antigo `Open` foi removido junto com o upstream; editor/browser launch agora vive em `apps/server/src/process/externalLauncher.ts`
 - O fallback local de Ghostty/macOS foi reaplicado como diferencial pequeno dentro do `ExternalLauncher`, sem ressuscitar `open.ts`
 - `ChatComposer.tsx` absorveu o refactor upstream de refs/context providers e manteve file references, skills de workspace, thread loop e compactacao como extensoes locais
+- O app mobile nao monta o `EnvironmentConnectionManagerBootstrap`; o reconnect apos background/resume foi mantido no runtime mobile com checagem de heartbeat stale
 - O composer agora usa o fluxo nativo do upstream para chips e busca de skills/slash commands
 - Removido `apps/web/src/components/composerInlineTextNodes.ts`, que virou duplicacao da infraestrutura nova do upstream
 - `ChatComposer.tsx` voltou a depender de `selectedProviderStatus.skills` e `selectedProviderStatus.slashCommands`, em vez de puxar catalogo paralelo so para UI
@@ -111,6 +112,8 @@
   - mock de `OpenPetsBridge` e novo mock de `ExternalLauncher` em `server.test.ts`
   - `onPasteCapture` e snapshot ampliado em `ComposerPromptEditor.tsx`
   - file references, skills de workspace, thread loop controls, compactacao de contexto e `showPlanSidebar` no `ChatComposer.tsx`
+  - reconnect stale no app mobile Capacitor apos `visibilitychange`, `pageshow` ou `App.resume`, sem acordar primary/saved environments
+  - fetch bearer-aware de assets mobile agora reescreve anexos/favicons para o `httpBaseUrl` do profile ativo, evitando misturar LAN e Tailscale no mesmo `environmentId`
   - opt-in explicito do feed de update desktop em `scripts/build-desktop-artifact.test.ts`
   - dependencias do lockfile regeneradas com `bun install`, preservando Capacitor/mobile e removendo residuos do launch antigo
 - O que foi deliberadamente deixado de fora do replay:
@@ -124,6 +127,7 @@
   - `apps/server/src/server.test.ts` — `hotspot-compartilhado`
   - `apps/web/src/components/ComposerPromptEditor.tsx` — `adaptador-core`
   - `apps/web/src/components/chat/ChatComposer.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/mobile/runtime.ts`, `apps/web/src/mobile/assets.ts` e `apps/web/src/routes/__root.tsx` — `adaptador-core` mobile
   - `bun.lock` — `hotspot-compartilhado`
   - `scripts/build-desktop-artifact.test.ts` — `adaptador-core`
   - `apps/server/src/open.ts` — `core-puro removido`
@@ -133,6 +137,7 @@
   - `bun typecheck`
   - `bun run test src/process/externalLauncher.test.ts src/server.test.ts` em `apps/server`
   - `bun run test src/t3code-custom/file-references/resolveFiles.test.ts src/t3code-custom/file-references/paste.test.ts src/t3code-custom/file-references/serialization.test.ts src/components/chat/MessagesTimeline.logic.test.ts src/components/chat/MessagesTimeline.test.tsx` em `apps/web`
+  - `bun run test src/mobile/assets.test.ts src/mobile/runtime.test.ts src/mobile/pairingTarget.test.ts src/mobile/deepLink.test.ts src/environments/runtime/service.threadSubscriptions.test.ts src/environments/runtime/connection.test.ts src/environments/runtime/catalog.test.ts` em `apps/web`
   - `bun run test build-desktop-artifact.test.ts` em `scripts`
 
 ## 2026-05-10 — Sync ate `b793401ae`
