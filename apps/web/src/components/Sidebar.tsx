@@ -26,7 +26,8 @@ import {
   DndContext,
   type DragCancelEvent,
   type CollisionDetection,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   type DragStartEvent,
   closestCorners,
   pointerWithin,
@@ -214,6 +215,9 @@ const SIDEBAR_LIST_ANIMATION_OPTIONS = {
   duration: 180,
   easing: "ease-out",
 } as const;
+const PROJECT_DRAG_MOUSE_DISTANCE_PX = 6;
+const PROJECT_DRAG_TOUCH_DELAY_MS = 180;
+const PROJECT_DRAG_TOUCH_TOLERANCE_PX = 8;
 const EMPTY_THREAD_JUMP_LABELS = new Map<string, string>();
 const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> = {
   repository: "Group by repository",
@@ -1987,7 +1991,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           ref={isManualProjectSorting ? dragHandleProps?.setActivatorNodeRef : undefined}
           size="sm"
           className={`gap-2 px-2 py-1.5 pr-8 text-left hover:bg-accent group-hover/project-header:bg-accent group-hover/project-header:text-sidebar-accent-foreground max-sm:pr-14 ${
-            isManualProjectSorting ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
+            isManualProjectSorting
+              ? "cursor-grab select-none touch-manipulation active:cursor-grabbing"
+              : "cursor-pointer"
           }`}
           {...(isManualProjectSorting && dragHandleProps ? dragHandleProps.attributes : {})}
           {...(isManualProjectSorting && dragHandleProps ? dragHandleProps.listeners : {})}
@@ -3003,8 +3009,14 @@ export default function Sidebar() {
   );
 
   const projectDnDSensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 6 },
+    useSensor(MouseSensor, {
+      activationConstraint: { distance: PROJECT_DRAG_MOUSE_DISTANCE_PX },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: PROJECT_DRAG_TOUCH_DELAY_MS,
+        tolerance: PROJECT_DRAG_TOUCH_TOLERANCE_PX,
+      },
     }),
   );
   const projectCollisionDetection = useCallback<CollisionDetection>((args) => {
