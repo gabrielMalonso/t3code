@@ -14,6 +14,23 @@ function hasScheme(value: string): boolean {
   return /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(value);
 }
 
+function isPairingUrlLike(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.includes("://") || trimmed.startsWith("/");
+}
+
+export function shouldRequireExplicitMobileHost(input: {
+  readonly mode: MobileConnectionMode;
+  readonly pairingInput: string;
+  readonly host: string;
+}): boolean {
+  return (
+    input.mode === "tailscale" &&
+    input.host.trim().length === 0 &&
+    !isPairingUrlLike(input.pairingInput)
+  );
+}
+
 function isPrivateOrTailscaleHost(hostname: string): boolean {
   const normalized = hostname.toLowerCase();
   return (
@@ -29,7 +46,7 @@ export function inferMobileConnectionModeFromPairingInput(
   rawValue: string,
 ): MobileConnectionMode | null {
   const trimmed = rawValue.trim();
-  if (!trimmed.includes("://") && !trimmed.startsWith("/")) {
+  if (!isPairingUrlLike(trimmed)) {
     return null;
   }
 
@@ -146,7 +163,7 @@ export function resolveMobilePairingTarget(input: {
   }
 
   const fromPairingUrl = (() => {
-    if (!pairingInput.includes("://") && !pairingInput.startsWith("/")) {
+    if (!isPairingUrlLike(pairingInput)) {
       return null;
     }
     try {

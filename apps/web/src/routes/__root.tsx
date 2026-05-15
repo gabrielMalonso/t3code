@@ -226,6 +226,7 @@ function MobileResumeReconnectBootstrap() {
     let disposed = false;
     let lastHiddenAt: number | null = null;
     let removeNativeResumeListener: (() => Promise<void>) | null = null;
+    let removeNetworkListener: (() => Promise<void>) | null = null;
 
     const reconnect = (reason: string) => {
       if (disposed) {
@@ -264,11 +265,27 @@ function MobileResumeReconnectBootstrap() {
       })
       .catch(() => undefined);
 
+    void import("@capacitor/network")
+      .then(async (module) => {
+        const status = await module.Network.getStatus();
+        if (status.connected) {
+          reconnect("network-initial");
+        }
+        const listener = await module.Network.addListener("networkStatusChange", (nextStatus) => {
+          if (nextStatus.connected) {
+            reconnect("network-restored");
+          }
+        });
+        removeNetworkListener = () => listener.remove();
+      })
+      .catch(() => undefined);
+
     return () => {
       disposed = true;
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("pageshow", handlePageShow);
       void removeNativeResumeListener?.();
+      void removeNetworkListener?.();
     };
   }, []);
 
