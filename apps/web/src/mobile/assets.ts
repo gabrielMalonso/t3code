@@ -12,6 +12,18 @@ function cacheKey(profileId: string, url: string): string {
   return `${profileId}:${url}`;
 }
 
+export function resolveMobileBearerAssetFetchUrl(input: {
+  readonly profileHttpBaseUrl: string;
+  readonly url: string;
+}): string {
+  const sourceUrl = new URL(input.url, window.location.origin);
+  const targetUrl = new URL(input.profileHttpBaseUrl);
+  targetUrl.pathname = sourceUrl.pathname;
+  targetUrl.search = sourceUrl.search;
+  targetUrl.hash = "";
+  return targetUrl.toString();
+}
+
 export function isMobileBearerAssetUrl(url: string): boolean {
   try {
     const parsed = new URL(url, window.location.origin);
@@ -32,13 +44,17 @@ export async function resolveMobileBearerAssetBlobUrl(input: {
     return input.url;
   }
 
-  const key = cacheKey(profile.profileId, input.url);
+  const fetchUrl = resolveMobileBearerAssetFetchUrl({
+    profileHttpBaseUrl: profile.httpBaseUrl,
+    url: input.url,
+  });
+  const key = cacheKey(profile.profileId, fetchUrl);
   const cached = blobUrlCache.get(key);
   if (cached) {
     return cached.blobUrl;
   }
 
-  const response = await fetch(input.url, {
+  const response = await fetch(fetchUrl, {
     headers: {
       authorization: `Bearer ${profile.bearerToken}`,
     },

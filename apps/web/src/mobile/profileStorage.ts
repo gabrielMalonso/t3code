@@ -2,6 +2,11 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { create } from "zustand";
 
 import type { MobileConnectionMode } from "./pairingTarget";
+import {
+  readMobileProfileSecret,
+  removeMobileProfileSecret,
+  writeMobileProfileSecret,
+} from "./secretStorage";
 
 export interface MobileConnectionProfile {
   readonly profileId: string;
@@ -18,8 +23,12 @@ export interface MobileConnectionProfile {
 
 interface MobileProfileDocument {
   readonly version: 1;
-  readonly profiles: ReadonlyArray<MobileConnectionProfile>;
+  readonly profiles: ReadonlyArray<PersistedMobileConnectionProfile>;
 }
+
+type PersistedMobileConnectionProfile = Omit<MobileConnectionProfile, "bearerToken"> & {
+  readonly bearerToken?: string;
+};
 
 interface MobileProfileStore {
   readonly hydrated: boolean;
@@ -77,18 +86,20 @@ function parseProfileDocument(raw: string | null): MobileProfileDocument {
     }
     return {
       version: 1,
-      profiles: parsed.profiles.filter(isMobileConnectionProfile),
+      profiles: parsed.profiles.filter(isPersistedMobileConnectionProfile),
     };
   } catch {
     return { version: 1, profiles: [] };
   }
 }
 
-function isMobileConnectionProfile(value: unknown): value is MobileConnectionProfile {
+function isPersistedMobileConnectionProfile(
+  value: unknown,
+): value is PersistedMobileConnectionProfile {
   if (!value || typeof value !== "object") {
     return false;
   }
-  const candidate = value as Partial<MobileConnectionProfile>;
+  const candidate = value as Partial<PersistedMobileConnectionProfile>;
   return (
     typeof candidate.profileId === "string" &&
     typeof candidate.environmentId === "string" &&
@@ -96,15 +107,61 @@ function isMobileConnectionProfile(value: unknown): value is MobileConnectionPro
     (candidate.mode === "tailscale" || candidate.mode === "lan") &&
     typeof candidate.httpBaseUrl === "string" &&
     typeof candidate.wsBaseUrl === "string" &&
-    typeof candidate.bearerToken === "string" &&
+    (candidate.bearerToken === undefined || typeof candidate.bearerToken === "string") &&
     typeof candidate.sessionExpiresAt === "string" &&
     typeof candidate.createdAt === "string" &&
     (candidate.lastConnectedAt === null || typeof candidate.lastConnectedAt === "string")
   );
 }
 
+function toPersistedProfile(profile: MobileConnectionProfile): PersistedMobileConnectionProfile {
+  return {
+    profileId: profile.profileId,
+    environmentId: profile.environmentId,
+    label: profile.label,
+    mode: profile.mode,
+    httpBaseUrl: profile.httpBaseUrl,
+    wsBaseUrl: profile.wsBaseUrl,
+    sessionExpiresAt: profile.sessionExpiresAt,
+    createdAt: profile.createdAt,
+    lastConnectedAt: profile.lastConnectedAt,
+  };
+}
+
 async function persistProfiles(profiles: ReadonlyArray<MobileConnectionProfile>): Promise<void> {
-  await writeStorageValue(JSON.stringify({ version: 1, profiles } satisfies MobileProfileDocument));
+  await writeStorageValue(
+    JSON.stringify({
+      version: 1,
+      profiles: profiles.map(toPersistedProfile),
+    } satisfies MobileProfileDocument),
+  );
+}
+
+async function materializeProfile(
+  profile: PersistedMobileConnectionProfile,
+): Promise<MobileConnectionProfile | null> {
+  const storedSecret = await readMobileProfileSecret(profile.profileId);
+  const bearerToken = storedSecret ?? profile.bearerToken ?? "";
+  if (!bearerToken) {
+    return null;
+  }
+
+  if (profile.bearerToken && !storedSecret) {
+    await writeMobileProfileSecret(profile.profileId, profile.bearerToken);
+  }
+
+  return {
+    profileId: profile.profileId,
+    environmentId: profile.environmentId,
+    label: profile.label,
+    mode: profile.mode,
+    httpBaseUrl: profile.httpBaseUrl,
+    wsBaseUrl: profile.wsBaseUrl,
+    bearerToken,
+    sessionExpiresAt: profile.sessionExpiresAt,
+    createdAt: profile.createdAt,
+    lastConnectedAt: profile.lastConnectedAt,
+  };
 }
 
 export const useMobileProfileStore = create<MobileProfileStore>((set, get) => ({
@@ -119,11 +176,15 @@ export const useMobileProfileStore = create<MobileProfileStore>((set, get) => ({
     }
 
     hydrationPromise = readStorageValue()
-      .then((raw) => {
+      .then(async (raw) => {
+        const profiles = (
+          await Promise.all(parseProfileDocument(raw).profiles.map(materializeProfile))
+        ).filter((profile): profile is MobileConnectionProfile => profile !== null);
         set({
           hydrated: true,
-          profiles: parseProfileDocument(raw).profiles,
+          profiles,
         });
+        await persistProfiles(profiles);
       })
       .finally(() => {
         hydrationPromise = null;
@@ -131,6 +192,7 @@ export const useMobileProfileStore = create<MobileProfileStore>((set, get) => ({
     return hydrationPromise;
   },
   upsert: async (profile) => {
+    await writeMobileProfileSecret(profile.profileId, profile.bearerToken);
     const profiles = [
       profile,
       ...get().profiles.filter((entry) => entry.profileId !== profile.profileId),
@@ -139,6 +201,7 @@ export const useMobileProfileStore = create<MobileProfileStore>((set, get) => ({
     await persistProfiles(profiles);
   },
   remove: async (profileId) => {
+    await removeMobileProfileSecret(profileId);
     const profiles = get().profiles.filter((entry) => entry.profileId !== profileId);
     set({ profiles });
     await persistProfiles(profiles);

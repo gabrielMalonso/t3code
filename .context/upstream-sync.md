@@ -2,10 +2,10 @@
 
 ## Status atual
 
-- Data: 2026-05-10
+- Data: 2026-05-15
 - Branch de trabalho: `main`
-- Upstream integrado nesta wave: `b793401ae` (`upstream/main`)
-- Estado: merge aplicado em `--no-commit`; upstream desktop/Effect/archive-shell absorvido e custom vivo reencaixado em slots/adaptadores pequenos
+- Upstream integrado nesta wave: `d1e85c4e8` (`upstream/main`)
+- Estado: merge aplicado em `--no-commit`; upstream launcher/process, composer refs, timeline perf, diagnostics, VCS hardening e marketing absorvidos; custom vivo reencaixado em slots/adaptadores pequenos
 - Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
 ## Features locais vivas
@@ -19,9 +19,14 @@
 - `apps/web/src/t3code-custom/terminal/fontFamily.ts`: policy local da fonte monoespacada no terminal e blocos de codigo
 - `apps/mobile` + `apps/web/src/mobile`: app mobile Capacitor Android-first/iOS-compatible como cliente nativo do `apps/web`, com pareamento LAN/Tailscale e runtime mobile de um environment ativo por vez
 - `scripts/build-desktop-artifact.ts`: builds desktop do fork so criam feed de auto-update quando `T3CODE_DESKTOP_UPDATE_REPOSITORY` estiver definido explicitamente
+- `apps/server/src/process/externalLauncher.ts`: fallbacks locais de editor no macOS/Ghostty em cima do `ExternalLauncher` upstream
 
 ## Refatoracoes feitas para sair da frente do upstream
 
+- O servico antigo `Open` foi removido junto com o upstream; editor/browser launch agora vive em `apps/server/src/process/externalLauncher.ts`
+- O fallback local de Ghostty/macOS foi reaplicado como diferencial pequeno dentro do `ExternalLauncher`, sem ressuscitar `open.ts`
+- `ChatComposer.tsx` absorveu o refactor upstream de refs/context providers e manteve file references, skills de workspace, thread loop e compactacao como extensoes locais
+- O app mobile nao monta o `EnvironmentConnectionManagerBootstrap`; o reconnect apos background/resume foi mantido no runtime mobile com checagem de heartbeat stale
 - O composer agora usa o fluxo nativo do upstream para chips e busca de skills/slash commands
 - Removido `apps/web/src/components/composerInlineTextNodes.ts`, que virou duplicacao da infraestrutura nova do upstream
 - `ChatComposer.tsx` voltou a depender de `selectedProviderStatus.skills` e `selectedProviderStatus.slashCommands`, em vez de puxar catalogo paralelo so para UI
@@ -54,6 +59,8 @@
   Agora le estado por `ProjectionSnapshotQuery.getCommandReadModel()`, nao por `OrchestrationEngine.getReadModel()`; isso e intencional porque o engine nao expoe mais read model direto
 - `apps/server/src/ws.ts`
   O upstream migrou de `GitCore/GitStatusBroadcaster` para `GitWorkflowService`, `VcsStatusBroadcaster` e `VcsProvisioningService`; custom local deve seguir VCS, nao ressuscitar os servicos antigos
+- `apps/server/src/process/externalLauncher.ts`
+  O upstream substituiu `open.ts` por `ExternalLauncher`; preservar fallback Ghostty/macOS aqui, sem reabrir um servico paralelo de launch
 - `apps/web/src/routes/__root.tsx`, `apps/web/src/environments/runtime/service.ts`, `apps/web/src/components/ChatView.tsx`, `apps/web/src/components/chat/ChatHeader.tsx` e `apps/web/src/components/chat/MessagesTimeline.tsx`
   O app mobile Capacitor depende de bypass de bootstrap neutro, conexao mobile bearer-only, safe-area/keyboard behavior e assets autenticados; qualquer sync aqui deve aceitar upstream primeiro e reaplicar so o diferencial mobile real
 
@@ -65,8 +72,73 @@
 - Se a mudanca for Git/source-control/VCS, aceitar o modelo novo de VCS e reaplicar custom so nos pontos de UX/RPC ainda vivos
 - Se a mudanca for regra de negocio local, empurrar para `t3code-custom/*`
 - Se a mudanca for mobile/root/runtime/header/composer, preservar o fluxo upstream e reaplicar o app mobile como `apps/mobile/*`, `apps/web/src/mobile/*` e guards pequenos atras de `isMobileCapacitorRuntime()`
+- Se a mudanca for launch de browser/editor/processo, aceitar `ExternalLauncher` upstream e reaplicar so fallback macOS/Ghostty que continuar diferencial real
 - Se precisar tocar `ChatComposer` ou `ComposerPromptEditor`, fazer o minimo e deixar a adaptacao visivel
 - Se a mudanca for release/build desktop, nao permitir fallback automatico para `GITHUB_REPOSITORY` no feed de updater; o fork precisa de opt-in explicito para nao reinstalar upstream por acidente
+
+## 2026-05-15 — Sync ate `d1e85c4e8`
+
+- Branch de sync: `main`
+- Donor local usado para replay seletivo: `8e5aebcc` (`Gate loop compaction on context usage`)
+- Upstream absorvido:
+  - `d15909af1` — Effect child process para editor/browser launch e novo `ExternalLauncher`
+  - `a41f4895c` — menos rerenders na timeline
+  - `b83e9c95e` — refactor de refs/context providers do composer
+  - `7e20b23e7`, `4120e9459`, `9e632f5ce`, `ea20e8002` — popover overflow, VCS backoff, diagnostics history e deps desktop runtime
+  - `34bb18c8c` — refresh grande do marketing
+  - hardening de workflows, simplificacao de builds/deps e release `0.0.24`
+- Zona de atrito prevista antes do merge:
+  - `apps/server/src/ws.ts`, `packages/contracts/src/{editor,ipc,rpc,server}.ts`
+  - `apps/server/src/open.ts`, `apps/server/src/server.test.ts`, `scripts/build-desktop-artifact.test.ts`
+  - `apps/web/src/components/ChatView.tsx`
+  - `apps/web/src/components/ComposerPromptEditor.tsx`
+  - `apps/web/src/components/chat/ChatComposer.tsx`
+  - `apps/web/src/components/chat/MessagesTimeline.tsx`
+  - `apps/web/src/components/settings/SettingsPanels.browser.tsx`
+  - `apps/web/src/environments/runtime/service.ts`, `apps/web/src/localApi.ts`, `apps/web/src/rpc/wsRpcClient.ts`
+  - `apps/{desktop,web}/package.json`, `bun.lock`
+- Conflitos reais do merge:
+  - `apps/server/src/open.ts`
+  - `apps/server/src/process/externalLauncher.test.ts`
+  - `apps/server/src/server.test.ts`
+  - `apps/server/src/ws.ts`
+  - `apps/web/src/components/ComposerPromptEditor.tsx`
+  - `apps/web/src/components/chat/ChatComposer.tsx`
+  - `bun.lock`
+  - `scripts/build-desktop-artifact.test.ts`
+- O que foi reaplicado do custom vivo:
+  - fallback Ghostty/macOS e deteccao de apps macOS em `ExternalLauncher`
+  - `TextGeneration` local junto do `ExternalLauncher` upstream em `ws.ts`
+  - mock de `OpenPetsBridge` e novo mock de `ExternalLauncher` em `server.test.ts`
+  - `onPasteCapture` e snapshot ampliado em `ComposerPromptEditor.tsx`
+  - file references, skills de workspace, thread loop controls, compactacao de contexto e `showPlanSidebar` no `ChatComposer.tsx`
+  - reconnect stale no app mobile Capacitor apos `visibilitychange`, `pageshow` ou `App.resume`, sem acordar primary/saved environments
+  - fetch bearer-aware de assets mobile agora reescreve anexos/favicons para o `httpBaseUrl` do profile ativo, evitando misturar LAN e Tailscale no mesmo `environmentId`
+  - opt-in explicito do feed de update desktop em `scripts/build-desktop-artifact.test.ts`
+  - dependencias do lockfile regeneradas com `bun install`, preservando Capacitor/mobile e removendo residuos do launch antigo
+- O que foi deliberadamente deixado de fora do replay:
+  - `apps/server/src/open.ts` e o servico `Open` antigo; o upstream substituiu isso melhor com `ExternalLauncher`
+  - replay bruto do composer anterior; so os slots/hooks custom voltaram
+  - dependencias antigas de launch que nao sao mais usadas diretamente pelo fork
+- Classificacao:
+  - `apps/server/src/process/externalLauncher.ts` — `adaptador-core`
+  - `apps/server/src/process/externalLauncher.test.ts` — `adaptador-core`
+  - `apps/server/src/ws.ts` — `hotspot-compartilhado`
+  - `apps/server/src/server.test.ts` — `hotspot-compartilhado`
+  - `apps/web/src/components/ComposerPromptEditor.tsx` — `adaptador-core`
+  - `apps/web/src/components/chat/ChatComposer.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/mobile/runtime.ts`, `apps/web/src/mobile/assets.ts` e `apps/web/src/routes/__root.tsx` — `adaptador-core` mobile
+  - `bun.lock` — `hotspot-compartilhado`
+  - `scripts/build-desktop-artifact.test.ts` — `adaptador-core`
+  - `apps/server/src/open.ts` — `core-puro removido`
+- Validacao final:
+  - `bun fmt`
+  - `bun lint`
+  - `bun typecheck`
+  - `bun run test src/process/externalLauncher.test.ts src/server.test.ts` em `apps/server`
+  - `bun run test src/t3code-custom/file-references/resolveFiles.test.ts src/t3code-custom/file-references/paste.test.ts src/t3code-custom/file-references/serialization.test.ts src/components/chat/MessagesTimeline.logic.test.ts src/components/chat/MessagesTimeline.test.tsx` em `apps/web`
+  - `bun run test src/mobile/assets.test.ts src/mobile/runtime.test.ts src/mobile/pairingTarget.test.ts src/mobile/deepLink.test.ts src/environments/runtime/service.threadSubscriptions.test.ts src/environments/runtime/connection.test.ts src/environments/runtime/catalog.test.ts` em `apps/web`
+  - `bun run test build-desktop-artifact.test.ts` em `scripts`
 
 ## 2026-05-10 — Sync ate `b793401ae`
 
