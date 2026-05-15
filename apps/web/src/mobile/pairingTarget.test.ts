@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   inferMobileConnectionModeFromPairingInput,
   resolveMobilePairingTarget,
+  shouldRequireExplicitMobileHost,
 } from "./pairingTarget";
 
 beforeEach(() => {
@@ -133,5 +134,27 @@ describe("inferMobileConnectionModeFromPairingInput", () => {
         "https://app.t3.codes/pair?host=http%3A%2F%2F192.168.15.12%3A3773%2F#token=BJL68TGTBXAR",
       ),
     ).toBe("lan");
+  });
+});
+
+describe("shouldRequireExplicitMobileHost", () => {
+  it("does not require a separate Tailscale host when the pairing input is a full URL", () => {
+    expect(
+      shouldRequireExplicitMobileHost({
+        mode: "tailscale",
+        pairingInput: "http://100.101.102.103:3774/pair#token=EJTVFWLYUVKM",
+        host: "",
+      }),
+    ).toBe(false);
+  });
+
+  it("requires a separate Tailscale host for a bare pairing code", () => {
+    expect(
+      shouldRequireExplicitMobileHost({
+        mode: "tailscale",
+        pairingInput: "EJTVFWLYUVKM",
+        host: "",
+      }),
+    ).toBe(true);
   });
 });
