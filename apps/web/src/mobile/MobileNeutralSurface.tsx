@@ -38,6 +38,7 @@ import {
 import {
   inferMobileConnectionModeFromPairingInput,
   resolveMobilePairingTarget,
+  shouldRequireExplicitMobileHost,
   type MobileConnectionMode,
 } from "./pairingTarget";
 
@@ -260,12 +261,7 @@ export function MobileNeutralSurface() {
         if (input.mode === "lan" && !isPairingUrl(pairingInputValue)) {
           throw new Error("For LAN, paste the full pairing link.");
         }
-        if (
-          requiresTailscaleHost({
-            mode: input.mode,
-          }) &&
-          !hostValue
-        ) {
+        if (shouldRequireExplicitMobileHost({ ...input, pairingInput: pairingInputValue })) {
           throw new Error("Enter the desktop's 100.x IP or .ts.net address.");
         }
 
