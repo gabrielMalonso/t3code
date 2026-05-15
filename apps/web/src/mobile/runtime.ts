@@ -149,3 +149,24 @@ export async function reconnectActiveMobileProfile(): Promise<void> {
   }
   await connection.reconnect();
 }
+
+export async function reconnectActiveMobileProfileIfStale(): Promise<boolean> {
+  const profile = getActiveMobileProfile();
+  if (!profile) {
+    return false;
+  }
+
+  assertSessionFresh(profile);
+  const connection = readEnvironmentConnection(profile.environmentId);
+  if (!connection) {
+    await activateMobileProfile(profile.profileId);
+    return true;
+  }
+
+  if (connection.client.isHeartbeatFresh()) {
+    return false;
+  }
+
+  await connection.reconnect();
+  return true;
+}

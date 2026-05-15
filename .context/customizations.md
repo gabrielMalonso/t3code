@@ -175,10 +175,14 @@ Regra pratica:
   - app mobile abre em estado neutro, sem `primary environment`, `LocalApi`, server state ou WebSocket antes de um profile ativo
   - so um profile mobile pode ficar ativo por vez
   - Tailscale e LAN podem apontar para o mesmo server, mas devem usar profiles e bearer tokens separados
+  - app mobile conectado nao monta o gerenciador global de environments; reconnect apos background/resume deve ficar em `apps/web/src/mobile/runtime.ts` e no bootstrap mobile do root
+  - `App.resume`, `visibilitychange` e `pageshow` devem reconectar apenas se o heartbeat do `WsTransport` estiver stale
+  - assets autenticados devem usar o `httpBaseUrl` do profile ativo, nao o primeiro profile encontrado para o mesmo `environmentId`
   - imagens e favicons autenticados no mobile devem passar por fetch bearer-aware antes de virar blob URL
   - fechar environment mobile deve limpar conexao, stores volateis, estado de WebSocket/RPC e blobs
 - Regra adicional de conflito:
   - se o upstream mexer em root/bootstrap/runtime, aceite o fluxo upstream primeiro e reaplique apenas o bypass mobile neutro
+  - se o upstream mexer em reconnect/resume do browser, nao montar `startEnvironmentConnectionService()` no mobile conectado so para herdar isso; reaplique o diferencial no runtime mobile
   - se o upstream mexer em layout mobile/safe-area/header/composer, mantenha a melhoria upstream e recoloque so gates `isMobileCapacitorRuntime()`
   - se o upstream criar suporte mobile nativo equivalente, apagar duplicacao local e preservar apenas o diferencial Android/Capacitor/Tailscale real
   - nao deixar plugin Capacitor vazar para codigo desktop/browser fora dos imports dinamicos ou guards mobile
