@@ -35,6 +35,7 @@ Regra pratica:
 | Fonte monoespacada do terminal/codigo       | web custom leve   | `apps/web/src/t3code-custom/terminal/fontFamily.ts`, `apps/web/src/index.css`                                                                                                                                                                                                                                                                                                                                                                              | `apps/web/src/components/ThreadTerminalDrawer.tsx`                                                                                                                                                                                                                                                                                                            | manter o drawer so lendo o helper; qualquer policy visual fica fora dele                                                                        |
 | App mobile Capacitor                        | mobile+web custom | `apps/mobile/*`, `apps/web/src/mobile/*`, `docs/mobile-capacitor-tailscale.md`                                                                                                                                                                                                                                                                                                                                                                             | `apps/web/src/routes/__root.tsx`, `apps/web/src/environments/runtime/service.ts`, `apps/web/src/environments/runtime/catalog.ts`, `apps/web/src/components/ChatView.tsx`, `apps/web/src/components/chat/ChatHeader.tsx`, `apps/web/src/components/chat/MessagesTimeline.tsx`, `apps/web/src/components/ProjectScriptsControl.tsx`, `apps/web/src/localApi.ts` | preservar o app no monorepo; no core, manter so guards/adaptadores pequenos atras de `isMobileCapacitorRuntime()`                               |
 | Auto-update desktop opt-in                  | desktop custom    | `scripts/build-desktop-artifact.ts`                                                                                                                                                                                                                                                                                                                                                                                                                        | `apps/desktop/src/main.ts`, `apps/desktop/src/updateState.ts`, `.github/workflows/release.yml`                                                                                                                                                                                                                                                                | nao deixar builds do fork herdarem `GITHUB_REPOSITORY` e apontarem para releases upstream; feed de update precisa ser opt-in explicito          |
+| Fallbacks de editor macOS/Ghostty           | server custom     | `apps/server/src/process/externalLauncher.ts`, `packages/contracts/src/editor.ts`                                                                                                                                                                                                                                                                                                                                                                          | `apps/server/src/ws.ts`, `apps/server/src/process/externalLauncher.test.ts`                                                                                                                                                                                                                                                                                   | aceitar `ExternalLauncher` upstream e reaplicar so deteccao/fallback macOS-Ghostty que continuar diferencial real                               |
 
 ## Pontos de contato atuais
 
@@ -190,6 +191,20 @@ Regra pratica:
   - builds desktop do fork nao devem criar `app-update.yml` a partir de `GITHUB_REPOSITORY`
   - feed de update so deve existir quando `T3CODE_DESKTOP_UPDATE_REPOSITORY` estiver definido explicitamente
   - motivo bem concreto: evitar que uma instalacao custom reinstale sozinha o build oficial do upstream e perca `t3code-custom`
+
+### Fallbacks de editor macOS/Ghostty
+
+- Fonte de verdade:
+  - `apps/server/src/process/externalLauncher.ts:129`
+  - `packages/contracts/src/editor.ts`
+- Adaptadores do core:
+  - `apps/server/src/ws.ts:722`
+  - `apps/server/src/process/externalLauncher.test.ts:498`
+- Regras:
+  - `ExternalLauncher` upstream e a arquitetura Effect child process sao a base; nao recriar `apps/server/src/open.ts`
+  - Ghostty no macOS deve preferir AppleScript para nova aba/janela quando o app existir
+  - outros editores com `macAppName` podem cair em `open -a` quando o binario nao estiver no PATH
+  - se o upstream ganhar fallback nativo equivalente, apagar a duplicacao local e manter so o diferencial que sobrar
 
 ### Desktop bridge para file references
 
