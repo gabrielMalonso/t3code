@@ -149,6 +149,18 @@ function readPersistedModelSelection(
   return isModelSelection(raw) ? raw : undefined;
 }
 
+function readPersistedActiveTurnId(
+  runtimePayload: ProviderRuntimeBinding["runtimePayload"],
+): string | undefined {
+  if (!runtimePayload || typeof runtimePayload !== "object" || Array.isArray(runtimePayload)) {
+    return undefined;
+  }
+  const rawTurnId = "activeTurnId" in runtimePayload ? runtimePayload.activeTurnId : undefined;
+  if (typeof rawTurnId !== "string") return undefined;
+  const trimmed = rawTurnId.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function readPersistedCwd(
   runtimePayload: ProviderRuntimeBinding["runtimePayload"],
 ): string | undefined {
@@ -654,6 +666,19 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         operation: "ProviderService.sendTurn",
         allowRecovery: true,
       });
+      const binding = yield* directory
+        .getBinding(input.threadId)
+        .pipe(Effect.map(Option.getOrUndefined));
+      const activeTurnId =
+        binding?.status === "running"
+          ? readPersistedActiveTurnId(binding.runtimePayload)
+          : undefined;
+      if (activeTurnId !== undefined) {
+        return yield* toValidationError(
+          "ProviderService.sendTurn",
+          `Thread '${input.threadId}' already has active provider turn '${activeTurnId}'. Wait for it to finish or stop it before starting another turn.`,
+        );
+      }
       metricProvider = routed.adapter.provider;
       metricModel = input.modelSelection?.model;
       yield* Effect.annotateCurrentSpan({

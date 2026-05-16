@@ -1427,32 +1427,41 @@ function applyEnvironmentOrchestrationEvent(
           event.payload.role === "assistant" &&
           event.payload.turnId !== null &&
           (thread.latestTurn === null || thread.latestTurn.turnId === event.payload.turnId)
-            ? buildLatestTurn({
-                previous: thread.latestTurn,
-                turnId: event.payload.turnId,
-                state: event.payload.streaming
-                  ? "running"
-                  : thread.latestTurn?.state === "interrupted"
-                    ? "interrupted"
-                    : thread.latestTurn?.state === "error"
-                      ? "error"
-                      : "completed",
-                requestedAt:
-                  thread.latestTurn?.turnId === event.payload.turnId
-                    ? thread.latestTurn.requestedAt
-                    : event.payload.createdAt,
-                startedAt:
-                  thread.latestTurn?.turnId === event.payload.turnId
-                    ? (thread.latestTurn.startedAt ?? event.payload.createdAt)
-                    : event.payload.createdAt,
-                sourceProposedPlan: thread.pendingSourceProposedPlan,
-                completedAt: event.payload.streaming
-                  ? thread.latestTurn?.turnId === event.payload.turnId
-                    ? (thread.latestTurn.completedAt ?? null)
-                    : null
-                  : event.payload.updatedAt,
-                assistantMessageId: event.payload.messageId,
-              })
+            ? (() => {
+                const shouldKeepTurnRunning =
+                  !event.payload.streaming &&
+                  thread.session?.orchestrationStatus === "running" &&
+                  thread.session.activeTurnId === event.payload.turnId;
+                return buildLatestTurn({
+                  previous: thread.latestTurn,
+                  turnId: event.payload.turnId,
+                  state: event.payload.streaming
+                    ? "running"
+                    : shouldKeepTurnRunning
+                      ? "running"
+                      : thread.latestTurn?.state === "interrupted"
+                        ? "interrupted"
+                        : thread.latestTurn?.state === "error"
+                          ? "error"
+                          : "completed",
+                  requestedAt:
+                    thread.latestTurn?.turnId === event.payload.turnId
+                      ? thread.latestTurn.requestedAt
+                      : event.payload.createdAt,
+                  startedAt:
+                    thread.latestTurn?.turnId === event.payload.turnId
+                      ? (thread.latestTurn.startedAt ?? event.payload.createdAt)
+                      : event.payload.createdAt,
+                  sourceProposedPlan: thread.pendingSourceProposedPlan,
+                  completedAt:
+                    event.payload.streaming || shouldKeepTurnRunning
+                      ? thread.latestTurn?.turnId === event.payload.turnId
+                        ? (thread.latestTurn.completedAt ?? null)
+                        : null
+                      : event.payload.updatedAt,
+                  assistantMessageId: event.payload.messageId,
+                });
+              })()
             : thread.latestTurn;
         return {
           ...thread,
@@ -1503,7 +1512,29 @@ function applyEnvironmentOrchestrationEvent(
                     : null,
                 sourceProposedPlan: thread.pendingSourceProposedPlan,
               })
-            : thread.latestTurn,
+            : thread.latestTurn !== null &&
+                thread.latestTurn.state === "running" &&
+                (event.payload.session.status === "ready" ||
+                  event.payload.session.status === "error" ||
+                  event.payload.session.status === "interrupted" ||
+                  event.payload.session.status === "stopped")
+              ? buildLatestTurn({
+                  previous: thread.latestTurn,
+                  turnId: thread.latestTurn.turnId,
+                  state:
+                    event.payload.session.status === "error"
+                      ? "error"
+                      : event.payload.session.status === "interrupted" ||
+                          event.payload.session.status === "stopped"
+                        ? "interrupted"
+                        : "completed",
+                  requestedAt: thread.latestTurn.requestedAt,
+                  startedAt: thread.latestTurn.startedAt ?? event.payload.session.updatedAt,
+                  completedAt: thread.latestTurn.completedAt ?? event.payload.session.updatedAt,
+                  assistantMessageId: thread.latestTurn.assistantMessageId,
+                  sourceProposedPlan: thread.latestTurn.sourceProposedPlan,
+                })
+              : thread.latestTurn,
         updatedAt: event.occurredAt,
       }));
 

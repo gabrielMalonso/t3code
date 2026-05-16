@@ -1513,6 +1513,182 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       }),
   );
 
+  it.effect("keeps a turn running after assistant message completion until session settles", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const appendAndProject = (event: Parameters<typeof eventStore.append>[0]) =>
+        eventStore
+          .append(event)
+          .pipe(Effect.flatMap((savedEvent) => projectionPipeline.projectEvent(savedEvent)));
+
+      const threadId = ThreadId.make("thread-running-message");
+      const turnId = TurnId.make("turn-running-message");
+
+      yield* appendAndProject({
+        type: "project.created",
+        eventId: EventId.make("evt-running-message-1"),
+        aggregateKind: "project",
+        aggregateId: ProjectId.make("project-running-message"),
+        occurredAt: "2026-02-26T14:00:00.000Z",
+        commandId: CommandId.make("cmd-running-message-1"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-running-message-1"),
+        metadata: {},
+        payload: {
+          projectId: ProjectId.make("project-running-message"),
+          title: "Project Running Message",
+          workspaceRoot: "/tmp/project-running-message",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: "2026-02-26T14:00:00.000Z",
+          updatedAt: "2026-02-26T14:00:00.000Z",
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.created",
+        eventId: EventId.make("evt-running-message-2"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-02-26T14:00:01.000Z",
+        commandId: CommandId.make("cmd-running-message-2"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-running-message-2"),
+        metadata: {},
+        payload: {
+          threadId,
+          projectId: ProjectId.make("project-running-message"),
+          title: "Thread Running Message",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt: "2026-02-26T14:00:01.000Z",
+          updatedAt: "2026-02-26T14:00:01.000Z",
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.session-set",
+        eventId: EventId.make("evt-running-message-3"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-02-26T14:00:02.000Z",
+        commandId: CommandId.make("cmd-running-message-3"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-running-message-3"),
+        metadata: {},
+        payload: {
+          threadId,
+          session: {
+            threadId,
+            status: "running",
+            providerName: "codex",
+            runtimeMode: "full-access",
+            activeTurnId: turnId,
+            lastError: null,
+            updatedAt: "2026-02-26T14:00:02.000Z",
+          },
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.message-sent",
+        eventId: EventId.make("evt-running-message-4"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-02-26T14:00:03.000Z",
+        commandId: CommandId.make("cmd-running-message-4"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-running-message-4"),
+        metadata: {},
+        payload: {
+          threadId,
+          messageId: MessageId.make("assistant-running-message"),
+          role: "assistant",
+          text: "I am done talking, but tools may still run.",
+          turnId,
+          streaming: false,
+          createdAt: "2026-02-26T14:00:03.000Z",
+          updatedAt: "2026-02-26T14:00:03.000Z",
+        },
+      });
+
+      const runningRows = yield* sql<{
+        readonly state: string;
+        readonly completedAt: string | null;
+        readonly assistantMessageId: string | null;
+      }>`
+        SELECT
+          state,
+          completed_at AS "completedAt",
+          assistant_message_id AS "assistantMessageId"
+        FROM projection_turns
+        WHERE thread_id = ${threadId}
+          AND turn_id = ${turnId}
+      `;
+      assert.deepEqual(runningRows, [
+        {
+          state: "running",
+          completedAt: null,
+          assistantMessageId: "assistant-running-message",
+        },
+      ]);
+
+      yield* appendAndProject({
+        type: "thread.session-set",
+        eventId: EventId.make("evt-running-message-5"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-02-26T14:00:04.000Z",
+        commandId: CommandId.make("cmd-running-message-5"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-running-message-5"),
+        metadata: {},
+        payload: {
+          threadId,
+          session: {
+            threadId,
+            status: "ready",
+            providerName: "codex",
+            runtimeMode: "full-access",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: "2026-02-26T14:00:04.000Z",
+          },
+        },
+      });
+
+      const completedRows = yield* sql<{
+        readonly latestTurnId: string | null;
+        readonly state: string;
+        readonly completedAt: string | null;
+      }>`
+        SELECT
+          threads.latest_turn_id AS "latestTurnId",
+          turns.state,
+          turns.completed_at AS "completedAt"
+        FROM projection_threads threads
+        JOIN projection_turns turns
+          ON turns.thread_id = threads.thread_id
+        WHERE threads.thread_id = ${threadId}
+          AND turns.turn_id = ${turnId}
+      `;
+      assert.deepEqual(completedRows, [
+        {
+          latestTurnId: "turn-running-message",
+          state: "completed",
+          completedAt: "2026-02-26T14:00:04.000Z",
+        },
+      ]);
+    }),
+  );
+
   it.effect("clears stale pending approvals from projected shell summaries", () =>
     Effect.gen(function* () {
       const projectionPipeline = yield* OrchestrationProjectionPipeline;
