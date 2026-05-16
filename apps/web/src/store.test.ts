@@ -837,7 +837,7 @@ describe("incremental orchestration updates", () => {
     );
 
     expect(threadsOf(next)[0]?.session?.status).toBe("running");
-    expect(threadsOf(next)[0]?.latestTurn?.state).toBe("completed");
+    expect(threadsOf(next)[0]?.latestTurn?.state).toBe("running");
     expect(threadsOf(next)[0]?.messages).toHaveLength(1);
   });
 

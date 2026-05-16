@@ -158,7 +158,8 @@ export type CodexSessionRuntimeError =
   | CodexSessionRuntimePendingApprovalNotFoundError
   | CodexSessionRuntimePendingUserInputNotFoundError
   | CodexSessionRuntimeInvalidUserInputAnswersError
-  | CodexSessionRuntimeThreadIdMissingError;
+  | CodexSessionRuntimeThreadIdMissingError
+  | CodexSessionRuntimeActiveTurnError;
 
 export class CodexSessionRuntimePendingApprovalNotFoundError extends Schema.TaggedErrorClass<CodexSessionRuntimePendingApprovalNotFoundError>()(
   "CodexSessionRuntimePendingApprovalNotFoundError",
@@ -201,6 +202,18 @@ export class CodexSessionRuntimeThreadIdMissingError extends Schema.TaggedErrorC
 ) {
   override get message(): string {
     return `Codex session is missing a provider thread id for ${this.threadId}`;
+  }
+}
+
+export class CodexSessionRuntimeActiveTurnError extends Schema.TaggedErrorClass<CodexSessionRuntimeActiveTurnError>()(
+  "CodexSessionRuntimeActiveTurnError",
+  {
+    threadId: ThreadId,
+    activeTurnId: TurnId,
+  },
+) {
+  override get message(): string {
+    return `Thread '${this.threadId}' already has active provider turn '${this.activeTurnId}'. Wait for it to finish or stop it before starting another turn.`;
   }
 }
 
@@ -1252,9 +1265,14 @@ export const makeCodexSessionRuntime = (
       sendTurn: (input) =>
         Effect.gen(function* () {
           const providerThreadId = yield* readProviderThreadId;
-          const normalizedModel = normalizeCodexModelSlug(
-            input.model ?? (yield* Ref.get(sessionRef)).model,
-          );
+          const session = yield* Ref.get(sessionRef);
+          if (session.activeTurnId !== undefined) {
+            return yield* new CodexSessionRuntimeActiveTurnError({
+              threadId: options.threadId,
+              activeTurnId: session.activeTurnId,
+            });
+          }
+          const normalizedModel = normalizeCodexModelSlug(input.model ?? session.model);
           const params = yield* buildTurnStartParams({
             threadId: providerThreadId,
             runtimeMode: options.runtimeMode,

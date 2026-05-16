@@ -148,6 +148,20 @@ function isUnknownPendingUserInputRequestError(cause: Cause.Cause<ProviderServic
   return Cause.pretty(cause).toLowerCase().includes("unknown pending user-input request");
 }
 
+function isActiveTurnMismatchError(cause: Cause.Cause<unknown>): boolean {
+  const failReason = cause.reasons.find(Cause.isFailReason);
+  const error = isProviderAdapterRequestError(failReason?.error) ? failReason.error : undefined;
+  const detail = (error?.detail ?? Cause.pretty(cause)).toLowerCase();
+  return detail.includes("expected active turn id") && detail.includes("but found");
+}
+
+function isTurnAlreadyRunningError(cause: Cause.Cause<unknown>): boolean {
+  const failReason = cause.reasons.find(Cause.isFailReason);
+  const error = isProviderAdapterRequestError(failReason?.error) ? failReason.error : undefined;
+  const detail = (error?.detail ?? Cause.pretty(cause)).toLowerCase();
+  return detail.includes("already has active provider turn");
+}
+
 function stalePendingRequestDetail(
   requestKind: "approval" | "user-input",
   requestId: string,
@@ -529,6 +543,21 @@ const make = Effect.gen(function* () {
         new Error(`Thread '${input.threadId}' was not found in read model.`),
       );
     }
+    const existingActiveSession = yield* providerService
+      .listSessions()
+      .pipe(
+        Effect.map((sessions) => sessions.find((session) => session.threadId === input.threadId)),
+      );
+    if (
+      existingActiveSession?.status === "running" &&
+      existingActiveSession.activeTurnId !== undefined
+    ) {
+      return yield* new ProviderAdapterRequestError({
+        provider: providerErrorLabel(existingActiveSession.provider),
+        method: "thread.turn.start",
+        detail: `Thread '${input.threadId}' already has active provider turn '${existingActiveSession.activeTurnId}'. Wait for it to finish or stop it before starting another turn.`,
+      });
+    }
     yield* ensureSessionForThread(
       input.threadId,
       input.createdAt,
@@ -740,6 +769,16 @@ const make = Effect.gen(function* () {
         return Effect.void;
       }
       const detail = formatFailureDetail(cause);
+      if (isTurnAlreadyRunningError(cause)) {
+        return appendProviderFailureActivity({
+          threadId: event.payload.threadId,
+          kind: "provider.turn.start.failed",
+          summary: "Provider turn start failed",
+          detail,
+          turnId: null,
+          createdAt: event.payload.createdAt,
+        });
+      }
       return setThreadSessionErrorOnTurnStartFailure({
         threadId: event.payload.threadId,
         detail,
@@ -815,7 +854,72 @@ const make = Effect.gen(function* () {
     }
 
     // Orchestration turn ids are not provider turn ids, so interrupt by session.
-    yield* providerService.interruptTurn({ threadId: event.payload.threadId });
+    yield* providerService.interruptTurn({ threadId: event.payload.threadId }).pipe(
+      Effect.catchCause((cause) => {
+        const detail = formatFailureDetail(cause);
+        const appendFailure = appendProviderFailureActivity({
+          threadId: event.payload.threadId,
+          kind: "provider.turn.interrupt.failed",
+          summary: "Provider turn interrupt failed",
+          detail,
+          turnId: event.payload.turnId ?? thread.session?.activeTurnId ?? null,
+          createdAt: event.payload.createdAt,
+        });
+
+        if (!isActiveTurnMismatchError(cause)) {
+          return appendFailure.pipe(
+            Effect.flatMap(() =>
+              thread.session
+                ? setThreadSession({
+                    threadId: thread.id,
+                    session: {
+                      ...thread.session,
+                      lastError: detail,
+                      updatedAt: event.payload.createdAt,
+                    },
+                    createdAt: event.payload.createdAt,
+                  })
+                : Effect.void,
+            ),
+          );
+        }
+
+        const stopProvider = providerService.stopSession({ threadId: thread.id }).pipe(
+          Effect.catchCause((stopCause) =>
+            appendProviderFailureActivity({
+              threadId: event.payload.threadId,
+              kind: "provider.turn.interrupt.failed",
+              summary: "Provider fallback stop failed",
+              detail: formatFailureDetail(stopCause),
+              turnId: event.payload.turnId ?? thread.session?.activeTurnId ?? null,
+              createdAt: event.payload.createdAt,
+            }),
+          ),
+        );
+
+        return appendFailure.pipe(
+          Effect.flatMap(() => stopProvider),
+          Effect.flatMap(() =>
+            setThreadSession({
+              threadId: thread.id,
+              session: {
+                threadId: thread.id,
+                status: "stopped",
+                providerName: thread.session?.providerName ?? null,
+                ...(thread.session?.providerInstanceId !== undefined
+                  ? { providerInstanceId: thread.session.providerInstanceId }
+                  : {}),
+                runtimeMode: thread.session?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
+                activeTurnId: null,
+                lastError: detail,
+                updatedAt: event.payload.createdAt,
+              },
+              createdAt: event.payload.createdAt,
+            }),
+          ),
+        );
+      }),
+    );
   });
 
   const processCompactStartRequested = Effect.fn("processCompactStartRequested")(function* (
@@ -950,8 +1054,21 @@ const make = Effect.gen(function* () {
     }
 
     const now = event.payload.createdAt;
+    let stopErrorDetail: string | null = null;
     if (thread.session && thread.session.status !== "stopped") {
-      yield* providerService.stopSession({ threadId: thread.id });
+      yield* providerService.stopSession({ threadId: thread.id }).pipe(
+        Effect.catchCause((cause) => {
+          stopErrorDetail = formatFailureDetail(cause);
+          return appendProviderFailureActivity({
+            threadId: event.payload.threadId,
+            kind: "provider.session.stop.failed",
+            summary: "Provider session stop failed",
+            detail: stopErrorDetail,
+            turnId: thread.session?.activeTurnId ?? null,
+            createdAt: now,
+          });
+        }),
+      );
     }
 
     yield* setThreadSession({
@@ -965,7 +1082,7 @@ const make = Effect.gen(function* () {
           : {}),
         runtimeMode: thread.session?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
         activeTurnId: null,
-        lastError: thread.session?.lastError ?? null,
+        lastError: stopErrorDetail ?? thread.session?.lastError ?? null,
         updatedAt: now,
       },
       createdAt: now,

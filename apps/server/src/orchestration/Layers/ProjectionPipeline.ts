@@ -725,7 +725,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           }
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
-            latestTurnId: event.payload.session.activeTurnId,
+            latestTurnId: event.payload.session.activeTurnId ?? existingRow.value.latestTurnId,
             updatedAt: event.occurredAt,
           });
           yield* refreshThreadShellSummary(event.payload.threadId);
@@ -1044,6 +1044,37 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         case "thread.session-set": {
           const turnId = event.payload.session.activeTurnId;
           if (turnId === null || event.payload.session.status !== "running") {
+            if (
+              event.payload.session.status !== "ready" &&
+              event.payload.session.status !== "error" &&
+              event.payload.session.status !== "interrupted" &&
+              event.payload.session.status !== "stopped"
+            ) {
+              return;
+            }
+            const turns = yield* projectionTurnRepository.listByThreadId({
+              threadId: event.payload.threadId,
+            });
+            const latestRunningTurn = turns.findLast(
+              (turn) => turn.turnId !== null && turn.state === "running",
+            );
+            if (!latestRunningTurn || latestRunningTurn.turnId === null) {
+              return;
+            }
+            const nextState =
+              event.payload.session.status === "error"
+                ? "error"
+                : event.payload.session.status === "interrupted" ||
+                    event.payload.session.status === "stopped"
+                  ? "interrupted"
+                  : "completed";
+            yield* projectionTurnRepository.upsertByTurnId({
+              ...latestRunningTurn,
+              turnId: latestRunningTurn.turnId,
+              state: nextState,
+              startedAt: latestRunningTurn.startedAt ?? event.occurredAt,
+              completedAt: latestRunningTurn.completedAt ?? event.occurredAt,
+            });
             return;
           }
 
@@ -1056,9 +1087,13 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           });
           if (Option.isSome(existingTurn)) {
             const nextState =
-              existingTurn.value.state === "completed" || existingTurn.value.state === "error"
-                ? existingTurn.value.state
-                : "running";
+              existingTurn.value.state === "completed" &&
+              existingTurn.value.checkpointTurnCount === null &&
+              existingTurn.value.checkpointRef === null
+                ? "running"
+                : existingTurn.value.state === "completed" || existingTurn.value.state === "error"
+                  ? existingTurn.value.state
+                  : "running";
             yield* projectionTurnRepository.upsertByTurnId({
               ...existingTurn.value,
               state: nextState,
@@ -1125,6 +1160,14 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           if (event.payload.turnId === null || event.payload.role !== "assistant") {
             return;
           }
+          const activeSession = yield* projectionThreadSessionRepository.getByThreadId({
+            threadId: event.payload.threadId,
+          });
+          const shouldKeepTurnRunning =
+            !event.payload.streaming &&
+            Option.isSome(activeSession) &&
+            activeSession.value.status === "running" &&
+            activeSession.value.activeTurnId === event.payload.turnId;
           const existingTurn = yield* projectionTurnRepository.getByTurnId({
             threadId: event.payload.threadId,
             turnId: event.payload.turnId,
@@ -1135,14 +1178,18 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               assistantMessageId: event.payload.messageId,
               state: event.payload.streaming
                 ? existingTurn.value.state
-                : existingTurn.value.state === "interrupted"
-                  ? "interrupted"
-                  : existingTurn.value.state === "error"
-                    ? "error"
-                    : "completed",
+                : shouldKeepTurnRunning
+                  ? "running"
+                  : existingTurn.value.state === "interrupted"
+                    ? "interrupted"
+                    : existingTurn.value.state === "error"
+                      ? "error"
+                      : "completed",
               completedAt: event.payload.streaming
                 ? existingTurn.value.completedAt
-                : (existingTurn.value.completedAt ?? event.payload.updatedAt),
+                : shouldKeepTurnRunning
+                  ? null
+                  : (existingTurn.value.completedAt ?? event.payload.updatedAt),
               startedAt: existingTurn.value.startedAt ?? event.payload.createdAt,
               requestedAt: existingTurn.value.requestedAt ?? event.payload.createdAt,
             });
@@ -1155,14 +1202,25 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             sourceProposedPlanThreadId: null,
             sourceProposedPlanId: null,
             assistantMessageId: event.payload.messageId,
-            state: event.payload.streaming ? "running" : "completed",
+            state: event.payload.streaming || shouldKeepTurnRunning ? "running" : "completed",
             requestedAt: event.payload.createdAt,
             startedAt: event.payload.createdAt,
-            completedAt: event.payload.streaming ? null : event.payload.updatedAt,
+            completedAt:
+              event.payload.streaming || shouldKeepTurnRunning ? null : event.payload.updatedAt,
             checkpointTurnCount: null,
             checkpointRef: null,
             checkpointStatus: null,
             checkpointFiles: [],
+          });
+          return;
+        }
+
+        case "thread.activity-appended": {
+          if (event.payload.activity.kind !== "provider.turn.start.failed") {
+            return;
+          }
+          yield* projectionTurnRepository.deletePendingTurnStartByThreadId({
+            threadId: event.payload.threadId,
           });
           return;
         }
