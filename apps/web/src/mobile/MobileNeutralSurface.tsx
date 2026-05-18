@@ -568,7 +568,7 @@ export function MobileNeutralSurface() {
       : "Scan the desktop QR code or enter a pairing code to open your projects here.";
 
   return (
-    <main className="h-full overflow-x-hidden overflow-y-auto overscroll-y-contain bg-background text-foreground">
+    <main className="min-h-dvh overflow-x-hidden overflow-y-auto overscroll-y-contain bg-background text-foreground">
       <div className="mx-auto box-border flex min-h-full w-full max-w-md flex-col overflow-x-hidden px-5 pt-5 pb-[max(2.5rem,calc(env(safe-area-inset-bottom)+2rem))]">
         <header className="flex items-center gap-3">
           <div className="min-w-0">
