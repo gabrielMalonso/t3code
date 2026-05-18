@@ -4,7 +4,6 @@ import android.content.ClipData;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.WebView;
@@ -16,8 +15,6 @@ import java.io.IOException;
 import org.json.JSONObject;
 
 public class MainActivity extends BridgeActivity {
-    private static final String TAG = "T3Clipboard";
-
     @Override
     public void onCreate(Bundle savedInstanceState) {
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
@@ -30,7 +27,7 @@ public class MainActivity extends BridgeActivity {
         WebView webView = getBridge().getWebView();
         webView.setBackgroundColor(Color.BLACK);
         ViewCompat.setOnReceiveContentListener(webView, new String[] { "image/*" }, (view, payload) -> receivePastedImage(webView, payload));
-        Log.i(TAG, "Registered WebView OnReceiveContent listener for image/*");
+        T3ClipboardLog.debug("Registered WebView OnReceiveContent listener for image/*");
         View webViewParent = (View) webView.getParent();
         if (webViewParent != null) {
             webViewParent.setBackgroundColor(Color.BLACK);
@@ -45,13 +42,12 @@ public class MainActivity extends BridgeActivity {
     private ContentInfoCompat receivePastedImage(WebView webView, ContentInfoCompat payload) {
         ClipData clip = payload.getClip();
         if (clip == null) {
-            Log.i(TAG, "receivePastedImage: payload had no clip");
+            T3ClipboardLog.debug("receivePastedImage: payload had no clip");
             return payload;
         }
 
         try {
-            Log.i(
-                TAG,
+            T3ClipboardLog.debug(
                 "receivePastedImage: source=" +
                 payload.getSource() +
                 " flags=" +
@@ -63,14 +59,14 @@ public class MainActivity extends BridgeActivity {
             );
             T3ClipboardImageReader.ImageData imageData = T3ClipboardImageReader.readFromClip(this, clip, clip.getDescription());
             if (!imageData.isPresent()) {
-                Log.i(TAG, "receivePastedImage: no readable image in payload");
+                T3ClipboardLog.debug("receivePastedImage: no readable image in payload");
                 return payload;
             }
-            Log.i(TAG, "receivePastedImage: dispatching image type=" + imageData.type + " valueLength=" + imageData.value.length());
+            T3ClipboardLog.debug("receivePastedImage: dispatching image type=" + imageData.type + " valueLength=" + imageData.value.length());
             dispatchPastedImage(webView, imageData);
             return null;
         } catch (IOException | SecurityException error) {
-            Log.w(TAG, "receivePastedImage: failed to read image", error);
+            T3ClipboardLog.warn("receivePastedImage: failed to read image", error);
             return payload;
         }
     }

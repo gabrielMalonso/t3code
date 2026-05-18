@@ -6,7 +6,6 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.net.Uri;
 import android.util.Base64;
-import android.util.Log;
 import android.webkit.MimeTypeMap;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -14,7 +13,7 @@ import java.io.InputStream;
 import java.util.Locale;
 
 final class T3ClipboardImageReader {
-    private static final String TAG = "T3Clipboard";
+    private static final int MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
     static final class ImageData {
         final String value;
@@ -35,69 +34,69 @@ final class T3ClipboardImageReader {
     static ImageData readFromClipboard(Context context) throws IOException {
         ClipboardManager clipboard = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
         if (clipboard == null || !clipboard.hasPrimaryClip()) {
-            Log.i(TAG, "readFromClipboard: clipboard missing or empty");
+            T3ClipboardLog.debug("readFromClipboard: clipboard missing or empty");
             return empty();
         }
-        Log.i(TAG, "readFromClipboard: primary clip description=" + clipboard.getPrimaryClipDescription());
+        T3ClipboardLog.debug("readFromClipboard: primary clip description=" + clipboard.getPrimaryClipDescription());
         return readFromClip(context, clipboard.getPrimaryClip(), clipboard.getPrimaryClipDescription());
     }
 
     static ImageData readFromClip(Context context, ClipData clip, ClipDescription description) throws IOException {
         if (clip == null || clip.getItemCount() == 0) {
-            Log.i(TAG, "readFromClip: clip missing or empty");
+            T3ClipboardLog.debug("readFromClip: clip missing or empty");
             return empty();
         }
 
-        Log.i(TAG, "readFromClip: itemCount=" + clip.getItemCount() + " description=" + description);
+        T3ClipboardLog.debug("readFromClip: itemCount=" + clip.getItemCount() + " description=" + description);
         for (int index = 0; index < clip.getItemCount(); index += 1) {
-            Log.i(TAG, "readFromClip: reading item index=" + index);
+            T3ClipboardLog.debug("readFromClip: reading item index=" + index);
             ImageData imageData = readFromItem(context, clip.getItemAt(index), description);
             if (imageData.isPresent()) {
-                Log.i(TAG, "readFromClip: found image item index=" + index + " type=" + imageData.type);
+                T3ClipboardLog.debug("readFromClip: found image item index=" + index + " type=" + imageData.type);
                 return imageData;
             }
         }
 
-        Log.i(TAG, "readFromClip: no image found");
+        T3ClipboardLog.debug("readFromClip: no image found");
         return empty();
     }
 
     private static ImageData readFromItem(Context context, ClipData.Item item, ClipDescription description) throws IOException {
         ImageData textResult = imageResultFromText(item.getText());
         if (textResult.isPresent()) {
-            Log.i(TAG, "readFromItem: item text was image data URL type=" + textResult.type);
+            T3ClipboardLog.debug("readFromItem: item text was image data URL type=" + textResult.type);
             return textResult;
         }
 
         Uri imageUri = item.getUri();
         if (imageUri == null && item.getIntent() != null) {
             imageUri = item.getIntent().getData();
-            Log.i(TAG, "readFromItem: using intent data uri=" + sanitizeUri(imageUri));
+            T3ClipboardLog.debug("readFromItem: using intent data uri=" + sanitizeUri(imageUri));
         }
         if (imageUri == null) {
             CharSequence coerced = item.coerceToText(context);
-            Log.i(TAG, "readFromItem: uri missing; coerced text length=" + (coerced == null ? 0 : coerced.length()));
+            T3ClipboardLog.debug("readFromItem: uri missing; coerced text length=" + (coerced == null ? 0 : coerced.length()));
             textResult = imageResultFromText(coerced);
             if (textResult.isPresent()) {
-                Log.i(TAG, "readFromItem: coerced text was image data URL type=" + textResult.type);
+                T3ClipboardLog.debug("readFromItem: coerced text was image data URL type=" + textResult.type);
                 return textResult;
             }
             imageUri = uriFromClipboardText(coerced);
         }
         if (imageUri == null) {
-            Log.i(TAG, "readFromItem: no image uri");
+            T3ClipboardLog.debug("readFromItem: no image uri");
             return empty();
         }
 
-        Log.i(TAG, "readFromItem: reading uri=" + sanitizeUri(imageUri));
+        T3ClipboardLog.debug("readFromItem: reading uri=" + sanitizeUri(imageUri));
         byte[] bytes = readUriBytes(context, imageUri);
         if (bytes.length == 0) {
-            Log.i(TAG, "readFromItem: uri read returned empty bytes");
+            T3ClipboardLog.debug("readFromItem: uri read returned empty bytes");
             return empty();
         }
 
         String mimeType = resolveImageMimeType(context, description, imageUri, bytes);
-        Log.i(TAG, "readFromItem: bytes=" + bytes.length + " resolvedMimeType=" + mimeType);
+        T3ClipboardLog.debug("readFromItem: bytes=" + bytes.length + " resolvedMimeType=" + mimeType);
         if (!isImageMimeType(mimeType)) {
             return empty();
         }
@@ -149,6 +148,9 @@ final class T3ClipboardImageReader {
             byte[] buffer = new byte[8192];
             int count;
             while ((count = input.read(buffer)) != -1) {
+                if (output.size() > MAX_IMAGE_BYTES - count) {
+                    throw new IOException("Clipboard image exceeds 10MB attachment limit");
+                }
                 output.write(buffer, 0, count);
             }
             return output.toByteArray();

@@ -1,6 +1,5 @@
 package tools.t3code.mobile;
 
-import android.util.Log;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -10,17 +9,15 @@ import java.io.IOException;
 
 @CapacitorPlugin(name = "T3Clipboard")
 public class T3ClipboardPlugin extends Plugin {
-    private static final String TAG = "T3Clipboard";
-
     @PluginMethod
     public void readImage(PluginCall call) {
         try {
-            Log.i(TAG, "readImage plugin call");
+            T3ClipboardLog.debug("readImage plugin call");
             T3ClipboardImageReader.ImageData imageData = T3ClipboardImageReader.readFromClipboard(getContext());
-            Log.i(TAG, "readImage result type=" + imageData.type + " valueLength=" + imageData.value.length());
+            T3ClipboardLog.debug("readImage result type=" + imageData.type + " valueLength=" + imageData.value.length());
             call.resolve(result(imageData));
         } catch (IOException | SecurityException error) {
-            Log.w(TAG, "readImage failed", error);
+            T3ClipboardLog.warn("readImage failed", error);
             call.reject("Unable to read image from clipboard", error);
         }
     }
