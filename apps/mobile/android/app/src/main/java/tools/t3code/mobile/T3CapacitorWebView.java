@@ -6,7 +6,6 @@ import android.content.Context;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import androidx.core.view.inputmethod.EditorInfoCompat;
@@ -17,7 +16,6 @@ import java.io.IOException;
 import org.json.JSONObject;
 
 public class T3CapacitorWebView extends CapacitorWebView {
-    private static final String TAG = "T3Clipboard";
     private static final String[] SUPPORTED_CONTENT_MIME_TYPES = new String[] { "image/*" };
 
     public T3CapacitorWebView(Context context, AttributeSet attrs) {
@@ -28,15 +26,15 @@ public class T3CapacitorWebView extends CapacitorWebView {
     public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
         InputConnection inputConnection = super.onCreateInputConnection(outAttrs);
         if (outAttrs == null) {
-            Log.i(TAG, "onCreateInputConnection: EditorInfo missing");
+            T3ClipboardLog.debug("onCreateInputConnection: EditorInfo missing");
             return inputConnection;
         }
 
         EditorInfoCompat.setContentMimeTypes(outAttrs, SUPPORTED_CONTENT_MIME_TYPES);
-        Log.i(TAG, "onCreateInputConnection: advertised contentMimeTypes=image/*");
+        T3ClipboardLog.debug("onCreateInputConnection: advertised contentMimeTypes=image/*");
 
         if (inputConnection == null) {
-            Log.i(TAG, "onCreateInputConnection: InputConnection missing");
+            T3ClipboardLog.debug("onCreateInputConnection: InputConnection missing");
             return null;
         }
 
@@ -46,8 +44,7 @@ public class T3CapacitorWebView extends CapacitorWebView {
     private boolean handleCommitContent(InputContentInfoCompat contentInfo, int flags, Bundle opts) {
         ClipDescription description = contentInfo.getDescription();
         Uri contentUri = contentInfo.getContentUri();
-        Log.i(
-            TAG,
+        T3ClipboardLog.debug(
             "commitContent: uri=" +
             sanitizeUri(contentUri) +
             " flags=" +
@@ -63,9 +60,9 @@ public class T3CapacitorWebView extends CapacitorWebView {
             try {
                 contentInfo.requestPermission();
                 permissionRequested = true;
-                Log.i(TAG, "commitContent: requested read permission");
+                T3ClipboardLog.debug("commitContent: requested read permission");
             } catch (Exception error) {
-                Log.w(TAG, "commitContent: failed to request read permission", error);
+                T3ClipboardLog.warn("commitContent: failed to request read permission", error);
             }
         }
 
@@ -73,22 +70,22 @@ public class T3CapacitorWebView extends CapacitorWebView {
             ClipData clip = new ClipData(description, new ClipData.Item(contentUri));
             T3ClipboardImageReader.ImageData imageData = T3ClipboardImageReader.readFromClip(getContext(), clip, description);
             if (!imageData.isPresent()) {
-                Log.i(TAG, "commitContent: no readable image");
+                T3ClipboardLog.debug("commitContent: no readable image");
                 return false;
             }
 
-            Log.i(TAG, "commitContent: dispatching image type=" + imageData.type + " valueLength=" + imageData.value.length());
+            T3ClipboardLog.debug("commitContent: dispatching image type=" + imageData.type + " valueLength=" + imageData.value.length());
             dispatchPastedImage(imageData);
             return true;
         } catch (IOException | SecurityException error) {
-            Log.w(TAG, "commitContent: failed to read image", error);
+            T3ClipboardLog.warn("commitContent: failed to read image", error);
             return false;
         } finally {
             if (permissionRequested) {
                 try {
                     contentInfo.releasePermission();
                 } catch (Exception error) {
-                    Log.w(TAG, "commitContent: failed to release read permission", error);
+                    T3ClipboardLog.warn("commitContent: failed to release read permission", error);
                 }
             }
         }

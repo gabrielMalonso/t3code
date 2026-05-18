@@ -303,19 +303,19 @@ export function useComposerCustomExtension(input: {
     [activeThreadId, composerDraftTarget, pendingUserInputCount, workspaceRoot],
   );
 
-  const compactControls = useMemo<ReactNode>(() => {
-    const loopControl =
+  const compactControls = useMemo<ReactNode>(
+    () =>
       activeThread && isServerThread ? (
         <ComposerCustomControlsSlot compact thread={activeThread} />
-      ) : null;
-    return loopControl;
-  }, [activeThread, isServerThread]);
+      ) : null,
+    [activeThread, isServerThread],
+  );
 
-  const controls = useMemo<ReactNode>(() => {
-    const loopControl =
-      activeThread && isServerThread ? <ComposerCustomControlsSlot thread={activeThread} /> : null;
-    return loopControl;
-  }, [activeThread, isServerThread]);
+  const controls = useMemo<ReactNode>(
+    () =>
+      activeThread && isServerThread ? <ComposerCustomControlsSlot thread={activeThread} /> : null,
+    [activeThread, isServerThread],
+  );
 
   // The loop control is appended after the upstream footer controls, so compact
   // plan-follow-up layouts need a small local budget adjustment.
