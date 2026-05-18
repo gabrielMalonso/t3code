@@ -10,10 +10,12 @@ import type { ComposerImageAttachment, DraftId, DraftThreadEnvMode } from "~/com
 import { useComposerDraftStore, useComposerThreadDraft } from "~/composerDraftStore";
 import { toastManager } from "~/components/ui/toast";
 import { randomUUID } from "~/lib/utils";
+import { isMobileCapacitorRuntime } from "~/mobile/platform";
 import type { Thread } from "~/types";
 
 import { resolveComposerFileReferencesFromFiles } from "../file-references";
 import { useComposerPasteFileReference } from "../hooks";
+import { imageFileFromClipboardDataUrl, readCapacitorClipboardImageFile } from "./clipboardImage";
 import { ComposerCustomBodySlot } from "./ComposerCustomBodySlot";
 import { ComposerCustomControlsSlot } from "./ComposerCustomControlsSlot";
 
@@ -207,6 +209,7 @@ export function useComposerCustomExtension(input: {
     (event: React.ClipboardEvent<HTMLElement>) => {
       if (event.defaultPrevented) return;
       const files = Array.from(event.clipboardData.files);
+      const pastedText = event.clipboardData.getData("text/plain");
       if (files.length > 0) {
         const imageFiles = files.filter((file) => file.type.startsWith("image/"));
         if (imageFiles.length === 0) {
@@ -216,10 +219,39 @@ export function useComposerCustomExtension(input: {
         addComposerImages(imageFiles);
         return;
       }
-      onComposerPasteFileReference(event);
+      if (onComposerPasteFileReference(event)) {
+        return;
+      }
+      if (pastedText.trim().length > 0 || !isMobileCapacitorRuntime()) {
+        return;
+      }
+
+      event.preventDefault();
+      void readCapacitorClipboardImageFile()
+        .then((file) => {
+          if (!file) return;
+          addComposerImages([file]);
+        })
+        .catch(() => undefined);
     },
     [addComposerImages, onComposerPasteFileReference],
   );
+
+  useEffect(() => {
+    if (!activeThreadId || !isMobileCapacitorRuntime()) return;
+    const handleNativeClipboardImage = (event: Event) => {
+      const value = (event as CustomEvent<{ value?: unknown }>).detail?.value;
+      if (typeof value !== "string") return;
+      const file = imageFileFromClipboardDataUrl(value);
+      if (!file) return;
+      addComposerImages([file]);
+      focusComposer();
+    };
+    window.addEventListener("t3code:android-clipboard-image", handleNativeClipboardImage);
+    return () => {
+      window.removeEventListener("t3code:android-clipboard-image", handleNativeClipboardImage);
+    };
+  }, [activeThreadId, addComposerImages, focusComposer]);
 
   const onComposerDragEnter = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     if (!event.dataTransfer.types.includes("Files")) return;
@@ -271,19 +303,19 @@ export function useComposerCustomExtension(input: {
     [activeThreadId, composerDraftTarget, pendingUserInputCount, workspaceRoot],
   );
 
-  const compactControls = useMemo<ReactNode>(
-    () =>
+  const compactControls = useMemo<ReactNode>(() => {
+    const loopControl =
       activeThread && isServerThread ? (
         <ComposerCustomControlsSlot compact thread={activeThread} />
-      ) : null,
-    [activeThread, isServerThread],
-  );
+      ) : null;
+    return loopControl;
+  }, [activeThread, isServerThread]);
 
-  const controls = useMemo<ReactNode>(
-    () =>
-      activeThread && isServerThread ? <ComposerCustomControlsSlot thread={activeThread} /> : null,
-    [activeThread, isServerThread],
-  );
+  const controls = useMemo<ReactNode>(() => {
+    const loopControl =
+      activeThread && isServerThread ? <ComposerCustomControlsSlot thread={activeThread} /> : null;
+    return loopControl;
+  }, [activeThread, isServerThread]);
 
   // The loop control is appended after the upstream footer controls, so compact
   // plan-follow-up layouts need a small local budget adjustment.
