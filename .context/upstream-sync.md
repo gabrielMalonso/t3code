@@ -2,10 +2,10 @@
 
 ## Status atual
 
-- Data: 2026-05-15
-- Branch de trabalho: `main`
+- Data: 2026-05-19
+- Branch de trabalho: `t3code/upstream-sync-no-openpets`
 - Upstream integrado nesta wave: `d1e85c4e8` (`upstream/main`)
-- Estado: merge aplicado em `--no-commit`; upstream launcher/process, composer refs, timeline perf, diagnostics, VCS hardening e marketing absorvidos; custom vivo reencaixado em slots/adaptadores pequenos
+- Estado: merge aplicado em `--no-commit`; ancestry do upstream sincronizada; OpenPets removido deliberadamente do fork; custom vivo restante preservado
 - Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
 ## Features locais vivas
@@ -21,8 +21,13 @@
 - `scripts/build-desktop-artifact.ts`: builds desktop do fork so criam feed de auto-update quando `T3CODE_DESKTOP_UPDATE_REPOSITORY` estiver definido explicitamente
 - `apps/server/src/process/externalLauncher.ts`: fallbacks locais de editor no macOS/Ghostty em cima do `ExternalLauncher` upstream
 
+## Custom deliberadamente descartado
+
+- OpenPets nao e mais custom vivo. Nao reaplicar `apps/server/src/openpets/*`, `OpenPetsReactor`, `OpenPetsBridge`, `server.getOpenPetsStatus`, `settings.openPets` nem a secao OpenPets das settings.
+
 ## Refatoracoes feitas para sair da frente do upstream
 
+- OpenPets foi removido do backend, contratos, RPC, settings e UI. A feature estava custando superficie de conflito sem utilidade real.
 - O servico antigo `Open` foi removido junto com o upstream; editor/browser launch agora vive em `apps/server/src/process/externalLauncher.ts`
 - O fallback local de Ghostty/macOS foi reaplicado como diferencial pequeno dentro do `ExternalLauncher`, sem ressuscitar `open.ts`
 - `ChatComposer.tsx` absorveu o refactor upstream de refs/context providers e manteve file references, skills de workspace, thread loop e compactacao como extensoes locais
@@ -75,6 +80,55 @@
 - Se a mudanca for launch de browser/editor/processo, aceitar `ExternalLauncher` upstream e reaplicar so fallback macOS/Ghostty que continuar diferencial real
 - Se precisar tocar `ChatComposer` ou `ComposerPromptEditor`, fazer o minimo e deixar a adaptacao visivel
 - Se a mudanca for release/build desktop, nao permitir fallback automatico para `GITHUB_REPOSITORY` no feed de updater; o fork precisa de opt-in explicito para nao reinstalar upstream por acidente
+- Se OpenPets aparecer em branch antiga, tratar como custom arqueologico e nao reaplicar.
+
+## 2026-05-19 — Sync sem OpenPets ate `d1e85c4e8`
+
+- Branch de sync: `t3code/upstream-sync-no-openpets`
+- Donor local usado para replay seletivo: `0710be37e` (`Add Android clipboard image paste support`)
+- Upstream absorvido:
+  - `d1e85c4e8` permanece como `upstream/main`; a branch local ja continha o conteudo do sync anterior, mas nao a ancestry de merge
+  - o merge foi feito em modo upstream-first e parado em `--no-commit`
+- Zona de atrito prevista antes do merge:
+  - `apps/server/src/process/externalLauncher.ts` e teste — `adaptador-core`
+  - `apps/server/src/server.test.ts`, `apps/server/src/ws.ts` — `hotspot-compartilhado`
+  - `apps/web/src/components/ComposerPromptEditor.tsx`, `apps/web/src/components/chat/ChatComposer.tsx` — `hotspot-compartilhado`
+  - `scripts/build-desktop-artifact.test.ts` — `adaptador-core`
+  - `bun.lock` — `hotspot-compartilhado`
+  - OpenPets em server/contracts/web settings — `custom arqueologico`
+- Conflitos reais do merge:
+  - `apps/server/src/process/externalLauncher.test.ts`
+  - `apps/server/src/process/externalLauncher.ts`
+  - `apps/server/src/server.test.ts`
+  - `apps/server/src/ws.ts`
+  - `apps/web/src/components/ComposerPromptEditor.tsx`
+  - `apps/web/src/components/chat/ChatComposer.tsx`
+  - `scripts/build-desktop-artifact.test.ts`
+  - `bun.lock`
+- O que foi reaplicado do custom vivo:
+  - fallback macOS/Ghostty em `ExternalLauncher`
+  - TextGeneration/listagem de skills em `ws.ts`
+  - file references, skills de workspace, thread loop, compactacao de contexto e controles custom do composer
+  - opt-in explicito do feed de update desktop
+- O que foi deliberadamente deixado de fora do replay:
+  - OpenPets inteiro: bridge, reactor, RPC, settings, contratos e UI
+  - replay bruto de qualquer bloco antigo que existia so para OpenPets
+- Classificacao:
+  - `apps/server/src/openpets/*` — `custom arqueologico removido`
+  - `apps/server/src/orchestration/Layers/OpenPetsReactor.ts` e teste — `custom arqueologico removido`
+  - `apps/server/src/orchestration/Services/OpenPetsReactor.ts` — `custom arqueologico removido`
+  - `packages/contracts/src/{ipc,rpc,server,settings}.ts` — `adaptador-core` limpo
+  - `apps/server/src/{server,server.test,ws}.ts` — `hotspot-compartilhado` limpo
+  - `apps/web/src/components/settings/ConnectionsSettings.tsx` — `adaptador-core` limpo
+  - `apps/web/src/{localApi,rpc/wsRpcClient}.ts` — `adaptador-core` limpo
+- Validacao final:
+  - `bun install`
+  - `bun fmt`
+  - `bun lint`
+  - `bun typecheck`
+  - `bun run --cwd packages/contracts test src/settings.test.ts`
+  - `bun run --cwd apps/server test src/orchestration/Layers/OrchestrationReactor.test.ts src/server.test.ts`
+  - `bun run --cwd apps/web test src/localApi.test.ts`
 
 ## 2026-05-15 — Sync ate `d1e85c4e8`
 

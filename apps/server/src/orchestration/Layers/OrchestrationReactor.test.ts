@@ -11,7 +11,6 @@ import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeInge
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 import { OrchestrationReactor } from "../Services/OrchestrationReactor.ts";
 import { ThreadLoopScheduler } from "../Services/ThreadLoopScheduler.ts";
-import { OpenPetsReactor } from "../Services/OpenPetsReactor.ts";
 import { makeOrchestrationReactor } from "./OrchestrationReactor.ts";
 
 describe("OrchestrationReactor", () => {
@@ -73,15 +72,6 @@ describe("OrchestrationReactor", () => {
             drain: Effect.void,
           }),
         ),
-        Layer.provideMerge(
-          Layer.succeed(OpenPetsReactor, {
-            start: () => {
-              started.push("openpets-reactor");
-              return Effect.void;
-            },
-            drain: Effect.void,
-          }),
-        ),
       ),
     );
 
@@ -96,7 +86,6 @@ describe("OrchestrationReactor", () => {
       "thread-loop-scheduler",
       "thread-loop-scheduler",
       "thread-deletion-reactor",
-      "openpets-reactor",
     ]);
 
     await Effect.runPromise(Scope.close(scope, Exit.void));

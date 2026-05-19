@@ -66,7 +66,6 @@ import { ServerLifecycleEvents } from "./serverLifecycleEvents.ts";
 import { ServerRuntimeStartup } from "./serverRuntimeStartup.ts";
 import { redactServerSettingsForClient, ServerSettingsService } from "./serverSettings.ts";
 import { TerminalManager } from "./terminal/Services/Manager.ts";
-import { OpenPetsBridge } from "./openpets/Services/OpenPetsBridge.ts";
 import { WorkspaceEntries } from "./workspace/Services/WorkspaceEntries.ts";
 import { WorkspaceFileSystem } from "./workspace/Services/WorkspaceFileSystem.ts";
 import { WorkspacePathOutsideRootError } from "./workspace/Services/WorkspacePaths.ts";
@@ -242,7 +241,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const repositoryIdentityResolver = yield* RepositoryIdentityResolver;
       const serverEnvironment = yield* ServerEnvironment;
       const serverAuth = yield* ServerAuth;
-      const openPetsBridge = yield* OpenPetsBridge;
       const sourceControlDiscovery = yield* SourceControlDiscoveryLayer.SourceControlDiscovery;
       const automaticGitFetchInterval = serverSettings.getSettings.pipe(
         Effect.map((settings) => settings.automaticGitFetchInterval),
@@ -1244,10 +1242,6 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               "rpc.aggregate": "server",
             },
           ),
-        [WS_METHODS.serverGetOpenPetsStatus]: (_input) =>
-          observeRpcEffect(WS_METHODS.serverGetOpenPetsStatus, openPetsBridge.refreshStatus, {
-            "rpc.aggregate": "server",
-          }),
         [WS_METHODS.serverDiscoverSourceControl]: (_input) =>
           observeRpcEffect(
             WS_METHODS.serverDiscoverSourceControl,
