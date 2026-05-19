@@ -43,10 +43,8 @@ import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderComma
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { ThreadLoopSchedulerLive } from "./orchestration/Layers/ThreadLoopScheduler.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
-import { OpenPetsReactorLive } from "./orchestration/Layers/OpenPetsReactor.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
 import { ServerSettingsLive } from "./serverSettings.ts";
-import { OpenPetsBridgeLive } from "./openpets/Layers/OpenPetsBridge.ts";
 import { ProjectFaviconResolverLive } from "./project/Layers/ProjectFaviconResolver.ts";
 import { RepositoryIdentityResolverLive } from "./project/Layers/RepositoryIdentityResolver.ts";
 import { WorkspaceEntriesLive } from "./workspace/Layers/WorkspaceEntries.ts";
@@ -149,7 +147,6 @@ const ReactorLayerLive = OrchestrationReactorLive.pipe(
   Layer.provideMerge(ThreadLoopSchedulerLive),
   Layer.provideMerge(ThreadLoopSchedulerLive),
   Layer.provideMerge(ThreadDeletionReactorLive),
-  Layer.provideMerge(OpenPetsReactorLive),
   Layer.provideMerge(RuntimeReceiptBusLive),
 );
 
@@ -253,7 +250,6 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(GitLayerLive),
   Layer.provideMerge(VcsLayerLive),
   Layer.provideMerge(ProviderRuntimeLayerLive),
-  Layer.provideMerge(OpenPetsBridgeLive),
   Layer.provideMerge(TerminalLayerLive),
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(KeybindingsLive),
