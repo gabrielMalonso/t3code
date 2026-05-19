@@ -13,7 +13,7 @@ import androidx.core.view.inputmethod.InputConnectionCompat;
 import androidx.core.view.inputmethod.InputContentInfoCompat;
 import com.getcapacitor.CapacitorWebView;
 import java.io.IOException;
-import org.json.JSONObject;
+import java.util.List;
 
 public class T3CapacitorWebView extends CapacitorWebView {
     private static final String[] SUPPORTED_CONTENT_MIME_TYPES = new String[] { "image/*" };
@@ -68,14 +68,14 @@ public class T3CapacitorWebView extends CapacitorWebView {
 
         try {
             ClipData clip = new ClipData(description, new ClipData.Item(contentUri));
-            T3ClipboardImageReader.ImageData imageData = T3ClipboardImageReader.readFromClip(getContext(), clip, description);
-            if (!imageData.isPresent()) {
+            List<T3ClipboardImageReader.ImageData> imageDataList = T3ClipboardImageReader.readFromClip(getContext(), clip, description);
+            if (imageDataList.isEmpty()) {
                 T3ClipboardLog.debug("commitContent: no readable image");
                 return false;
             }
 
-            T3ClipboardLog.debug("commitContent: dispatching image type=" + imageData.type + " valueLength=" + imageData.value.length());
-            dispatchPastedImage(imageData);
+            T3ClipboardLog.debug("commitContent: dispatching imageCount=" + imageDataList.size());
+            dispatchPastedImages(imageDataList);
             return true;
         } catch (IOException | SecurityException error) {
             T3ClipboardLog.warn("commitContent: failed to read image", error);
@@ -91,9 +91,8 @@ public class T3CapacitorWebView extends CapacitorWebView {
         }
     }
 
-    private void dispatchPastedImage(T3ClipboardImageReader.ImageData imageData) {
-        String detail =
-            "{\"value\":" + JSONObject.quote(imageData.value) + ",\"type\":" + JSONObject.quote(imageData.type) + "}";
+    private void dispatchPastedImages(List<T3ClipboardImageReader.ImageData> imageDataList) {
+        String detail = T3ClipboardImagePayload.toJson(imageDataList).toString();
         String script = "window.dispatchEvent(new CustomEvent('t3code:android-clipboard-image',{detail:" + detail + "}));";
         post(() -> evaluateJavascript(script, null));
     }

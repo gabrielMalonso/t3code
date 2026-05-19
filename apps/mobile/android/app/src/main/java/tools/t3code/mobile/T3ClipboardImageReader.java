@@ -10,6 +10,9 @@ import android.webkit.MimeTypeMap;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
 
 final class T3ClipboardImageReader {
@@ -31,34 +34,35 @@ final class T3ClipboardImageReader {
 
     private T3ClipboardImageReader() {}
 
-    static ImageData readFromClipboard(Context context) throws IOException {
+    static List<ImageData> readFromClipboard(Context context) throws IOException {
         ClipboardManager clipboard = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
         if (clipboard == null || !clipboard.hasPrimaryClip()) {
             T3ClipboardLog.debug("readFromClipboard: clipboard missing or empty");
-            return empty();
+            return Collections.emptyList();
         }
         T3ClipboardLog.debug("readFromClipboard: primary clip description=" + clipboard.getPrimaryClipDescription());
         return readFromClip(context, clipboard.getPrimaryClip(), clipboard.getPrimaryClipDescription());
     }
 
-    static ImageData readFromClip(Context context, ClipData clip, ClipDescription description) throws IOException {
+    static List<ImageData> readFromClip(Context context, ClipData clip, ClipDescription description) throws IOException {
         if (clip == null || clip.getItemCount() == 0) {
             T3ClipboardLog.debug("readFromClip: clip missing or empty");
-            return empty();
+            return Collections.emptyList();
         }
 
         T3ClipboardLog.debug("readFromClip: itemCount=" + clip.getItemCount() + " description=" + description);
+        List<ImageData> imageDataList = new ArrayList<>();
         for (int index = 0; index < clip.getItemCount(); index += 1) {
             T3ClipboardLog.debug("readFromClip: reading item index=" + index);
             ImageData imageData = readFromItem(context, clip.getItemAt(index), description);
             if (imageData.isPresent()) {
                 T3ClipboardLog.debug("readFromClip: found image item index=" + index + " type=" + imageData.type);
-                return imageData;
+                imageDataList.add(imageData);
             }
         }
 
-        T3ClipboardLog.debug("readFromClip: no image found");
-        return empty();
+        T3ClipboardLog.debug("readFromClip: imageCount=" + imageDataList.size());
+        return imageDataList;
     }
 
     private static ImageData readFromItem(Context context, ClipData.Item item, ClipDescription description) throws IOException {
@@ -105,7 +109,7 @@ final class T3ClipboardImageReader {
         return new ImageData("data:" + mimeType + ";base64," + base64, mimeType);
     }
 
-    private static ImageData imageResultFromText(CharSequence text) {
+    private static ImageData imageResultFromText(CharSequence text) throws IOException {
         if (text == null) {
             return empty();
         }
@@ -113,6 +117,9 @@ final class T3ClipboardImageReader {
         String value = text.toString().trim();
         if (!isImageDataUrl(value)) {
             return empty();
+        }
+        if (estimateDataUrlByteLength(value) > MAX_IMAGE_BYTES) {
+            throw new IOException("Clipboard image exceeds 10MB attachment limit");
         }
 
         return new ImageData(value, mimeTypeFromDataUrl(value));
@@ -278,6 +285,44 @@ final class T3ClipboardImageReader {
         }
         String mimeType = dataUrl.substring(start + 1, end).toLowerCase(Locale.US);
         return isImageMimeType(mimeType) ? mimeType : "image/png";
+    }
+
+    private static long estimateDataUrlByteLength(String dataUrl) {
+        int comma = dataUrl.indexOf(',');
+        if (comma < 0 || comma >= dataUrl.length() - 1) {
+            return 0;
+        }
+
+        int base64Length = 0;
+        char previous = '\0';
+        char last = '\0';
+        for (int index = comma + 1; index < dataUrl.length(); index += 1) {
+            char value = dataUrl.charAt(index);
+            if (Character.isWhitespace(value)) {
+                continue;
+            }
+            base64Length += 1;
+            previous = last;
+            last = value;
+        }
+        if (base64Length == 0) {
+            return 0;
+        }
+        long maxByteLength = (base64Length * 3L) / 4L;
+        if (maxByteLength > MAX_IMAGE_BYTES) {
+            return maxByteLength;
+        }
+        if (base64Length % 4 == 1) {
+            return 0;
+        }
+
+        int padding = 0;
+        if (previous == '=' && last == '=') {
+            padding = 2;
+        } else if (last == '=') {
+            padding = 1;
+        }
+        return maxByteLength - padding;
     }
 
     private static ImageData empty() {

@@ -12,7 +12,7 @@ import androidx.core.view.ContentInfoCompat;
 import androidx.core.view.ViewCompat;
 import com.getcapacitor.BridgeActivity;
 import java.io.IOException;
-import org.json.JSONObject;
+import java.util.List;
 
 public class MainActivity extends BridgeActivity {
     @Override
@@ -57,13 +57,13 @@ public class MainActivity extends BridgeActivity {
                 " description=" +
                 clip.getDescription()
             );
-            T3ClipboardImageReader.ImageData imageData = T3ClipboardImageReader.readFromClip(this, clip, clip.getDescription());
-            if (!imageData.isPresent()) {
+            List<T3ClipboardImageReader.ImageData> imageDataList = T3ClipboardImageReader.readFromClip(this, clip, clip.getDescription());
+            if (imageDataList.isEmpty()) {
                 T3ClipboardLog.debug("receivePastedImage: no readable image in payload");
                 return payload;
             }
-            T3ClipboardLog.debug("receivePastedImage: dispatching image type=" + imageData.type + " valueLength=" + imageData.value.length());
-            dispatchPastedImage(webView, imageData);
+            T3ClipboardLog.debug("receivePastedImage: dispatching imageCount=" + imageDataList.size());
+            dispatchPastedImages(webView, imageDataList);
             return null;
         } catch (IOException | SecurityException error) {
             T3ClipboardLog.warn("receivePastedImage: failed to read image", error);
@@ -71,9 +71,8 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
-    private void dispatchPastedImage(WebView webView, T3ClipboardImageReader.ImageData imageData) {
-        String detail =
-            "{\"value\":" + JSONObject.quote(imageData.value) + ",\"type\":" + JSONObject.quote(imageData.type) + "}";
+    private void dispatchPastedImages(WebView webView, List<T3ClipboardImageReader.ImageData> imageDataList) {
+        String detail = T3ClipboardImagePayload.toJson(imageDataList).toString();
         String script =
             "window.dispatchEvent(new CustomEvent('t3code:android-clipboard-image',{detail:" + detail + "}));";
         webView.post(() -> webView.evaluateJavascript(script, null));
