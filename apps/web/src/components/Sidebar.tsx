@@ -225,6 +225,23 @@ const PROJECT_GROUPING_MODE_LABELS: Record<SidebarProjectGroupingMode, string> =
   separate: "Keep separate",
 };
 
+class PrimaryMouseSensor extends MouseSensor {
+  static override activators: typeof MouseSensor.activators = [
+    {
+      eventName: "onMouseDown",
+      handler: (event, { onActivation }) => {
+        const { nativeEvent } = event;
+        if (nativeEvent.button !== 0) {
+          return false;
+        }
+
+        onActivation?.({ event: nativeEvent });
+        return true;
+      },
+    },
+  ];
+}
+
 function clampSidebarThreadPreviewCount(value: number): SidebarThreadPreviewCount {
   return Math.min(
     MAX_SIDEBAR_THREAD_PREVIEW_COUNT,
@@ -3009,7 +3026,7 @@ export default function Sidebar() {
   );
 
   const projectDnDSensors = useSensors(
-    useSensor(MouseSensor, {
+    useSensor(PrimaryMouseSensor, {
       activationConstraint: { distance: PROJECT_DRAG_MOUSE_DISTANCE_PX },
     }),
     useSensor(TouchSensor, {
