@@ -85,7 +85,6 @@ import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/provid
 import { ServerLifecycleEvents, type ServerLifecycleEventsShape } from "./serverLifecycleEvents.ts";
 import { ServerRuntimeStartup, type ServerRuntimeStartupShape } from "./serverRuntimeStartup.ts";
 import { ServerSettingsService, type ServerSettingsShape } from "./serverSettings.ts";
-import { OpenPetsBridge, type OpenPetsBridgeShape } from "./openpets/Services/OpenPetsBridge.ts";
 import { TerminalManager, type TerminalManagerShape } from "./terminal/Services/Manager.ts";
 import {
   BrowserTraceCollector,
@@ -325,7 +324,6 @@ const buildAppUnderTest = (options?: {
     keybindings?: Partial<KeybindingsShape>;
     providerRegistry?: Partial<ProviderRegistryShape>;
     serverSettings?: Partial<ServerSettingsShape>;
-    openPetsBridge?: Partial<OpenPetsBridgeShape>;
     externalLauncher?: Partial<ExternalLauncher.ExternalLauncherShape>;
     vcsDriver?: Partial<VcsDriver.VcsDriverShape>;
     vcsDriverRegistry?: Partial<VcsDriverRegistry.VcsDriverRegistryShape>;
@@ -545,30 +543,6 @@ const buildAppUnderTest = (options?: {
           updateSettings: () => Effect.succeed(DEFAULT_SERVER_SETTINGS),
           streamChanges: Stream.empty,
           ...options?.layers?.serverSettings,
-        }),
-      ),
-      Layer.provide(
-        Layer.mock(OpenPetsBridge)({
-          notify: () => Effect.void,
-          getStatus: Effect.succeed({
-            supported: false,
-            enabled: false,
-            binaryPath: "openpets",
-            cliAvailable: false,
-            petReachable: false,
-            lastError: null,
-            lastEventAt: null,
-          }),
-          refreshStatus: Effect.succeed({
-            supported: false,
-            enabled: false,
-            binaryPath: "openpets",
-            cliAvailable: false,
-            petReachable: false,
-            lastError: null,
-            lastEventAt: null,
-          }),
-          ...options?.layers?.openPetsBridge,
         }),
       ),
       Layer.provide(

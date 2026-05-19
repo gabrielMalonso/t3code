@@ -60,7 +60,6 @@ import {
 } from "../src/orchestration/Services/OrchestrationEngine.ts";
 import { ThreadDeletionReactor } from "../src/orchestration/Services/ThreadDeletionReactor.ts";
 import { OrchestrationReactor } from "../src/orchestration/Services/OrchestrationReactor.ts";
-import { OpenPetsReactor } from "../src/orchestration/Services/OpenPetsReactor.ts";
 import { ProjectionSnapshotQuery } from "../src/orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ThreadLoopScheduler } from "../src/orchestration/Services/ThreadLoopScheduler.ts";
 import {
@@ -367,12 +366,6 @@ export const makeOrchestrationIntegrationHarness = (
       ),
       Layer.provideMerge(
         Layer.succeed(ThreadDeletionReactor, {
-          start: () => Effect.void,
-          drain: Effect.void,
-        }),
-      ),
-      Layer.provideMerge(
-        Layer.succeed(OpenPetsReactor, {
           start: () => Effect.void,
           drain: Effect.void,
         }),
