@@ -10,10 +10,15 @@ import type { ComposerImageAttachment, DraftId, DraftThreadEnvMode } from "~/com
 import { useComposerDraftStore, useComposerThreadDraft } from "~/composerDraftStore";
 import { toastManager } from "~/components/ui/toast";
 import { randomUUID } from "~/lib/utils";
+import { isMobileCapacitorRuntime } from "~/mobile/platform";
 import type { Thread } from "~/types";
 
 import { resolveComposerFileReferencesFromFiles } from "../file-references";
 import { useComposerPasteFileReference } from "../hooks";
+import {
+  imageFilesFromClipboardEventDetail,
+  readCapacitorClipboardImageFiles,
+} from "./clipboardImage";
 import { ComposerCustomBodySlot } from "./ComposerCustomBodySlot";
 import { ComposerCustomControlsSlot } from "./ComposerCustomControlsSlot";
 
@@ -207,6 +212,7 @@ export function useComposerCustomExtension(input: {
     (event: React.ClipboardEvent<HTMLElement>) => {
       if (event.defaultPrevented) return;
       const files = Array.from(event.clipboardData.files);
+      const pastedText = event.clipboardData.getData("text/plain");
       if (files.length > 0) {
         const imageFiles = files.filter((file) => file.type.startsWith("image/"));
         if (imageFiles.length === 0) {
@@ -216,10 +222,37 @@ export function useComposerCustomExtension(input: {
         addComposerImages(imageFiles);
         return;
       }
-      onComposerPasteFileReference(event);
+      if (onComposerPasteFileReference(event)) {
+        return;
+      }
+      if (pastedText.trim().length > 0 || !isMobileCapacitorRuntime()) {
+        return;
+      }
+
+      event.preventDefault();
+      void readCapacitorClipboardImageFiles()
+        .then((files) => {
+          if (files.length === 0) return;
+          addComposerImages(files);
+        })
+        .catch(() => undefined);
     },
     [addComposerImages, onComposerPasteFileReference],
   );
+
+  useEffect(() => {
+    if (!activeThreadId || !isMobileCapacitorRuntime()) return;
+    const handleNativeClipboardImage = (event: Event) => {
+      const files = imageFilesFromClipboardEventDetail((event as CustomEvent<unknown>).detail);
+      if (files.length === 0) return;
+      addComposerImages(files);
+      focusComposer();
+    };
+    window.addEventListener("t3code:android-clipboard-image", handleNativeClipboardImage);
+    return () => {
+      window.removeEventListener("t3code:android-clipboard-image", handleNativeClipboardImage);
+    };
+  }, [activeThreadId, addComposerImages, focusComposer]);
 
   const onComposerDragEnter = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     if (!event.dataTransfer.types.includes("Files")) return;
