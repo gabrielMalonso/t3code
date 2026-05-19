@@ -1,3 +1,5 @@
+import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "@t3tools/contracts";
+
 const IMAGE_EXTENSION_BY_MIME_TYPE: Record<string, string> = {
   "image/avif": "avif",
   "image/bmp": "bmp",
@@ -12,6 +14,12 @@ const IMAGE_EXTENSION_BY_MIME_TYPE: Record<string, string> = {
 };
 
 type ClipboardReadResult = {
+  readonly items?: ClipboardReadResultItem[];
+  readonly value?: string;
+  readonly type?: string;
+};
+
+type ClipboardReadResultItem = {
   readonly value?: string;
   readonly type?: string;
 };
@@ -44,6 +52,12 @@ function imageFileName(mimeType: string): string {
   return `clipboard-image.${extension}`;
 }
 
+function estimateBase64ByteLength(base64: string): number | null {
+  if (base64.length === 0 || base64.length % 4 === 1) return null;
+  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+  return Math.floor((base64.length * 3) / 4) - padding;
+}
+
 export function imageFileFromClipboardDataUrl(dataUrl: string): File | null {
   const match = /^data:([^,]+),([a-z0-9+/=\r\n ]+)$/i.exec(dataUrl.trim());
   if (!match) return null;
@@ -60,6 +74,10 @@ export function imageFileFromClipboardDataUrl(dataUrl: string): File | null {
 
   const base64 = match[2]?.replace(/\s+/g, "");
   if (!base64) return null;
+  const byteLength = estimateBase64ByteLength(base64);
+  if (byteLength === null || byteLength > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+    return null;
+  }
 
   try {
     const bytes = decodeBase64Bytes(base64);
@@ -72,28 +90,50 @@ export function imageFileFromClipboardDataUrl(dataUrl: string): File | null {
   }
 }
 
-async function readNativeClipboardImageFile(): Promise<File | null> {
+function imageFilesFromClipboardReadResult(result: ClipboardReadResult | null | undefined): File[] {
+  const items =
+    Array.isArray(result?.items) && result.items.length > 0 ? result.items : result ? [result] : [];
+  const files: File[] = [];
+  for (const item of items) {
+    const value = item.value?.trim();
+    if (!value) continue;
+    const file = imageFileFromClipboardDataUrl(value);
+    if (file) {
+      files.push(file);
+    }
+  }
+  return files;
+}
+
+export function imageFilesFromClipboardEventDetail(detail: unknown): File[] {
+  if (!detail || typeof detail !== "object") {
+    return [];
+  }
+  return imageFilesFromClipboardReadResult(detail as ClipboardReadResult);
+}
+
+async function readNativeClipboardImageFiles(): Promise<File[]> {
   try {
     const module = (await import("@capacitor/core")) as CapacitorCoreModule;
     const plugin = module.registerPlugin?.<NativeClipboardImagePlugin>("T3Clipboard");
     const result = await plugin?.readImage?.();
-    const value = result?.value?.trim();
-    if (!value) return null;
-    return imageFileFromClipboardDataUrl(value);
+    return imageFilesFromClipboardReadResult(result);
   } catch {
-    return null;
+    return [];
   }
 }
 
-export async function readCapacitorClipboardImageFile(): Promise<File | null> {
-  const nativeImageFile = await readNativeClipboardImageFile();
-  if (nativeImageFile) {
-    return nativeImageFile;
+export async function readCapacitorClipboardImageFiles(): Promise<File[]> {
+  const nativeImageFiles = await readNativeClipboardImageFiles();
+  if (nativeImageFiles.length > 0) {
+    return nativeImageFiles;
   }
 
   const module = (await import("@capacitor/clipboard")) as ClipboardModule;
   const result = await module.Clipboard?.read?.();
-  const value = result?.value?.trim();
-  if (!value) return null;
-  return imageFileFromClipboardDataUrl(value);
+  return imageFilesFromClipboardReadResult(result);
+}
+
+export async function readCapacitorClipboardImageFile(): Promise<File | null> {
+  return (await readCapacitorClipboardImageFiles())[0] ?? null;
 }

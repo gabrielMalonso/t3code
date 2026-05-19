@@ -15,7 +15,10 @@ import type { Thread } from "~/types";
 
 import { resolveComposerFileReferencesFromFiles } from "../file-references";
 import { useComposerPasteFileReference } from "../hooks";
-import { imageFileFromClipboardDataUrl, readCapacitorClipboardImageFile } from "./clipboardImage";
+import {
+  imageFilesFromClipboardEventDetail,
+  readCapacitorClipboardImageFiles,
+} from "./clipboardImage";
 import { ComposerCustomBodySlot } from "./ComposerCustomBodySlot";
 import { ComposerCustomControlsSlot } from "./ComposerCustomControlsSlot";
 
@@ -227,10 +230,10 @@ export function useComposerCustomExtension(input: {
       }
 
       event.preventDefault();
-      void readCapacitorClipboardImageFile()
-        .then((file) => {
-          if (!file) return;
-          addComposerImages([file]);
+      void readCapacitorClipboardImageFiles()
+        .then((files) => {
+          if (files.length === 0) return;
+          addComposerImages(files);
         })
         .catch(() => undefined);
     },
@@ -240,11 +243,9 @@ export function useComposerCustomExtension(input: {
   useEffect(() => {
     if (!activeThreadId || !isMobileCapacitorRuntime()) return;
     const handleNativeClipboardImage = (event: Event) => {
-      const value = (event as CustomEvent<{ value?: unknown }>).detail?.value;
-      if (typeof value !== "string") return;
-      const file = imageFileFromClipboardDataUrl(value);
-      if (!file) return;
-      addComposerImages([file]);
+      const files = imageFilesFromClipboardEventDetail((event as CustomEvent<unknown>).detail);
+      if (files.length === 0) return;
+      addComposerImages(files);
       focusComposer();
     };
     window.addEventListener("t3code:android-clipboard-image", handleNativeClipboardImage);

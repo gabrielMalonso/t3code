@@ -13,7 +13,11 @@ vi.mock("@capacitor/core", () => ({
   registerPlugin,
 }));
 
-import { imageFileFromClipboardDataUrl, readCapacitorClipboardImageFile } from "./clipboardImage";
+import {
+  imageFileFromClipboardDataUrl,
+  readCapacitorClipboardImageFile,
+  readCapacitorClipboardImageFiles,
+} from "./clipboardImage";
 
 describe("clipboard image helpers", () => {
   beforeEach(() => {
@@ -37,6 +41,17 @@ describe("clipboard image helpers", () => {
 
   it("rejects non-base64 image data URLs", () => {
     expect(imageFileFromClipboardDataUrl("data:image/png,hello")).toBeNull();
+  });
+
+  it("rejects image data URLs before decoding when they exceed the attachment limit", () => {
+    const atob = vi.spyOn(globalThis, "atob");
+
+    expect(
+      imageFileFromClipboardDataUrl(`data:image/png;base64,${"A".repeat(14_000_000)}`),
+    ).toBeNull();
+    expect(atob).not.toHaveBeenCalled();
+
+    atob.mockRestore();
   });
 
   it("reads an image file from Capacitor clipboard data", async () => {
@@ -74,6 +89,26 @@ describe("clipboard image helpers", () => {
     expect(clipboardRead).not.toHaveBeenCalled();
     expect(file?.name).toBe("clipboard-image.png");
     await expect(file?.text()).resolves.toBe("Hello");
+  });
+
+  it("reads multiple native Android clipboard image items", async () => {
+    registerPlugin.mockReturnValue({
+      readImage: vi.fn().mockResolvedValue({
+        items: [
+          { type: "image/png", value: "data:image/png;base64,SGVsbG8=" },
+          { type: "image/jpeg", value: "data:image/jpeg;base64,V29ybGQ=" },
+        ],
+      }),
+    });
+
+    const files = await readCapacitorClipboardImageFiles();
+
+    expect(files).toHaveLength(2);
+    expect(files[0]?.name).toBe("clipboard-image.png");
+    expect(files[1]?.name).toBe("clipboard-image.jpg");
+    await expect(files[0]?.text()).resolves.toBe("Hello");
+    await expect(files[1]?.text()).resolves.toBe("World");
+    expect(clipboardRead).not.toHaveBeenCalled();
   });
 
   it("falls back to generic clipboard data when native Android has no image", async () => {
