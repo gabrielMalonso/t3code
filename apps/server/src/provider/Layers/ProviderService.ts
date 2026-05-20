@@ -161,6 +161,13 @@ function readPersistedActiveTurnId(
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function readSessionActiveTurnId(session: ProviderSession | undefined): string | undefined {
+  const rawTurnId = session?.activeTurnId;
+  if (typeof rawTurnId !== "string") return undefined;
+  const trimmed = rawTurnId.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function readPersistedCwd(
   runtimePayload: ProviderRuntimeBinding["runtimePayload"],
 ): string | undefined {
@@ -674,10 +681,35 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ? readPersistedActiveTurnId(binding.runtimePayload)
           : undefined;
       if (activeTurnId !== undefined) {
-        return yield* toValidationError(
-          "ProviderService.sendTurn",
-          `Thread '${input.threadId}' already has active provider turn '${activeTurnId}'. Wait for it to finish or stop it before starting another turn.`,
+        const liveSession = yield* routed.adapter.listSessions().pipe(
+          Effect.map((sessions) => sessions.find((session) => session.threadId === input.threadId)),
+          Effect.orElseSucceed(() => undefined),
         );
+        const liveActiveTurnId = readSessionActiveTurnId(liveSession);
+        if (liveSession !== undefined && liveActiveTurnId === undefined) {
+          yield* directory.upsert({
+            threadId: input.threadId,
+            provider: routed.adapter.provider,
+            providerInstanceId: routed.instanceId,
+            runtimeMode: liveSession.runtimeMode,
+            status: toRuntimeStatus(liveSession),
+            ...(liveSession.resumeCursor !== undefined
+              ? { resumeCursor: liveSession.resumeCursor }
+              : {}),
+            runtimePayload: {
+              activeTurnId: null,
+              lastError: liveSession.lastError ?? null,
+              lastRuntimeEvent: "provider.sendTurn.reconcileStaleActiveTurn",
+              lastRuntimeEventAt: yield* nowIso,
+            },
+          });
+        } else {
+          const blockedTurnId = liveActiveTurnId ?? activeTurnId;
+          return yield* toValidationError(
+            "ProviderService.sendTurn",
+            `Thread '${input.threadId}' already has active provider turn '${blockedTurnId}'. Wait for it to finish or stop it before starting another turn.`,
+          );
+        }
       }
       metricProvider = routed.adapter.provider;
       metricModel = input.modelSelection?.model;
