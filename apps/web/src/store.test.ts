@@ -24,6 +24,7 @@ import {
   selectThreadExistsByRef,
   setThreadBranch,
   selectThreadsAcrossEnvironments,
+  syncServerShellSnapshot,
   type AppState,
   type EnvironmentState,
 } from "./store";
@@ -784,6 +785,76 @@ describe("incremental orchestration updates", () => {
 
     expect(selectThreadByRef(next, ref)?.loop).toEqual(thread.loop);
     expect(localEnvironmentStateOf(next).threadShellById[thread.id]?.loop).toEqual(thread.loop);
+    expect(localEnvironmentStateOf(next).threadIdsByProjectId[thread.projectId]).toEqual([
+      thread.id,
+    ]);
+  });
+
+  it("preserves loop state across full shell snapshots", () => {
+    const thread = makeThread({
+      loop: {
+        enabled: true,
+        prompt: "rodar",
+        intervalMinutes: 30,
+        compactTiming: "disabled",
+        nextRunAt: "2026-02-27T00:30:00.000Z",
+        lastRunAt: null,
+        lastError: null,
+        createdAt: "2026-02-27T00:00:00.000Z",
+        updatedAt: "2026-02-27T00:00:00.000Z",
+      },
+    });
+    const ref = scopeThreadRef(thread.environmentId, thread.id);
+    const state = makeState(thread);
+
+    const next = syncServerShellSnapshot(
+      state,
+      {
+        snapshotSequence: 2,
+        projects: [
+          {
+            id: thread.projectId,
+            title: "Project",
+            workspaceRoot: "/tmp/project",
+            repositoryIdentity: null,
+            defaultModelSelection: thread.modelSelection,
+            scripts: [],
+            createdAt: "2026-02-13T00:00:00.000Z",
+            updatedAt: "2026-02-27T00:01:00.000Z",
+          },
+        ],
+        threads: [
+          {
+            id: thread.id,
+            projectId: thread.projectId,
+            title: thread.title,
+            modelSelection: thread.modelSelection,
+            runtimeMode: thread.runtimeMode,
+            interactionMode: thread.interactionMode,
+            branch: thread.branch,
+            worktreePath: thread.worktreePath,
+            bootstrapPhase: "ready",
+            latestTurn: null,
+            createdAt: thread.createdAt,
+            updatedAt: "2026-02-27T00:01:00.000Z",
+            archivedAt: thread.archivedAt,
+            session: null,
+            latestUserMessageAt: null,
+            hasPendingApprovals: false,
+            hasPendingUserInput: false,
+            hasActionableProposedPlan: false,
+          },
+        ],
+        updatedAt: "2026-02-27T00:01:00.000Z",
+      },
+      localEnvironmentId,
+    );
+
+    expect(selectThreadByRef(next, ref)?.loop).toEqual(thread.loop);
+    expect(localEnvironmentStateOf(next).threadShellById[thread.id]?.loop).toEqual(thread.loop);
+    expect(localEnvironmentStateOf(next).threadIdsByProjectId[thread.projectId]).toEqual([
+      thread.id,
+    ]);
   });
 
   it("applies replay batches in sequence and updates session state", () => {
