@@ -60,6 +60,7 @@ import {
   type CodexSessionRuntimeOptions,
   type CodexSessionRuntimeShape,
 } from "./CodexSessionRuntime.ts";
+import { mcpElicitationQuestions } from "./CodexMcpElicitation.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 const isCodexAppServerProcessExitedError = Schema.is(CodexErrors.CodexAppServerProcessExitedError);
 const isCodexAppServerTransportError = Schema.is(CodexErrors.CodexAppServerTransportError);
@@ -346,7 +347,7 @@ function toUserInputQuestions(questions: ReadonlyArray<CodexToolUserInputQuestio
       const id = trimText(question.id);
       const header = trimText(question.header);
       const prompt = trimText(question.question);
-      if (!id || !header || !prompt || options.length === 0) {
+      if (!id || !header || !prompt) {
         return undefined;
       }
       return {
@@ -519,6 +520,26 @@ function mapToRuntimeEvents(
           type: "user-input.requested",
           payload: {
             questions,
+          },
+        },
+      ];
+    }
+
+    if (event.method === "mcpServer/elicitation/request") {
+      const payload =
+        readPayload(
+          EffectCodexSchema.ServerRequest__McpServerElicitationRequestParams,
+          event.payload,
+        ) ?? readPayload(EffectCodexSchema.McpServerElicitationRequestParams, event.payload);
+      if (!payload) {
+        return [];
+      }
+      return [
+        {
+          ...runtimeEventBase(event, canonicalThreadId),
+          type: "user-input.requested",
+          payload: {
+            questions: mcpElicitationQuestions(payload),
           },
         },
       ];
@@ -1037,6 +1058,22 @@ function mapToRuntimeEvents(
         type: "user-input.resolved",
         payload: {
           answers: toCanonicalUserInputAnswers(payload.answers),
+        },
+      },
+    ];
+  }
+
+  if (event.method === "mcpServer/elicitation/request/answered") {
+    const payload = event.payload as { readonly answers?: ProviderUserInputAnswers } | undefined;
+    if (!payload?.answers) {
+      return [];
+    }
+    return [
+      {
+        ...runtimeEventBase(event, canonicalThreadId),
+        type: "user-input.resolved",
+        payload: {
+          answers: payload.answers,
         },
       },
     ];
