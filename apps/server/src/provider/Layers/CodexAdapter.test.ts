@@ -46,6 +46,7 @@ import {
   type CodexThreadSnapshot,
 } from "./CodexSessionRuntime.ts";
 import { makeCodexAdapter } from "./CodexAdapter.ts";
+import { MCP_ELICITATION_ACTION_QUESTION_ID } from "./CodexMcpElicitation.ts";
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 
 // Test-local service tag so the rest of the file can keep using `yield* CodexAdapter`.
@@ -963,6 +964,71 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
           });
         }
       }),
+  );
+
+  it.effect("maps MCP elicitation requests to user-input prompts", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 2)).pipe(
+        Effect.forkChild,
+      );
+
+      yield* runtime.emit({
+        id: asEventId("evt-mcp-elicitation-requested"),
+        kind: "request",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "mcpServer/elicitation/request",
+        requestId: ApprovalRequestId.make("req-mcp-elicitation-1"),
+        payload: {
+          mode: "form",
+          serverName: "computer-use",
+          message: "Allow Codex to use T3 Code (Alpha)?",
+          requestedSchema: {
+            type: "object",
+            properties: {},
+          },
+          threadId: "provider-thread-1",
+          turnId: "turn-1",
+        },
+      } satisfies ProviderEvent);
+      yield* runtime.emit({
+        id: asEventId("evt-mcp-elicitation-resolved"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "mcpServer/elicitation/request/answered",
+        requestId: ApprovalRequestId.make("req-mcp-elicitation-1"),
+        payload: {
+          answers: {
+            [MCP_ELICITATION_ACTION_QUESTION_ID]: "Allow",
+          },
+          response: {
+            action: "accept",
+            content: {},
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      assert.equal(events[0]?.type, "user-input.requested");
+      if (events[0]?.type === "user-input.requested") {
+        assert.equal(events[0].requestId, "req-mcp-elicitation-1");
+        assert.equal(events[0].payload.questions[0]?.id, MCP_ELICITATION_ACTION_QUESTION_ID);
+        assert.equal(events[0].payload.questions[0]?.options[0]?.label, "Allow");
+      }
+
+      assert.equal(events[1]?.type, "user-input.resolved");
+      if (events[1]?.type === "user-input.resolved") {
+        assert.deepEqual(events[1].payload.answers, {
+          [MCP_ELICITATION_ACTION_QUESTION_ID]: "Allow",
+        });
+      }
+    }),
   );
 
   it.effect("unwraps Codex token usage payloads for context window events", () =>
