@@ -535,35 +535,34 @@ function ensureThreadRegistered(
     };
   }
 
-  if (previousProjectId !== nextProjectId) {
-    let threadIdsByProjectId = nextState.threadIdsByProjectId;
-    if (previousProjectId) {
-      const previousIds = threadIdsByProjectId[previousProjectId] ?? EMPTY_THREAD_IDS;
-      const nextIds = removeId(previousIds, threadId);
-      if (nextIds.length === 0) {
-        const { [previousProjectId]: _removed, ...rest } = threadIdsByProjectId;
-        threadIdsByProjectId = rest as Record<ProjectId, ThreadId[]>;
-      } else if (!arraysEqual(previousIds, nextIds)) {
-        threadIdsByProjectId = {
-          ...threadIdsByProjectId,
-          [previousProjectId]: nextIds,
-        };
-      }
-    }
-    const projectThreadIds = threadIdsByProjectId[nextProjectId] ?? EMPTY_THREAD_IDS;
-    const nextProjectThreadIds = appendId(projectThreadIds, threadId);
-    if (!arraysEqual(projectThreadIds, nextProjectThreadIds)) {
+  let threadIdsByProjectId = nextState.threadIdsByProjectId;
+  if (previousProjectId && previousProjectId !== nextProjectId) {
+    const previousIds = threadIdsByProjectId[previousProjectId] ?? EMPTY_THREAD_IDS;
+    const nextIds = removeId(previousIds, threadId);
+    if (nextIds.length === 0) {
+      const { [previousProjectId]: _removed, ...rest } = threadIdsByProjectId;
+      threadIdsByProjectId = rest as Record<ProjectId, ThreadId[]>;
+    } else if (!arraysEqual(previousIds, nextIds)) {
       threadIdsByProjectId = {
         ...threadIdsByProjectId,
-        [nextProjectId]: nextProjectThreadIds,
+        [previousProjectId]: nextIds,
       };
     }
-    if (threadIdsByProjectId !== nextState.threadIdsByProjectId) {
-      nextState = {
-        ...nextState,
-        threadIdsByProjectId,
-      };
-    }
+  }
+
+  const projectThreadIds = threadIdsByProjectId[nextProjectId] ?? EMPTY_THREAD_IDS;
+  const nextProjectThreadIds = appendId(projectThreadIds, threadId);
+  if (!arraysEqual(projectThreadIds, nextProjectThreadIds)) {
+    threadIdsByProjectId = {
+      ...threadIdsByProjectId,
+      [nextProjectId]: nextProjectThreadIds,
+    };
+  }
+  if (threadIdsByProjectId !== nextState.threadIdsByProjectId) {
+    nextState = {
+      ...nextState,
+      threadIdsByProjectId,
+    };
   }
 
   return nextState;
@@ -1098,9 +1097,9 @@ function syncEnvironmentShellSnapshot(
     ...buildProjectState(nextProjects),
     threadIds: [],
     threadIdsByProjectId: {},
-    threadShellById: {},
-    threadSessionById: {},
-    threadTurnStateById: {},
+    threadShellById: retainThreadScopedRecord(state.threadShellById, nextThreadIds),
+    threadSessionById: retainThreadScopedRecord(state.threadSessionById, nextThreadIds),
+    threadTurnStateById: retainThreadScopedRecord(state.threadTurnStateById, nextThreadIds),
     sidebarThreadSummaryById: {},
     messageIdsByThreadId: retainThreadScopedRecord(state.messageIdsByThreadId, nextThreadIds),
     messageByThreadId: retainThreadScopedRecord(state.messageByThreadId, nextThreadIds),
