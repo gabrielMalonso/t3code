@@ -373,6 +373,8 @@ export function projectEvent(
               ...payload.loop,
               compactTiming: payload.loop.compactTiming ?? "disabled",
               compactEveryRuns: payload.loop.compactEveryRuns ?? 1,
+              compactContextUsageThresholdPercent:
+                payload.loop.compactContextUsageThresholdPercent ?? 50,
               runsSinceCompaction: payload.loop.runsSinceCompaction ?? 0,
             },
             updatedAt: event.occurredAt,

@@ -23,6 +23,12 @@ const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const advanceLoopRunAt = (fromIso: string, intervalMinutes: number): string =>
   DateTime.formatIso(DateTime.add(DateTime.makeUnsafe(fromIso), { minutes: intervalMinutes }));
 
+function normalizeThreadLoopCompactTiming(
+  timing: "disabled" | "before" | "after" | undefined,
+): "disabled" | "before" {
+  return timing === undefined || timing === "disabled" ? "disabled" : "before";
+}
+
 function buildThreadLoopFromUpsert(input: {
   readonly command: Extract<OrchestrationCommand, { type: "thread.loop.upsert" }>;
   readonly existingLoop: ThreadLoop | null | undefined;
@@ -32,10 +38,17 @@ function buildThreadLoopFromUpsert(input: {
     existingLoop === null ||
     existingLoop === undefined ||
     existingLoop.intervalMinutes !== command.intervalMinutes;
-  const compactTiming = command.compactTiming ?? existingLoop?.compactTiming ?? "disabled";
+  const compactTiming = normalizeThreadLoopCompactTiming(
+    command.compactTiming ?? existingLoop?.compactTiming,
+  );
+  const existingCompactTiming = normalizeThreadLoopCompactTiming(existingLoop?.compactTiming);
   const compactEveryRuns = command.compactEveryRuns ?? existingLoop?.compactEveryRuns ?? 1;
+  const compactContextUsageThresholdPercent =
+    command.compactContextUsageThresholdPercent ??
+    existingLoop?.compactContextUsageThresholdPercent ??
+    50;
   const compactSettingsChanged =
-    (existingLoop?.compactTiming ?? "disabled") !== compactTiming ||
+    existingCompactTiming !== compactTiming ||
     (existingLoop?.compactEveryRuns ?? 1) !== compactEveryRuns;
   const nextRunAt = command.enabled
     ? intervalChanged || existingLoop?.nextRunAt === null || existingLoop?.nextRunAt === undefined
@@ -49,6 +62,7 @@ function buildThreadLoopFromUpsert(input: {
     intervalMinutes: command.intervalMinutes,
     compactTiming,
     compactEveryRuns,
+    compactContextUsageThresholdPercent,
     runsSinceCompaction:
       compactTiming === "disabled" || compactSettingsChanged
         ? 0

@@ -3,6 +3,7 @@ import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 import { NonNegativeInt } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
@@ -10,6 +11,7 @@ import { toPersistenceDecodeError, toPersistenceSqlError } from "../Errors.ts";
 
 import {
   DeleteProjectionThreadActivitiesInput,
+  GetLatestProjectionThreadActivityByKindInput,
   ListProjectionThreadActivitiesInput,
   ProjectionThreadActivity,
   ProjectionThreadActivityRepository,
@@ -22,6 +24,22 @@ const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
     sequence: Schema.NullOr(NonNegativeInt),
   }),
 );
+
+type ProjectionThreadActivityDbRow = Schema.Schema.Type<typeof ProjectionThreadActivityDbRowSchema>;
+
+function toProjectionThreadActivity(row: ProjectionThreadActivityDbRow): ProjectionThreadActivity {
+  const activity = {
+    activityId: row.activityId,
+    threadId: row.threadId,
+    turnId: row.turnId,
+    tone: row.tone,
+    kind: row.kind,
+    summary: row.summary,
+    payload: row.payload,
+    createdAt: row.createdAt,
+  } satisfies ProjectionThreadActivity;
+  return row.sequence !== null ? Object.assign(activity, { sequence: row.sequence }) : activity;
+}
 
 function toPersistenceSqlOrDecodeError(sqlOperation: string, decodeOperation: string) {
   return (cause: unknown) =>
@@ -97,6 +115,33 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
       `,
   });
 
+  const getLatestProjectionThreadActivityRowByKind = SqlSchema.findOneOption({
+    Request: GetLatestProjectionThreadActivityByKindInput,
+    Result: ProjectionThreadActivityDbRowSchema,
+    execute: ({ threadId, kind }) =>
+      sql`
+        SELECT
+          activity_id AS "activityId",
+          thread_id AS "threadId",
+          turn_id AS "turnId",
+          tone,
+          kind,
+          summary,
+          payload_json AS "payload",
+          sequence,
+          created_at AS "createdAt"
+        FROM projection_thread_activities
+        WHERE thread_id = ${threadId}
+          AND kind = ${kind}
+        ORDER BY
+          CASE WHEN sequence IS NULL THEN 0 ELSE 1 END DESC,
+          sequence DESC,
+          created_at DESC,
+          activity_id DESC
+        LIMIT 1
+      `,
+  });
+
   const deleteProjectionThreadActivityRows = SqlSchema.void({
     Request: DeleteProjectionThreadActivitiesInput,
     execute: ({ threadId }) =>
@@ -124,20 +169,20 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
           "ProjectionThreadActivityRepository.listByThreadId:decodeRows",
         ),
       ),
-      Effect.map((rows) =>
-        rows.map((row) => ({
-          activityId: row.activityId,
-          threadId: row.threadId,
-          turnId: row.turnId,
-          tone: row.tone,
-          kind: row.kind,
-          summary: row.summary,
-          payload: row.payload,
-          ...(row.sequence !== null ? { sequence: row.sequence } : {}),
-          createdAt: row.createdAt,
-        })),
-      ),
+      Effect.map((rows) => rows.map(toProjectionThreadActivity)),
     );
+
+  const getLatestByThreadIdAndKind: ProjectionThreadActivityRepositoryShape["getLatestByThreadIdAndKind"] =
+    (input) =>
+      getLatestProjectionThreadActivityRowByKind(input).pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "ProjectionThreadActivityRepository.getLatestByThreadIdAndKind:query",
+            "ProjectionThreadActivityRepository.getLatestByThreadIdAndKind:decodeRow",
+          ),
+        ),
+        Effect.map(Option.map(toProjectionThreadActivity)),
+      );
 
   const deleteByThreadId: ProjectionThreadActivityRepositoryShape["deleteByThreadId"] = (input) =>
     deleteProjectionThreadActivityRows(input).pipe(
@@ -149,6 +194,7 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
   return {
     upsert,
     listByThreadId,
+    getLatestByThreadIdAndKind,
     deleteByThreadId,
   } satisfies ProjectionThreadActivityRepositoryShape;
 });

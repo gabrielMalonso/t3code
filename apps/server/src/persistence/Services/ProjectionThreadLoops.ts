@@ -6,7 +6,13 @@
  *
  * @module ProjectionThreadLoopRepository
  */
-import { IsoDateTime, NonNegativeInt, PositiveInt, ThreadId } from "@t3tools/contracts";
+import {
+  IsoDateTime,
+  NonNegativeInt,
+  PositiveInt,
+  ThreadId,
+  ThreadLoopCompactContextUsageThresholdPercent,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -21,6 +27,7 @@ export const ProjectionThreadLoop = Schema.Struct({
   intervalMinutes: PositiveInt,
   compactTiming: Schema.Literals(["disabled", "before", "after"]),
   compactEveryRuns: PositiveInt,
+  compactContextUsageThresholdPercent: ThreadLoopCompactContextUsageThresholdPercent,
   runsSinceCompaction: NonNegativeInt,
   nextRunAt: Schema.NullOr(IsoDateTime),
   lastRunAt: Schema.NullOr(IsoDateTime),
