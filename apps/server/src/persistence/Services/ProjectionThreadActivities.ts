@@ -16,6 +16,7 @@ import {
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
+import * as Option from "effect/Option";
 import type * as Effect from "effect/Effect";
 
 import type { ProjectionRepositoryError } from "../Errors.ts";
@@ -37,6 +38,13 @@ export const ListProjectionThreadActivitiesInput = Schema.Struct({
   threadId: ThreadId,
 });
 export type ListProjectionThreadActivitiesInput = typeof ListProjectionThreadActivitiesInput.Type;
+
+export const GetLatestProjectionThreadActivityByKindInput = Schema.Struct({
+  threadId: ThreadId,
+  kind: Schema.String,
+});
+export type GetLatestProjectionThreadActivityByKindInput =
+  typeof GetLatestProjectionThreadActivityByKindInput.Type;
 
 export const DeleteProjectionThreadActivitiesInput = Schema.Struct({
   threadId: ThreadId,
@@ -66,6 +74,10 @@ export interface ProjectionThreadActivityRepositoryShape {
   readonly listByThreadId: (
     input: ListProjectionThreadActivitiesInput,
   ) => Effect.Effect<ReadonlyArray<ProjectionThreadActivity>, ProjectionRepositoryError>;
+
+  readonly getLatestByThreadIdAndKind: (
+    input: GetLatestProjectionThreadActivityByKindInput,
+  ) => Effect.Effect<Option.Option<ProjectionThreadActivity>, ProjectionRepositoryError>;
 
   /**
    * Delete projected thread activity rows by thread.

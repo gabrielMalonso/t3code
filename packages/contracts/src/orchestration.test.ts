@@ -545,6 +545,7 @@ it.effect("decodes thread.loop.upsert commands", () =>
       prompt: "check the deploy",
       intervalMinutes: 30,
       compactEveryRuns: 3,
+      compactContextUsageThresholdPercent: 70,
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.type, "thread.loop.upsert");
@@ -553,6 +554,7 @@ it.effect("decodes thread.loop.upsert commands", () =>
     }
     assert.strictEqual(parsed.intervalMinutes, 30);
     assert.strictEqual(parsed.compactEveryRuns, 3);
+    assert.strictEqual(parsed.compactContextUsageThresholdPercent, 70);
     assert.strictEqual(parsed.prompt, "check the deploy");
   }),
 );
@@ -576,6 +578,7 @@ it.effect("decodes thread.loop-upserted events", () =>
           enabled: true,
           prompt: "check the deploy",
           intervalMinutes: 30,
+          compactContextUsageThresholdPercent: 60,
           nextRunAt: "2026-01-01T00:30:00.000Z",
           lastRunAt: null,
           lastError: null,
@@ -589,6 +592,7 @@ it.effect("decodes thread.loop-upserted events", () =>
       throw new Error("Expected thread.loop-upserted event.");
     }
     assert.strictEqual(parsed.payload.loop.intervalMinutes, 30);
+    assert.strictEqual(parsed.payload.loop.compactContextUsageThresholdPercent, 60);
     assert.strictEqual(parsed.payload.loop.nextRunAt, "2026-01-01T00:30:00.000Z");
   }),
 );

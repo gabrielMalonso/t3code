@@ -23,7 +23,6 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
     yield* providerCommandReactor.start();
     yield* checkpointReactor.start();
     yield* threadLoopScheduler.start();
-    yield* threadLoopScheduler.start();
     yield* threadDeletionReactor.start();
   });
 

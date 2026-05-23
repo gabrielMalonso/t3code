@@ -33,6 +33,9 @@ import type { ThreadLoop } from "~/types";
 
 const THREAD_LOOP_INTERVAL_PRESETS = [1, 5, 15, 30, 60, 240] as const;
 const THREAD_LOOP_COMPACT_EVERY_PRESETS = [1, 2, 3, 4] as const;
+const THREAD_LOOP_COMPACT_THRESHOLD_PRESETS = [50, 60, 70, 80] as const;
+const THREAD_LOOP_COMPACT_THRESHOLD_MIN = 50;
+const THREAD_LOOP_COMPACT_THRESHOLD_MAX = 80;
 const THREAD_LOOP_COMPACT_TIMINGS = [
   { value: "disabled", label: "Off" },
   { value: "before", label: "Before" },
@@ -155,6 +158,7 @@ export default function ThreadLoopControl(props: {
       intervalMinutes: number;
       compactTiming: "disabled" | "before" | "after";
       compactEveryRuns: number;
+      compactContextUsageThresholdPercent: number;
     },
   ) => Promise<void>;
   onDeleteLoop: (threadId: ThreadId) => Promise<void>;
@@ -170,6 +174,9 @@ export default function ThreadLoopControl(props: {
   const [compactEveryRuns, setCompactEveryRuns] = useState(
     String(props.loop?.compactEveryRuns ?? 1),
   );
+  const [compactContextUsageThresholdPercent, setCompactContextUsageThresholdPercent] = useState(
+    String(props.loop?.compactContextUsageThresholdPercent ?? THREAD_LOOP_COMPACT_THRESHOLD_MIN),
+  );
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -183,6 +190,9 @@ export default function ThreadLoopControl(props: {
     setIntervalMinutes(String(props.loop?.intervalMinutes ?? 30));
     setCompactTiming(normalizeCompactTiming(props.loop?.compactTiming));
     setCompactEveryRuns(String(props.loop?.compactEveryRuns ?? 1));
+    setCompactContextUsageThresholdPercent(
+      String(props.loop?.compactContextUsageThresholdPercent ?? THREAD_LOOP_COMPACT_THRESHOLD_MIN),
+    );
     setError(null);
   }, [open, props.loop]);
 
@@ -197,7 +207,11 @@ export default function ThreadLoopControl(props: {
     if (props.loop.nextRunAt) lines.push(`Next: ${formatRelativeTime(props.loop.nextRunAt)}`);
     if ((props.loop.compactTiming ?? "disabled") !== "disabled") {
       const every = props.loop.compactEveryRuns ?? 1;
-      lines.push(`Compact: before every ${every} ${every === 1 ? "run" : "runs"}`);
+      const threshold =
+        props.loop.compactContextUsageThresholdPercent ?? THREAD_LOOP_COMPACT_THRESHOLD_MIN;
+      lines.push(
+        `Compact: before every ${every} ${every === 1 ? "run" : "runs"} at ${threshold}% context`,
+      );
     }
     if (props.loop.lastError) lines.push(`Error: ${props.loop.lastError}`);
     return lines.join("\n");
@@ -216,6 +230,8 @@ export default function ThreadLoopControl(props: {
           intervalMinutes: props.loop.intervalMinutes,
           compactTiming: normalizeCompactTiming(props.loop.compactTiming),
           compactEveryRuns: props.loop.compactEveryRuns ?? 1,
+          compactContextUsageThresholdPercent:
+            props.loop.compactContextUsageThresholdPercent ?? THREAD_LOOP_COMPACT_THRESHOLD_MIN,
         });
       } finally {
         setIsTogglingPause(false);
@@ -228,6 +244,10 @@ export default function ThreadLoopControl(props: {
     const trimmedPrompt = prompt.trim();
     const parsedInterval = Number.parseInt(intervalMinutes, 10);
     const parsedCompactEveryRuns = Number.parseInt(compactEveryRuns, 10);
+    const parsedCompactContextUsageThresholdPercent = Number.parseInt(
+      compactContextUsageThresholdPercent,
+      10,
+    );
 
     if (trimmedPrompt.length === 0) {
       setError("Prompt is required.");
@@ -244,6 +264,15 @@ export default function ThreadLoopControl(props: {
       setError("Compaction counter must be at least 1 run.");
       return;
     }
+    if (
+      compactTiming !== "disabled" &&
+      (!Number.isInteger(parsedCompactContextUsageThresholdPercent) ||
+        parsedCompactContextUsageThresholdPercent < THREAD_LOOP_COMPACT_THRESHOLD_MIN ||
+        parsedCompactContextUsageThresholdPercent > THREAD_LOOP_COMPACT_THRESHOLD_MAX)
+    ) {
+      setError("Compaction threshold must be between 50% and 80%.");
+      return;
+    }
 
     setError(null);
     setIsSaving(true);
@@ -257,6 +286,10 @@ export default function ThreadLoopControl(props: {
           compactTiming === "disabled"
             ? Math.max(1, parsedCompactEveryRuns || 1)
             : parsedCompactEveryRuns,
+        compactContextUsageThresholdPercent:
+          compactTiming === "disabled"
+            ? THREAD_LOOP_COMPACT_THRESHOLD_MIN
+            : parsedCompactContextUsageThresholdPercent,
       });
       setOpen(false);
     } catch (nextError) {
@@ -570,6 +603,93 @@ export default function ThreadLoopControl(props: {
                     );
                   })}
                 </div>
+                <div className="space-y-2 pt-1">
+                  <Label htmlFor="thread-loop-compact-threshold" className="text-xs">
+                    Context threshold
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-xs"
+                      onClick={() => {
+                        const current = Number.parseInt(compactContextUsageThresholdPercent, 10);
+                        if (
+                          Number.isInteger(current) &&
+                          current > THREAD_LOOP_COMPACT_THRESHOLD_MIN
+                        ) {
+                          setCompactContextUsageThresholdPercent(
+                            String(Math.max(THREAD_LOOP_COMPACT_THRESHOLD_MIN, current - 5)),
+                          );
+                        }
+                      }}
+                      disabled={
+                        Number.parseInt(compactContextUsageThresholdPercent, 10) <=
+                        THREAD_LOOP_COMPACT_THRESHOLD_MIN
+                      }
+                      aria-label="Decrease context threshold"
+                    >
+                      <MinusIcon className="size-3.5" />
+                    </Button>
+                    <Input
+                      id="thread-loop-compact-threshold"
+                      type="number"
+                      min={THREAD_LOOP_COMPACT_THRESHOLD_MIN}
+                      max={THREAD_LOOP_COMPACT_THRESHOLD_MAX}
+                      step={5}
+                      value={compactContextUsageThresholdPercent}
+                      onChange={(event) =>
+                        setCompactContextUsageThresholdPercent(event.target.value)
+                      }
+                      className="h-7 w-16 font-mono text-xs sm:h-6 sm:text-[0.6875rem] [&_input]:h-full [&_input]:leading-[inherit] [&_input]:px-0 [&_input]:text-center [&_input]:[appearance:textfield] [&_input]:[-moz-appearance:textfield] [&_input::-webkit-inner-spin-button]:appearance-none [&_input::-webkit-outer-spin-button]:appearance-none"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-xs"
+                      onClick={() => {
+                        const current = Number.parseInt(compactContextUsageThresholdPercent, 10);
+                        if (
+                          Number.isInteger(current) &&
+                          current < THREAD_LOOP_COMPACT_THRESHOLD_MAX
+                        ) {
+                          setCompactContextUsageThresholdPercent(
+                            String(Math.min(THREAD_LOOP_COMPACT_THRESHOLD_MAX, current + 5)),
+                          );
+                        }
+                      }}
+                      disabled={
+                        Number.parseInt(compactContextUsageThresholdPercent, 10) >=
+                        THREAD_LOOP_COMPACT_THRESHOLD_MAX
+                      }
+                      aria-label="Increase context threshold"
+                    >
+                      <PlusIcon className="size-3.5" />
+                    </Button>
+                    <span className="text-muted-foreground text-xs">%</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {THREAD_LOOP_COMPACT_THRESHOLD_PRESETS.map((preset) => {
+                      const selected = compactContextUsageThresholdPercent === String(preset);
+                      return (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setCompactContextUsageThresholdPercent(String(preset))}
+                          className={[
+                            "inline-flex h-7 items-center rounded-md border px-2.5 font-mono text-xs transition-colors duration-100 sm:h-6 sm:text-[0.6875rem]",
+                            "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                            selected
+                              ? "border-primary/30 bg-primary/10 text-primary font-medium dark:border-primary/20 dark:bg-primary/16"
+                              : "border-input bg-background text-muted-foreground hover:bg-accent/50 dark:bg-input/32 dark:hover:bg-input/48",
+                          ].join(" ")}
+                        >
+                          {preset}%
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             ) : null}
           </div>
@@ -611,6 +731,16 @@ export default function ThreadLoopControl(props: {
                     <span className="text-muted-foreground text-xs">Compaction count</span>
                     <span className="text-xs tabular-nums">
                       {props.loop.runsSinceCompaction ?? 0}/{props.loop.compactEveryRuns ?? 1}
+                    </span>
+                  </div>
+                ) : null}
+                {(props.loop.compactTiming ?? "disabled") !== "disabled" ? (
+                  <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                    <span className="text-muted-foreground text-xs">Context threshold</span>
+                    <span className="text-xs tabular-nums">
+                      {props.loop.compactContextUsageThresholdPercent ??
+                        THREAD_LOOP_COMPACT_THRESHOLD_MIN}
+                      %
                     </span>
                   </div>
                 ) : null}

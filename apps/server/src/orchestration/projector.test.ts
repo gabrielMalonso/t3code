@@ -275,6 +275,7 @@ describe("orchestration projector", () => {
       intervalMinutes: 1,
       compactTiming: "disabled",
       compactEveryRuns: 1,
+      compactContextUsageThresholdPercent: 50,
       runsSinceCompaction: 0,
       nextRunAt: loopAt,
       lastRunAt: null,
