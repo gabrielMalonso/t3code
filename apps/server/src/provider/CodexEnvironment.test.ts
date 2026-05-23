@@ -69,4 +69,24 @@ describe("buildCodexProcessEnvironment", () => {
       NodeFS.rmSync(codexHome, { recursive: true, force: true });
     }
   });
+
+  it("discovers bundled Computer Use from the inherited HOME when CODEX_HOME is unset", () => {
+    const userHome = makeTempDir();
+    const codexHome = NodePath.join(userHome, ".codex");
+    const bundledApp = makeComputerUseApp(codexHome, "1.0.12");
+
+    try {
+      const env = buildCodexProcessEnvironment({
+        environment: {
+          HOME: userHome,
+          SKY_CUA_SERVICE_PATH: NodePath.join(userHome, "missing.app"),
+        },
+      });
+
+      assert.equal(env.CODEX_HOME, undefined);
+      assert.equal(env.SKY_CUA_SERVICE_PATH, bundledApp);
+    } finally {
+      NodeFS.rmSync(userHome, { recursive: true, force: true });
+    }
+  });
 });

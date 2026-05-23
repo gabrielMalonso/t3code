@@ -1029,6 +1029,49 @@ describe("ProviderRuntimeIngestion", () => {
     expect(rawOutput?.content).toBe('import * as Effect from "effect/Effect"\n');
   });
 
+  it("projects MCP startup status updates into thread activities", async () => {
+    const harness = await createHarness();
+    const now = "2099-01-01T00:00:00.000Z";
+
+    harness.emit({
+      type: "mcp.status.updated",
+      eventId: asEventId("evt-mcp-status-ready"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      payload: {
+        status: {
+          name: "computer-use",
+          status: "ready",
+        },
+      },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) => activity.id === "evt-mcp-status-ready",
+      ),
+    );
+    const activity = thread.activities.find(
+      (entry: ProviderRuntimeTestActivity) => entry.id === "evt-mcp-status-ready",
+    );
+    const payload =
+      activity?.payload && typeof activity.payload === "object"
+        ? (activity.payload as Record<string, unknown>)
+        : undefined;
+    const status =
+      payload?.status && typeof payload.status === "object"
+        ? (payload.status as Record<string, unknown>)
+        : undefined;
+
+    expect(activity?.kind).toBe("mcp.status.updated");
+    expect(activity?.tone).toBe("info");
+    expect(activity?.summary).toBe("MCP server computer-use ready");
+    expect(activity?.turnId).toBeNull();
+    expect(status?.name).toBe("computer-use");
+    expect(status?.status).toBe("ready");
+  });
+
   it("normalizes command execution activities to ran-command summaries", async () => {
     const harness = await createHarness();
     const now = "2099-01-01T00:00:00.000Z";
