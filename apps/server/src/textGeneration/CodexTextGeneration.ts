@@ -13,7 +13,7 @@ import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shar
 
 import { resolveAttachmentPath } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
-import { expandHomePath } from "../pathExpansion.ts";
+import { buildCodexProcessEnvironment } from "../provider/CodexEnvironment.ts";
 import { TextGenerationError } from "@t3tools/contracts";
 import {
   type BranchNameGenerationInput,
@@ -210,10 +210,10 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
           "-",
         ],
         {
-          env: {
-            ...environment,
-            ...(codexConfig.homePath ? { CODEX_HOME: expandHomePath(codexConfig.homePath) } : {}),
-          },
+          env: buildCodexProcessEnvironment({
+            environment,
+            homePath: codexConfig.homePath,
+          }),
           cwd,
           shell: process.platform === "win32",
           stdin: {
