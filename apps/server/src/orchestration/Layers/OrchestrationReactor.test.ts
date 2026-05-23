@@ -84,7 +84,6 @@ describe("OrchestrationReactor", () => {
       "provider-command-reactor",
       "checkpoint-reactor",
       "thread-loop-scheduler",
-      "thread-loop-scheduler",
       "thread-deletion-reactor",
     ]);
 

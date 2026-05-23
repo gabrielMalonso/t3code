@@ -26,6 +26,10 @@ import { ServerConfig } from "../../config.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
 import { layerConfig as SqlitePersistenceLive } from "../../persistence/Layers/Sqlite.ts";
+import {
+  ProjectionThreadActivityRepository,
+  type ProjectionThreadActivity,
+} from "../../persistence/Services/ProjectionThreadActivities.ts";
 import { ProjectionThreadLoopRepository } from "../../persistence/Services/ProjectionThreadLoops.ts";
 import { RepositoryIdentityResolverLive } from "../../project/Layers/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
@@ -80,11 +84,13 @@ describe("ThreadLoopScheduler", () => {
     activeTurnId: string | null;
     compactTiming?: "disabled" | "before" | "after";
     compactEveryRuns?: number;
+    compactContextUsageThresholdPercent?: number;
     runsSinceCompaction?: number;
     includeSecondDueLoop?: boolean;
     completeCompaction?: (threadId: ThreadId) => boolean;
     compactionFailureDetail?: string;
     contextUsageRatio?: number;
+    latestCompactionAfterUsage?: boolean;
     busyAfterCompaction?: boolean;
   }) {
     const commandsRef = Effect.runSync(Ref.make<Array<OrchestrationCommand>>([]));
@@ -97,6 +103,7 @@ describe("ThreadLoopScheduler", () => {
           intervalMinutes: 30,
           compactTiming: input.compactTiming ?? ("disabled" as const),
           compactEveryRuns: input.compactEveryRuns ?? 1,
+          compactContextUsageThresholdPercent: input.compactContextUsageThresholdPercent ?? 50,
           runsSinceCompaction: input.runsSinceCompaction ?? 0,
           nextRunAt: "2026-04-07T11:00:00.000Z",
           lastRunAt: null,
@@ -108,7 +115,8 @@ describe("ThreadLoopScheduler", () => {
     );
     const contextUsageRatio = input.contextUsageRatio ?? 0.75;
     const contextWindowActivity = {
-      id: EventId.make("evt-context-window-thread-1"),
+      activityId: EventId.make("evt-context-window-thread-1"),
+      threadId: asThreadId("thread-1"),
       tone: "info" as const,
       kind: "context-window.updated",
       summary: "Context window updated",
@@ -117,8 +125,27 @@ describe("ThreadLoopScheduler", () => {
         maxTokens: 200_000,
       },
       turnId: null,
+      sequence: 10,
       createdAt: "2026-04-07T10:59:00.000Z",
-    };
+    } satisfies ProjectionThreadActivity;
+    const latestCompactionActivity = {
+      activityId: EventId.make("evt-context-compaction-thread-1"),
+      threadId: asThreadId("thread-1"),
+      tone: "info" as const,
+      kind: "context-compaction",
+      summary: "Context compacted",
+      payload: {},
+      turnId: null,
+      sequence: 11,
+      createdAt: "2026-04-07T11:00:00.000Z",
+    } satisfies ProjectionThreadActivity;
+    const activitiesRef = Effect.runSync(
+      Ref.make<Array<ProjectionThreadActivity>>(
+        input.latestCompactionAfterUsage
+          ? [contextWindowActivity, latestCompactionActivity]
+          : [contextWindowActivity],
+      ),
+    );
     const readModelRef = Effect.runSync(
       Ref.make<OrchestrationReadModel>({
         snapshotSequence: 0,
@@ -158,7 +185,7 @@ describe("ThreadLoopScheduler", () => {
             deletedAt: null,
             messages: [],
             proposedPlans: [],
-            activities: [contextWindowActivity],
+            activities: [],
             checkpoints: [],
             session: {
               threadId: asThreadId("thread-1"),
@@ -175,6 +202,7 @@ describe("ThreadLoopScheduler", () => {
               intervalMinutes: 30,
               compactTiming: input.compactTiming ?? "disabled",
               compactEveryRuns: input.compactEveryRuns ?? 1,
+              compactContextUsageThresholdPercent: input.compactContextUsageThresholdPercent ?? 50,
               runsSinceCompaction: input.runsSinceCompaction ?? 0,
               nextRunAt: "2026-04-07T11:00:00.000Z",
               lastRunAt: null,
@@ -197,6 +225,7 @@ describe("ThreadLoopScheduler", () => {
             intervalMinutes: 30,
             compactTiming: "disabled" as const,
             compactEveryRuns: 1,
+            compactContextUsageThresholdPercent: 50,
             runsSinceCompaction: 0,
             nextRunAt: "2026-04-07T11:00:00.000Z",
             lastRunAt: null,
@@ -234,6 +263,7 @@ describe("ThreadLoopScheduler", () => {
                   prompt: "Check the second deployment",
                   compactTiming: "disabled" as const,
                   compactEveryRuns: 1,
+                  compactContextUsageThresholdPercent: 50,
                   runsSinceCompaction: 0,
                 },
               },
@@ -246,6 +276,49 @@ describe("ThreadLoopScheduler", () => {
 
     runtime = ManagedRuntime.make(
       Layer.effect(ThreadLoopScheduler, makeThreadLoopScheduler).pipe(
+        Layer.provideMerge(
+          Layer.succeed(ProjectionThreadActivityRepository, {
+            upsert: (row) =>
+              Ref.update(activitiesRef, (activities) => [
+                ...activities.filter((activity) => activity.activityId !== row.activityId),
+                row,
+              ]).pipe(Effect.asVoid),
+            listByThreadId: ({ threadId }) =>
+              Ref.get(activitiesRef).pipe(
+                Effect.map((activities) =>
+                  activities.filter((activity) => activity.threadId === threadId),
+                ),
+              ),
+            getLatestByThreadIdAndKind: ({ threadId, kind }) =>
+              Ref.get(activitiesRef).pipe(
+                Effect.map((activities) => {
+                  const activity = activities
+                    .filter((entry) => entry.threadId === threadId && entry.kind === kind)
+                    .toSorted((left, right) => {
+                      if (
+                        left.sequence !== undefined &&
+                        right.sequence !== undefined &&
+                        left.sequence !== right.sequence
+                      ) {
+                        return right.sequence - left.sequence;
+                      }
+                      const createdAtDiff =
+                        Date.parse(right.createdAt) - Date.parse(left.createdAt);
+                      if (createdAtDiff !== 0) {
+                        return createdAtDiff;
+                      }
+                      return String(right.activityId).localeCompare(String(left.activityId));
+                    })
+                    .at(0);
+                  return activity ? { _tag: "Some", value: activity } : { _tag: "None" };
+                }),
+              ) as never,
+            deleteByThreadId: ({ threadId }) =>
+              Ref.update(activitiesRef, (activities) =>
+                activities.filter((activity) => activity.threadId !== threadId),
+              ).pipe(Effect.asVoid),
+          }),
+        ),
         Layer.provideMerge(
           Layer.succeed(ProjectionThreadLoopRepository, {
             upsert: () => Effect.void,
@@ -345,6 +418,21 @@ describe("ThreadLoopScheduler", () => {
                   command.type === "thread.compact.start" &&
                   (input.completeCompaction?.(command.threadId) ?? true)
                 ) {
+                  const compactedActivity = {
+                    activityId: EventId.make(`evt-compact-${String(command.threadId)}`),
+                    threadId: command.threadId,
+                    tone: "info" as const,
+                    kind: "context-compaction",
+                    summary: "Context compacted",
+                    payload: {},
+                    turnId: null,
+                    sequence: 20,
+                    createdAt: command.createdAt,
+                  } satisfies ProjectionThreadActivity;
+                  yield* Ref.update(activitiesRef, (activities) => [
+                    ...activities,
+                    compactedActivity,
+                  ]);
                   yield* Ref.update(readModelRef, (readModel) => ({
                     ...readModel,
                     threads: readModel.threads.map((thread) =>
@@ -355,7 +443,7 @@ describe("ThreadLoopScheduler", () => {
                             activities: [
                               ...thread.activities,
                               {
-                                id: EventId.make(`evt-compact-${String(thread.id)}`),
+                                id: compactedActivity.activityId,
                                 tone: "info" as const,
                                 kind: "context-compaction",
                                 summary: "Context compacted",
@@ -556,7 +644,7 @@ describe("ThreadLoopScheduler", () => {
     );
   });
 
-  it("skips before-run compaction when context usage is below half", async () => {
+  it("skips before-run compaction when context usage is below the configured threshold", async () => {
     const harness = await createHarness({
       sessionStatus: "ready",
       activeTurnId: null,
@@ -574,6 +662,18 @@ describe("ThreadLoopScheduler", () => {
     const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
     assert.isFalse(commands.some((command) => command.type === "thread.compact.start"));
     assert.isTrue(commands.some((command) => command.type === "thread.turn.start"));
+    assert.isTrue(
+      commands.some(
+        (command) => command.type === "thread.loop.sync" && command.patch.runsSinceCompaction === 1,
+      ),
+    );
+    assert.isTrue(
+      commands.some(
+        (command) =>
+          command.type === "thread.activity.append" &&
+          command.activity.kind === "loop.compaction.skipped",
+      ),
+    );
   });
 
   it("stops waiting when provider compaction fails", async () => {
@@ -602,7 +702,8 @@ describe("ThreadLoopScheduler", () => {
       commands.some(
         (command) =>
           command.type === "thread.loop.sync" &&
-          command.patch.lastError === "Provider rejected compaction",
+          command.patch.lastError === "Provider rejected compaction" &&
+          command.patch.runsSinceCompaction === undefined,
       ),
     );
   });
@@ -655,6 +756,101 @@ describe("ThreadLoopScheduler", () => {
         (command) => command.type === "thread.loop.sync" && command.patch.runsSinceCompaction === 2,
       ),
     );
+  });
+
+  it("uses the configured context usage threshold", async () => {
+    const belowThresholdHarness = await createHarness({
+      sessionStatus: "ready",
+      activeTurnId: null,
+      compactTiming: "before",
+      compactEveryRuns: 1,
+      runsSinceCompaction: 0,
+      compactContextUsageThresholdPercent: 80,
+      contextUsageRatio: 0.75,
+    });
+
+    await waitFor(async () => {
+      const commands = await Effect.runPromise(Ref.get(belowThresholdHarness.commandsRef));
+      return commands.some((command) => command.type === "thread.turn.start");
+    });
+
+    const belowThresholdCommands = await Effect.runPromise(
+      Ref.get(belowThresholdHarness.commandsRef),
+    );
+    assert.isFalse(
+      belowThresholdCommands.some((command) => command.type === "thread.compact.start"),
+    );
+
+    await Effect.runPromise(Scope.close(scope!, Exit.void));
+    scope = null;
+    await runtime!.dispose();
+    runtime = null;
+
+    const aboveThresholdHarness = await createHarness({
+      sessionStatus: "ready",
+      activeTurnId: null,
+      compactTiming: "before",
+      compactEveryRuns: 1,
+      runsSinceCompaction: 0,
+      compactContextUsageThresholdPercent: 80,
+      contextUsageRatio: 0.85,
+    });
+
+    await waitFor(async () => {
+      const commands = await Effect.runPromise(Ref.get(aboveThresholdHarness.commandsRef));
+      return commands.some((command) => command.type === "thread.compact.start");
+    });
+
+    const aboveThresholdCommands = await Effect.runPromise(
+      Ref.get(aboveThresholdHarness.commandsRef),
+    );
+    assert.isTrue(
+      aboveThresholdCommands.some((command) => command.type === "thread.compact.start"),
+    );
+  });
+
+  it("does not compact from stale context usage older than the latest compaction", async () => {
+    const harness = await createHarness({
+      sessionStatus: "ready",
+      activeTurnId: null,
+      compactTiming: "before",
+      compactEveryRuns: 1,
+      runsSinceCompaction: 0,
+      contextUsageRatio: 0.95,
+      latestCompactionAfterUsage: true,
+    });
+
+    await waitFor(async () => {
+      const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
+      return commands.some((command) => command.type === "thread.turn.start");
+    });
+
+    const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
+    assert.isFalse(commands.some((command) => command.type === "thread.compact.start"));
+    assert.isTrue(
+      commands.some(
+        (command) => command.type === "thread.loop.sync" && command.patch.runsSinceCompaction === 1,
+      ),
+    );
+  });
+
+  it("treats legacy after timing as before-run compaction", async () => {
+    const harness = await createHarness({
+      sessionStatus: "ready",
+      activeTurnId: null,
+      compactTiming: "after",
+      compactEveryRuns: 1,
+      runsSinceCompaction: 0,
+      contextUsageRatio: 0.95,
+    });
+
+    await waitFor(async () => {
+      const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
+      return commands.some((command) => command.type === "thread.compact.start");
+    });
+
+    const commands = await Effect.runPromise(Ref.get(harness.commandsRef));
+    assert.isTrue(commands.some((command) => command.type === "thread.compact.start"));
   });
 
   it("continues processing other due loops while before-run compaction waits", async () => {

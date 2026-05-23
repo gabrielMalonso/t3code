@@ -1003,6 +1003,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             intervalMinutes: event.payload.loop.intervalMinutes,
             compactTiming: event.payload.loop.compactTiming ?? "disabled",
             compactEveryRuns: event.payload.loop.compactEveryRuns ?? 1,
+            compactContextUsageThresholdPercent:
+              event.payload.loop.compactContextUsageThresholdPercent ?? 50,
             runsSinceCompaction: event.payload.loop.runsSinceCompaction ?? 0,
             nextRunAt: event.payload.loop.nextRunAt,
             lastRunAt: event.payload.loop.lastRunAt,

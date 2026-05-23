@@ -145,7 +145,6 @@ const ReactorLayerLive = OrchestrationReactorLive.pipe(
   Layer.provideMerge(ProviderCommandReactorLive),
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(ThreadLoopSchedulerLive),
-  Layer.provideMerge(ThreadLoopSchedulerLive),
   Layer.provideMerge(ThreadDeletionReactorLive),
   Layer.provideMerge(RuntimeReceiptBusLive),
 );
