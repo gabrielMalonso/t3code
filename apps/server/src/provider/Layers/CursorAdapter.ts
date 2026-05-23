@@ -88,6 +88,10 @@ function encodeJsonStringForDiagnostics(input: unknown): string | undefined {
   return Exit.isSuccess(result) ? result.value : undefined;
 }
 
+function errorMessageFromUnknown(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message.trim().length > 0 ? error.message : fallback;
+}
+
 export interface CursorAdapterLiveOptions {
   readonly environment?: NodeJS.ProcessEnv;
   readonly nativeEventLogPath?: string;
@@ -334,6 +338,47 @@ export function makeCursorAdapter(
 
     const offerRuntimeEvent = (event: ProviderRuntimeEvent) =>
       PubSub.publish(runtimeEventPubSub, event).pipe(Effect.asVoid);
+
+    const markTurnActive = (ctx: CursorSessionContext, turnId: TurnId) =>
+      Effect.gen(function* () {
+        if (ctx.activeTurnId !== undefined) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "sendTurn",
+            issue: `Thread '${ctx.threadId}' already has active provider turn '${ctx.activeTurnId}'. Wait for it to finish or stop it before starting another turn.`,
+          });
+        }
+        ctx.activeTurnId = turnId;
+        ctx.lastPlanFingerprint = undefined;
+        ctx.session = {
+          ...ctx.session,
+          activeTurnId: turnId,
+          updatedAt: yield* nowIso,
+        };
+      });
+
+    const clearActiveTurn = (
+      ctx: CursorSessionContext,
+      turnId: TurnId,
+      options?: {
+        readonly model?: string;
+        readonly lastError?: string;
+      },
+    ) =>
+      Effect.gen(function* () {
+        if (ctx.activeTurnId !== turnId) {
+          return false;
+        }
+        ctx.activeTurnId = undefined;
+        ctx.session = {
+          ...ctx.session,
+          activeTurnId: undefined,
+          updatedAt: yield* nowIso,
+          ...(options?.model !== undefined ? { model: options.model } : {}),
+          ...(options?.lastError !== undefined ? { lastError: options.lastError } : {}),
+        };
+        return true;
+      });
 
     const getThreadSemaphore = (threadId: string) =>
       SynchronizedRef.modifyEffect(threadLocksRef, (current) => {
@@ -850,55 +895,69 @@ export function makeCursorAdapter(
           input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
         const model = turnModelSelection?.model ?? ctx.session.model;
         const resolvedModel = resolveCursorAcpBaseModelId(model);
-        yield* applyRequestedSessionConfiguration({
-          runtime: ctx.acp,
-          runtimeMode: ctx.session.runtimeMode,
-          interactionMode: input.interactionMode,
-          modelSelection:
-            model === undefined
-              ? undefined
-              : {
-                  model,
-                  options: turnModelSelection?.options,
-                },
-          mapError: ({ cause, method }) =>
-            mapAcpToAdapterError(PROVIDER, input.threadId, method, cause),
-        });
-        ctx.activeTurnId = turnId;
-        ctx.lastPlanFingerprint = undefined;
-        ctx.session = {
-          ...ctx.session,
-          activeTurnId: turnId,
-          updatedAt: yield* nowIso,
-        };
-
-        yield* offerRuntimeEvent({
-          type: "turn.started",
-          ...(yield* makeEventStamp()),
-          provider: PROVIDER,
-          threadId: input.threadId,
-          turnId,
-          payload: { model: resolvedModel },
-        });
-
         const promptParts: Array<EffectAcpSchema.ContentBlock> = [];
+        const attachmentInputs: Array<{
+          readonly attachmentPath: string;
+          readonly mimeType: string;
+        }> = [];
         if (input.input?.trim()) {
           promptParts.push({ type: "text", text: input.input.trim() });
         }
-        if (input.attachments && input.attachments.length > 0) {
-          for (const attachment of input.attachments) {
-            const attachmentPath = resolveAttachmentPath({
-              attachmentsDir: serverConfig.attachmentsDir,
-              attachment,
+        for (const attachment of input.attachments ?? []) {
+          const attachmentPath = resolveAttachmentPath({
+            attachmentsDir: serverConfig.attachmentsDir,
+            attachment,
+          });
+          if (!attachmentPath) {
+            return yield* new ProviderAdapterRequestError({
+              provider: PROVIDER,
+              method: "session/prompt",
+              detail: `Invalid attachment id '${attachment.id}'.`,
             });
-            if (!attachmentPath) {
-              return yield* new ProviderAdapterRequestError({
-                provider: PROVIDER,
-                method: "session/prompt",
-                detail: `Invalid attachment id '${attachment.id}'.`,
-              });
-            }
-            const bytes = yield* fileSystem.readFile(attachmentPath).pipe(
+          }
+          attachmentInputs.push({
+            attachmentPath,
+            mimeType: attachment.mimeType,
+          });
+        }
+        if (promptParts.length === 0 && attachmentInputs.length === 0) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "sendTurn",
+            issue: "Turn requires non-empty text or attachments.",
+          });
+        }
+
+        yield* markTurnActive(ctx, turnId);
+        let turnStarted = false;
+        return yield* Effect.gen(function* () {
+          yield* applyRequestedSessionConfiguration({
+            runtime: ctx.acp,
+            runtimeMode: ctx.session.runtimeMode,
+            interactionMode: input.interactionMode,
+            modelSelection:
+              model === undefined
+                ? undefined
+                : {
+                    model,
+                    options: turnModelSelection?.options,
+                  },
+            mapError: ({ cause, method }) =>
+              mapAcpToAdapterError(PROVIDER, input.threadId, method, cause),
+          });
+
+          yield* offerRuntimeEvent({
+            type: "turn.started",
+            ...(yield* makeEventStamp()),
+            provider: PROVIDER,
+            threadId: input.threadId,
+            turnId,
+            payload: { model: resolvedModel },
+          });
+          turnStarted = true;
+
+          for (const attachment of attachmentInputs) {
+            const bytes = yield* fileSystem.readFile(attachment.attachmentPath).pipe(
               Effect.mapError(
                 (cause) =>
                   new ProviderAdapterRequestError({
@@ -915,51 +974,58 @@ export function makeCursorAdapter(
               mimeType: attachment.mimeType,
             });
           }
-        }
 
-        if (promptParts.length === 0) {
-          return yield* new ProviderAdapterValidationError({
+          const result = yield* ctx.acp
+            .prompt({
+              prompt: promptParts,
+            })
+            .pipe(
+              Effect.mapError((error) =>
+                mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
+              ),
+            );
+
+          ctx.turns.push({ id: turnId, items: [{ prompt: promptParts, result }] });
+          yield* offerRuntimeEvent({
+            type: "turn.completed",
+            ...(yield* makeEventStamp()),
             provider: PROVIDER,
-            operation: "sendTurn",
-            issue: "Turn requires non-empty text or attachments.",
+            threadId: input.threadId,
+            turnId,
+            payload: {
+              state: result.stopReason === "cancelled" ? "cancelled" : "completed",
+              stopReason: result.stopReason ?? null,
+            },
           });
-        }
+          yield* clearActiveTurn(ctx, turnId, { model: resolvedModel });
 
-        const result = yield* ctx.acp
-          .prompt({
-            prompt: promptParts,
-          })
-          .pipe(
-            Effect.mapError((error) =>
-              mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
-            ),
-          );
-
-        ctx.turns.push({ id: turnId, items: [{ prompt: promptParts, result }] });
-        ctx.session = {
-          ...ctx.session,
-          activeTurnId: turnId,
-          updatedAt: yield* nowIso,
-          model: resolvedModel,
-        };
-
-        yield* offerRuntimeEvent({
-          type: "turn.completed",
-          ...(yield* makeEventStamp()),
-          provider: PROVIDER,
-          threadId: input.threadId,
-          turnId,
-          payload: {
-            state: result.stopReason === "cancelled" ? "cancelled" : "completed",
-            stopReason: result.stopReason ?? null,
-          },
-        });
-
-        return {
-          threadId: input.threadId,
-          turnId,
-          resumeCursor: ctx.session.resumeCursor,
-        };
+          return {
+            threadId: input.threadId,
+            turnId,
+            resumeCursor: ctx.session.resumeCursor,
+          };
+        }).pipe(
+          Effect.catch((error) =>
+            Effect.gen(function* () {
+              const message = errorMessageFromUnknown(error, "Cursor turn failed.");
+              if (turnStarted) {
+                yield* offerRuntimeEvent({
+                  type: "turn.completed",
+                  ...(yield* makeEventStamp()),
+                  provider: PROVIDER,
+                  threadId: input.threadId,
+                  turnId,
+                  payload: {
+                    state: "failed",
+                    errorMessage: message,
+                  },
+                });
+              }
+              yield* clearActiveTurn(ctx, turnId, turnStarted ? { lastError: message } : undefined);
+              return yield* error;
+            }),
+          ),
+        );
       });
 
     const interruptTurn: CursorAdapterShape["interruptTurn"] = (threadId) =>

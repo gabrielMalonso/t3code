@@ -183,6 +183,13 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
         attachments: [],
       });
 
+      const sessionsAfterTurn = yield* adapter.listSessions();
+      const sessionAfterTurn = sessionsAfterTurn.find(
+        (entry) => String(entry.threadId) === String(threadId),
+      );
+      assert.isDefined(sessionAfterTurn);
+      assert.equal(sessionAfterTurn?.activeTurnId, undefined);
+
       const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
       const types = runtimeEvents.map((e) => e.type);
 
@@ -862,18 +869,17 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       );
       yield* serverSettings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
 
+      const requestOpenedReady = yield* Deferred.make<ProviderRuntimeEvent>();
       const requestResolvedReady = yield* Deferred.make<ProviderRuntimeEvent>();
       const turnCompletedReady = yield* Deferred.make<ProviderRuntimeEvent>();
-      let interrupted = false;
 
       const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
         Effect.gen(function* () {
           if (String(event.threadId) !== String(threadId)) {
             return;
           }
-          if (event.type === "request.opened" && !interrupted) {
-            interrupted = true;
-            yield* adapter.interruptTurn(threadId);
+          if (event.type === "request.opened") {
+            yield* Deferred.succeed(requestOpenedReady, event).pipe(Effect.ignore);
             return;
           }
           if (event.type === "request.resolved") {
@@ -902,10 +908,37 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
         })
         .pipe(Effect.forkChild);
 
+      const requestOpened = yield* Deferred.await(requestOpenedReady);
+      assert.equal(requestOpened.type, "request.opened");
+      const activeSessions = yield* adapter.listSessions();
+      const activeSession = activeSessions.find(
+        (entry) => String(entry.threadId) === String(threadId),
+      );
+      assert.isDefined(activeSession);
+      assert.isDefined(activeSession?.activeTurnId);
+      assert.equal(String(activeSession?.activeTurnId), String(requestOpened.turnId));
+
+      const secondTurnExit = yield* Effect.exit(
+        adapter.sendTurn({
+          threadId,
+          input: "this should be rejected while the first turn is active",
+          attachments: [],
+        }),
+      );
+      assert.equal(secondTurnExit._tag, "Failure");
+
+      yield* adapter.interruptTurn(threadId);
       const requestResolved = yield* Deferred.await(requestResolvedReady);
       const turnCompleted = yield* Deferred.await(turnCompletedReady);
       yield* Fiber.join(sendTurnFiber);
       yield* Fiber.interrupt(runtimeEventsFiber);
+
+      const sessionsAfterTurn = yield* adapter.listSessions();
+      const sessionAfterTurn = sessionsAfterTurn.find(
+        (entry) => String(entry.threadId) === String(threadId),
+      );
+      assert.isDefined(sessionAfterTurn);
+      assert.equal(sessionAfterTurn?.activeTurnId, undefined);
 
       assert.equal(requestResolved.type, "request.resolved");
       if (requestResolved.type === "request.resolved") {
@@ -933,6 +966,65 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
             entry.result.outcome.outcome === "cancelled",
         ),
       );
+
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("clears the active turn and emits a failed completion when ACP prompt fails", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const serverSettings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-prompt-failure-clears-active-turn");
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockAgentWrapper({ T3_ACP_FAIL_PROMPT: "1" }),
+      );
+      yield* serverSettings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+
+      const turnCompletedReady = yield* Deferred.make<ProviderRuntimeEvent>();
+      const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        Effect.gen(function* () {
+          if (String(event.threadId) !== String(threadId)) {
+            return;
+          }
+          if (event.type === "turn.completed") {
+            yield* Deferred.succeed(turnCompletedReady, event).pipe(Effect.ignore);
+          }
+        }),
+      ).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("cursor"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: { instanceId: ProviderInstanceId.make("cursor"), model: "default" },
+      });
+
+      const result = yield* Effect.exit(
+        adapter.sendTurn({
+          threadId,
+          input: "fail this prompt",
+          attachments: [],
+        }),
+      );
+      const turnCompleted = yield* Deferred.await(turnCompletedReady);
+      yield* Fiber.interrupt(runtimeEventsFiber);
+
+      assert.equal(result._tag, "Failure");
+      assert.equal(turnCompleted.type, "turn.completed");
+      if (turnCompleted.type === "turn.completed") {
+        assert.equal(turnCompleted.payload.state, "failed");
+        assert.include(turnCompleted.payload.errorMessage ?? "", "Mock prompt failed");
+      }
+
+      const sessionsAfterFailure = yield* adapter.listSessions();
+      const sessionAfterFailure = sessionsAfterFailure.find(
+        (entry) => String(entry.threadId) === String(threadId),
+      );
+      assert.isDefined(sessionAfterFailure);
+      assert.equal(sessionAfterFailure?.activeTurnId, undefined);
+      assert.include(sessionAfterFailure?.lastError ?? "", "Mock prompt failed");
 
       yield* adapter.stopSession(threadId);
     }),
