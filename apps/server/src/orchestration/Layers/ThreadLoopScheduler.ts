@@ -15,7 +15,12 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
+import { ProjectionThreadActivityRepositoryLive } from "../../persistence/Layers/ProjectionThreadActivities.ts";
 import { ProjectionThreadLoopRepositoryLive } from "../../persistence/Layers/ProjectionThreadLoops.ts";
+import {
+  ProjectionThreadActivityRepository,
+  type ProjectionThreadActivity,
+} from "../../persistence/Services/ProjectionThreadActivities.ts";
 import {
   ProjectionThreadLoopRepository,
   type ProjectionThreadLoop,
@@ -32,7 +37,13 @@ import { sessionStatusAllowsActiveTurn } from "../sessionState.ts";
 const THREAD_LOOP_SCHEDULER_INTERVAL_MS = 10_000;
 const THREAD_LOOP_COMPACT_POLL_MS = 1_000;
 const THREAD_LOOP_COMPACT_TIMEOUT_MS = 10 * 60_000;
-const THREAD_LOOP_COMPACT_CONTEXT_USAGE_THRESHOLD = 0.5;
+const DEFAULT_THREAD_LOOP_COMPACT_CONTEXT_USAGE_THRESHOLD_PERCENT = 50;
+
+function normalizeBeforeRunCompactTiming(
+  timing: "disabled" | "before" | "after" | undefined,
+): "disabled" | "before" {
+  return timing === undefined || timing === "disabled" ? "disabled" : "before";
+}
 
 class ThreadLoopSchedulerError extends Data.TaggedError("ThreadLoopSchedulerError")<{
   readonly message: string;
@@ -60,7 +71,7 @@ function shouldCompactBeforeRun(loop: {
   readonly compactEveryRuns?: number | undefined;
   readonly runsSinceCompaction?: number | undefined;
 }): boolean {
-  if ((loop.compactTiming ?? "disabled") === "disabled") {
+  if (normalizeBeforeRunCompactTiming(loop.compactTiming) !== "before") {
     return false;
   }
   const compactEveryRuns = Math.max(1, loop.compactEveryRuns ?? 1);
@@ -68,18 +79,16 @@ function shouldCompactBeforeRun(loop: {
   return runsSinceCompaction + 1 >= compactEveryRuns;
 }
 
-function nextRunsSinceCompactionAfterRun(loop: {
+function nextRunsSinceCompactionAfterNormalRun(loop: {
   readonly compactTiming?: "disabled" | "before" | "after" | undefined;
   readonly compactEveryRuns?: number | undefined;
   readonly runsSinceCompaction?: number | undefined;
 }): number {
-  if ((loop.compactTiming ?? "disabled") === "disabled") {
+  if (normalizeBeforeRunCompactTiming(loop.compactTiming) !== "before") {
     return 0;
   }
-  if (shouldCompactBeforeRun(loop)) {
-    return 0;
-  }
-  return Math.max(0, loop.runsSinceCompaction ?? 0) + 1;
+  const compactEveryRuns = Math.max(1, loop.compactEveryRuns ?? 1);
+  return Math.min(compactEveryRuns, Math.max(0, loop.runsSinceCompaction ?? 0) + 1);
 }
 
 function getPayloadNumber(payload: unknown, key: string): number | null {
@@ -90,37 +99,83 @@ function getPayloadNumber(payload: unknown, key: string): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function hasCompactableContextUsage(thread: {
-  readonly activities: ReadonlyArray<{
-    readonly kind: string;
-    readonly createdAt: string;
-    readonly payload: unknown;
-  }>;
-}): boolean {
-  const latestUsage = thread.activities
-    .filter((activity) => activity.kind === "context-window.updated")
-    .toSorted((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
-    .at(0);
-  if (!latestUsage) {
-    return false;
+function compareProjectionThreadActivities(
+  left: ProjectionThreadActivity,
+  right: ProjectionThreadActivity,
+): number {
+  if (
+    left.sequence !== undefined &&
+    right.sequence !== undefined &&
+    left.sequence !== right.sequence
+  ) {
+    return left.sequence - right.sequence;
+  }
+  const createdAtDiff = Date.parse(left.createdAt) - Date.parse(right.createdAt);
+  if (createdAtDiff !== 0) {
+    return createdAtDiff;
+  }
+  return String(left.activityId).localeCompare(String(right.activityId));
+}
+
+function getCompactContextUsageDecision(input: {
+  readonly latestUsage: ProjectionThreadActivity | null;
+  readonly latestCompaction: ProjectionThreadActivity | null;
+  readonly thresholdPercent?: number | undefined;
+}): { readonly shouldCompact: boolean; readonly detail: string } {
+  const thresholdPercent =
+    input.thresholdPercent ?? DEFAULT_THREAD_LOOP_COMPACT_CONTEXT_USAGE_THRESHOLD_PERCENT;
+  if (!input.latestUsage) {
+    return {
+      shouldCompact: false,
+      detail: `No context usage activity is available for the ${thresholdPercent}% threshold.`,
+    };
+  }
+  if (
+    input.latestCompaction &&
+    compareProjectionThreadActivities(input.latestUsage, input.latestCompaction) <= 0
+  ) {
+    return {
+      shouldCompact: false,
+      detail: `Latest context usage is older than the latest compaction; waiting for fresh usage before applying the ${thresholdPercent}% threshold.`,
+    };
   }
 
-  const usedTokens = getPayloadNumber(latestUsage.payload, "usedTokens");
-  const maxTokens = getPayloadNumber(latestUsage.payload, "maxTokens");
+  const usedTokens = getPayloadNumber(input.latestUsage.payload, "usedTokens");
+  const maxTokens = getPayloadNumber(input.latestUsage.payload, "maxTokens");
   if (usedTokens === null || maxTokens === null || maxTokens <= 0) {
-    return false;
+    return {
+      shouldCompact: false,
+      detail: `Latest context usage is missing token totals for the ${thresholdPercent}% threshold.`,
+    };
   }
-  return usedTokens / maxTokens >= THREAD_LOOP_COMPACT_CONTEXT_USAGE_THRESHOLD;
+  const usedPercent = (usedTokens / maxTokens) * 100;
+  if (usedPercent < thresholdPercent) {
+    return {
+      shouldCompact: false,
+      detail: `Context usage is ${Math.round(usedPercent)}%, below the ${thresholdPercent}% threshold.`,
+    };
+  }
+  return {
+    shouldCompact: true,
+    detail: `Context usage is ${Math.round(usedPercent)}%, at or above the ${thresholdPercent}% threshold.`,
+  };
 }
 
 export const makeThreadLoopScheduler = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+  const projectionThreadActivityRepository = yield* ProjectionThreadActivityRepository;
   const projectionThreadLoopRepository = yield* ProjectionThreadLoopRepository;
 
   const appendLoopActivity = (input: {
     readonly threadId: ThreadId;
-    readonly kind: "loop.tick.started" | "loop.tick.skipped" | "loop.tick.failed" | "loop.paused";
+    readonly kind:
+      | "loop.tick.started"
+      | "loop.tick.skipped"
+      | "loop.tick.failed"
+      | "loop.compaction.started"
+      | "loop.compaction.skipped"
+      | "loop.paused";
     readonly summary: string;
     readonly detail?: string;
     readonly tone?: "info" | "error";
@@ -284,6 +339,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
       });
       return;
     }
+    const currentLoop = thread.loop;
 
     const waitForContextCompaction = Effect.fn("waitForContextCompaction")(function* (input: {
       readonly threadId: ThreadId;
@@ -331,7 +387,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
     }) {
       yield* appendLoopActivity({
         threadId: input.threadId,
-        kind: "loop.tick.started",
+        kind: "loop.compaction.started",
         summary: "Loop context compaction started before the run",
         createdAt: input.createdAt,
       });
@@ -347,8 +403,42 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
       });
     });
 
-    const shouldCompact = shouldCompactBeforeRun(thread.loop) && hasCompactableContextUsage(thread);
-    const runsSinceCompactionAfterRun = nextRunsSinceCompactionAfterRun(thread.loop);
+    const compactionDueBeforeRun = shouldCompactBeforeRun(currentLoop);
+    const contextUsageDecision = compactionDueBeforeRun
+      ? yield* Effect.all(
+          [
+            projectionThreadActivityRepository.getLatestByThreadIdAndKind({
+              threadId: loop.threadId,
+              kind: "context-window.updated",
+            }),
+            projectionThreadActivityRepository.getLatestByThreadIdAndKind({
+              threadId: loop.threadId,
+              kind: "context-compaction",
+            }),
+          ],
+          { concurrency: 2 },
+        ).pipe(
+          Effect.map(([latestUsage, latestCompaction]) =>
+            getCompactContextUsageDecision({
+              latestUsage: Option.getOrNull(latestUsage),
+              latestCompaction: Option.getOrNull(latestCompaction),
+              thresholdPercent: currentLoop.compactContextUsageThresholdPercent,
+            }),
+          ),
+        )
+      : null;
+    const shouldCompact = contextUsageDecision?.shouldCompact ?? false;
+    let runsSinceCompactionAfterRun = nextRunsSinceCompactionAfterNormalRun(currentLoop);
+
+    if (compactionDueBeforeRun && contextUsageDecision && !contextUsageDecision.shouldCompact) {
+      yield* appendLoopActivity({
+        threadId: loop.threadId,
+        kind: "loop.compaction.skipped",
+        summary: "Loop context compaction skipped before the run",
+        detail: contextUsageDecision.detail,
+        createdAt: nowIso,
+      });
+    }
 
     if (shouldCompact) {
       const compactedBefore = yield* compactThreadForLoop({
@@ -412,11 +502,12 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
           threadId: loop.threadId,
           createdAt: nowIso,
           patch: {
-            runsSinceCompaction: runsSinceCompactionAfterRun,
+            runsSinceCompaction: 0,
           },
         });
         return;
       }
+      runsSinceCompactionAfterRun = 0;
     }
 
     yield* syncLoopPatch({
@@ -553,4 +644,7 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
 export const ThreadLoopSchedulerLive = Layer.effect(
   ThreadLoopScheduler,
   makeThreadLoopScheduler,
-).pipe(Layer.provideMerge(ProjectionThreadLoopRepositoryLive));
+).pipe(
+  Layer.provideMerge(ProjectionThreadActivityRepositoryLive),
+  Layer.provideMerge(ProjectionThreadLoopRepositoryLive),
+);

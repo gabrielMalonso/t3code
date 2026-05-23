@@ -347,6 +347,12 @@ export const OrchestrationLatestTurn = Schema.Struct({
 });
 export type OrchestrationLatestTurn = typeof OrchestrationLatestTurn.Type;
 
+export const ThreadLoopCompactContextUsageThresholdPercent = Schema.Int.check(
+  Schema.isBetween({ minimum: 50, maximum: 80 }),
+);
+export type ThreadLoopCompactContextUsageThresholdPercent =
+  typeof ThreadLoopCompactContextUsageThresholdPercent.Type;
+
 export const ThreadLoop = Schema.Struct({
   enabled: Schema.Boolean,
   prompt: TrimmedNonEmptyString,
@@ -358,6 +364,11 @@ export const ThreadLoop = Schema.Struct({
   ),
   compactEveryRuns: Schema.optional(
     PositiveInt.pipe(Schema.withDecodingDefault(Effect.succeed(1))),
+  ),
+  compactContextUsageThresholdPercent: Schema.optional(
+    ThreadLoopCompactContextUsageThresholdPercent.pipe(
+      Schema.withDecodingDefault(Effect.succeed(50)),
+    ),
   ),
   runsSinceCompaction: Schema.optional(
     NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
@@ -602,6 +613,9 @@ const ThreadLoopUpsertCommand = Schema.Struct({
   intervalMinutes: PositiveInt,
   compactTiming: Schema.optional(Schema.Literals(["disabled", "before", "after"])),
   compactEveryRuns: Schema.optional(PositiveInt),
+  compactContextUsageThresholdPercent: Schema.optional(
+    ThreadLoopCompactContextUsageThresholdPercent,
+  ),
   createdAt: IsoDateTime,
 });
 

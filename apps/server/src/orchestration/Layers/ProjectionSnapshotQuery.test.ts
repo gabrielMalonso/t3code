@@ -397,6 +397,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             intervalMinutes: 5,
             compactTiming: "disabled",
             compactEveryRuns: 1,
+            compactContextUsageThresholdPercent: 50,
             runsSinceCompaction: 0,
             nextRunAt: "2026-02-24T00:10:00.000Z",
             lastRunAt: null,
