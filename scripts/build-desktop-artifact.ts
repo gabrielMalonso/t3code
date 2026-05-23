@@ -30,6 +30,8 @@ const RepoRoot = Effect.service(Path.Path).pipe(
   Effect.flatMap((path) => path.fromFileUrl(new URL("..", import.meta.url))),
 );
 const encodeJsonString = Schema.encodeEffect(Schema.UnknownFromJsonString);
+const MAC_ENTITLEMENTS_PATH = "apps/desktop/resources/entitlements.mac.plist";
+const MAC_ENTITLEMENTS_INHERIT_PATH = "apps/desktop/resources/entitlements.mac.inherit.plist";
 
 interface DesktopBuildIconAssets {
   readonly macIconPng: string;
@@ -66,6 +68,7 @@ interface BuildCliInput {
   readonly target: Option.Option<string>;
   readonly arch: Option.Option<typeof BuildArch.Type>;
   readonly buildVersion: Option.Option<string>;
+  readonly macSigningIdentity: Option.Option<string>;
   readonly outputDir: Option.Option<string>;
   readonly skipBuild: Option.Option<boolean>;
   readonly keepStage: Option.Option<boolean>;
@@ -197,6 +200,7 @@ interface ResolvedBuildOptions {
   readonly target: string;
   readonly arch: typeof BuildArch.Type;
   readonly version: string | undefined;
+  readonly macSigningIdentity: string | undefined;
   readonly outputDir: string;
   readonly skipBuild: boolean;
   readonly keepStage: boolean;
@@ -242,6 +246,7 @@ const BuildEnvConfig = Config.all({
   target: Config.string("T3CODE_DESKTOP_TARGET").pipe(Config.option),
   arch: Config.schema(BuildArch, "T3CODE_DESKTOP_ARCH").pipe(Config.option),
   version: Config.string("T3CODE_DESKTOP_VERSION").pipe(Config.option),
+  macSigningIdentity: Config.string("T3CODE_DESKTOP_MAC_SIGNING_IDENTITY").pipe(Config.option),
   outputDir: Config.string("T3CODE_DESKTOP_OUTPUT_DIR").pipe(Config.option),
   skipBuild: Config.boolean("T3CODE_DESKTOP_SKIP_BUILD").pipe(Config.withDefault(false)),
   keepStage: Config.boolean("T3CODE_DESKTOP_KEEP_STAGE").pipe(Config.withDefault(false)),
@@ -261,6 +266,22 @@ const resolveBooleanFlag = (flag: Option.Option<boolean>, envValue: boolean) =>
   Option.getOrElse(flag, () => envValue);
 const mergeOptions = <A>(a: Option.Option<A>, b: Option.Option<A>, defaultValue: A) =>
   Option.getOrElse(a, () => Option.getOrElse(b, () => defaultValue));
+const mergeOptionalText = (a: Option.Option<string>, b: Option.Option<string>) => {
+  const value = Option.getOrUndefined(a) ?? Option.getOrUndefined(b);
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+};
+export function normalizeMacSigningIdentityName(identity: string | undefined): string | undefined {
+  const trimmed = identity?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return trimmed.replace(
+    /^(?:Developer ID Application|Apple Development|Apple Distribution):\s*/,
+    "",
+  );
+}
 
 export const resolveMockUpdateServerPort = Effect.fn("resolveMockUpdateServerPort")(function* (
   mockUpdateServerPort: string | undefined,
@@ -295,6 +316,9 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
   const target = mergeOptions(input.target, env.target, PLATFORM_CONFIG[platform].defaultTarget);
   const arch = mergeOptions(input.arch, env.arch, getDefaultArch(platform));
   const version = mergeOptions(input.buildVersion, env.version, undefined);
+  const macSigningIdentity = normalizeMacSigningIdentityName(
+    mergeOptionalText(input.macSigningIdentity, env.macSigningIdentity),
+  );
   const releaseDir = resolveBooleanFlag(input.mockUpdates, env.mockUpdates)
     ? "release-mock"
     : "release";
@@ -326,6 +350,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     target,
     arch,
     version,
+    macSigningIdentity,
     outputDir,
     skipBuild,
     keepStage,
@@ -558,11 +583,12 @@ export function resolveDesktopProductName(version: string): string {
     : (desktopPackageJson.productName ?? "T3 Code");
 }
 
-const createBuildConfig = Effect.fn("createBuildConfig")(function* (
+export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   platform: typeof BuildPlatform.Type,
   target: string,
   version: string,
   signed: boolean,
+  macSigningIdentity: string | undefined,
   mockUpdates: boolean,
   mockUpdateServerPort: number | undefined,
 ) {
@@ -588,10 +614,23 @@ const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   }
 
   if (platform === "mac") {
+    const normalizedMacSigningIdentity = normalizeMacSigningIdentityName(macSigningIdentity);
     buildConfig.mac = {
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
+      extendInfo: {
+        NSAppleEventsUsageDescription:
+          "T3 Code uses Apple Events to let computer-use tools inspect and control local apps when you ask them to.",
+      },
+      ...(signed
+        ? {
+            entitlements: MAC_ENTITLEMENTS_PATH,
+            entitlementsInherit: MAC_ENTITLEMENTS_INHERIT_PATH,
+            hardenedRuntime: true,
+          }
+        : {}),
+      ...(signed && normalizedMacSigningIdentity ? { identity: normalizedMacSigningIdentity } : {}),
     };
   }
 
@@ -791,6 +830,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       options.target,
       appVersion,
       options.signed,
+      options.macSigningIdentity,
       options.mockUpdates,
       options.mockUpdateServerPort,
     ),
@@ -906,6 +946,12 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
   ),
   buildVersion: Flag.string("build-version").pipe(
     Flag.withDescription("Artifact version metadata (env: T3CODE_DESKTOP_VERSION)."),
+    Flag.optional,
+  ),
+  macSigningIdentity: Flag.string("mac-signing-identity").pipe(
+    Flag.withDescription(
+      "macOS code signing identity name to pin when --signed is enabled (env: T3CODE_DESKTOP_MAC_SIGNING_IDENTITY).",
+    ),
     Flag.optional,
   ),
   outputDir: Flag.string("output-dir").pipe(

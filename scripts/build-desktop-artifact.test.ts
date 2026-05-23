@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import {
+  createBuildConfig,
   resolveGitHubPublishConfig,
   resolveDesktopRuntimeDependencies,
   resolveBuildOptions,
@@ -13,6 +14,7 @@ import {
   resolveDesktopUpdateChannel,
   resolveMockUpdateServerPort,
   resolveMockUpdateServerUrl,
+  normalizeMacSigningIdentityName,
 } from "./build-desktop-artifact.ts";
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
 
@@ -128,6 +130,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         target: Option.none(),
         arch: Option.some("arm64"),
         buildVersion: Option.none(),
+        macSigningIdentity: Option.none(),
         outputDir: Option.some("release-test"),
         skipBuild: Option.some(false),
         keepStage: Option.some(false),
@@ -156,6 +159,114 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(resolved.signed, false);
       assert.equal(resolved.verbose, false);
       assert.equal(resolved.mockUpdates, false);
+    }),
+  );
+
+  it.effect("resolves a pinned macOS signing identity from env", () =>
+    Effect.gen(function* () {
+      const resolved = yield* resolveBuildOptions({
+        platform: Option.some("mac"),
+        target: Option.none(),
+        arch: Option.some("arm64"),
+        buildVersion: Option.none(),
+        macSigningIdentity: Option.none(),
+        outputDir: Option.none(),
+        skipBuild: Option.none(),
+        keepStage: Option.none(),
+        signed: Option.none(),
+        verbose: Option.none(),
+        mockUpdates: Option.none(),
+        mockUpdateServerPort: Option.none(),
+      }).pipe(
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromEnv({
+              env: {
+                T3CODE_DESKTOP_MAC_SIGNING_IDENTITY:
+                  "Developer ID Application: Example Developer (TEAMID1234)",
+              },
+            }),
+          ),
+        ),
+      );
+
+      assert.equal(resolved.macSigningIdentity, "Example Developer (TEAMID1234)");
+    }),
+  );
+
+  it("normalizes Apple certificate prefixes from macOS signing identities", () => {
+    assert.equal(
+      normalizeMacSigningIdentityName("Developer ID Application: Example Developer (TEAMID1234)"),
+      "Example Developer (TEAMID1234)",
+    );
+    assert.equal(
+      normalizeMacSigningIdentityName("Apple Development: Example Developer (TEAMID1234)"),
+      "Example Developer (TEAMID1234)",
+    );
+    assert.equal(
+      normalizeMacSigningIdentityName("Apple Distribution: Example Developer (TEAMID1234)"),
+      "Example Developer (TEAMID1234)",
+    );
+    assert.equal(
+      normalizeMacSigningIdentityName("Example Developer (TEAMID1234)"),
+      "Example Developer (TEAMID1234)",
+    );
+  });
+
+  it.effect("pins the macOS signing identity only when signing is enabled", () =>
+    Effect.gen(function* () {
+      const signedConfig = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "0.0.17",
+        true,
+        "Developer ID Application: Example Developer (TEAMID1234)",
+        false,
+        undefined,
+      );
+      const signedMacConfig = signedConfig.mac as {
+        readonly entitlements?: string;
+        readonly entitlementsInherit?: string;
+        readonly extendInfo?: { readonly NSAppleEventsUsageDescription?: string };
+        readonly hardenedRuntime?: boolean;
+        readonly identity?: string;
+      };
+      assert.equal(signedMacConfig.identity, "Example Developer (TEAMID1234)");
+      assert.equal(
+        signedMacConfig.extendInfo?.NSAppleEventsUsageDescription,
+        "T3 Code uses Apple Events to let computer-use tools inspect and control local apps when you ask them to.",
+      );
+      assert.equal(signedMacConfig.entitlements, "apps/desktop/resources/entitlements.mac.plist");
+      assert.equal(
+        signedMacConfig.entitlementsInherit,
+        "apps/desktop/resources/entitlements.mac.inherit.plist",
+      );
+      assert.equal(signedMacConfig.hardenedRuntime, true);
+
+      const unsignedConfig = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "0.0.17",
+        false,
+        "Developer ID Application: Example Developer (TEAMID1234)",
+        false,
+        undefined,
+      );
+      const unsignedMacConfig = unsignedConfig.mac as {
+        readonly entitlements?: string;
+        readonly entitlementsInherit?: string;
+        readonly extendInfo?: { readonly NSAppleEventsUsageDescription?: string };
+        readonly hardenedRuntime?: boolean;
+        readonly identity?: string;
+      };
+      assert.equal(unsignedMacConfig.identity, undefined);
+      assert.equal(
+        unsignedMacConfig.extendInfo?.NSAppleEventsUsageDescription,
+        "T3 Code uses Apple Events to let computer-use tools inspect and control local apps when you ask them to.",
+      );
+      assert.equal(unsignedMacConfig.entitlements, undefined);
+      assert.equal(unsignedMacConfig.entitlementsInherit, undefined);
+      assert.equal(unsignedMacConfig.hardenedRuntime, undefined);
     }),
   );
 });
