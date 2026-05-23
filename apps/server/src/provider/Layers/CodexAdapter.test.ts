@@ -533,6 +533,97 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("maps MCP tool calls with server/tool labels and stable tool call data", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-mcp-complete"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "item/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("mcp_1"),
+        payload: {
+          completedAtMs: 1_778_000_000_000,
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "mcpToolCall",
+            id: "mcp_1",
+            server: "computer-use",
+            tool: "get_app_state",
+            arguments: {
+              app: "Finder",
+            },
+            status: "completed",
+            result: {
+              content: [{ type: "text", text: "Finder state" }],
+            },
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+
+      assert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") {
+        return;
+      }
+      assert.equal(firstEvent.value.type, "item.completed");
+      if (firstEvent.value.type !== "item.completed") {
+        return;
+      }
+      assert.equal(firstEvent.value.payload.itemType, "mcp_tool_call");
+      assert.equal(firstEvent.value.payload.title, "computer-use/get_app_state");
+      assert.equal(firstEvent.value.payload.detail, "app: Finder");
+      assert.equal(firstEvent.value.payload.status, "completed");
+
+      const data = firstEvent.value.payload.data as Record<string, unknown>;
+      assert.equal(data.toolCallId, "mcp_1");
+      assert.equal(data.server, "computer-use");
+      assert.equal(data.tool, "get_app_state");
+    }),
+  );
+
+  it.effect("maps MCP startup status notifications", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-mcp-status"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "mcpServer/startupStatus/updated",
+        threadId: asThreadId("thread-1"),
+        payload: {
+          name: "computer-use",
+          status: "ready",
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+
+      assert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") {
+        return;
+      }
+      assert.equal(firstEvent.value.type, "mcp.status.updated");
+      if (firstEvent.value.type !== "mcp.status.updated") {
+        return;
+      }
+      assert.deepEqual(firstEvent.value.payload.status, {
+        name: "computer-use",
+        status: "ready",
+      });
+    }),
+  );
+
   it.effect("maps plan deltas to canonical proposed-plan delta events", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();
