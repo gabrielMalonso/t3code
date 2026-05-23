@@ -90,7 +90,12 @@ function resolveCodexHomePath(input: {
     return NodePath.resolve(expandHomePath(inheritedHome));
   }
 
-  return NodePath.join(NodeOS.homedir(), ".codex");
+  const inheritedUserHome = input.env.HOME;
+  const userHome =
+    inheritedUserHome && inheritedUserHome.trim().length > 0
+      ? NodePath.resolve(expandHomePath(inheritedUserHome))
+      : NodeOS.homedir();
+  return NodePath.join(userHome, ".codex");
 }
 
 function resolveComputerUseServicePath(input: {
