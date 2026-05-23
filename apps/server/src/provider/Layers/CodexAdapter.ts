@@ -264,7 +264,74 @@ function itemTitle(itemType: CanonicalItemType): string | undefined {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isMcpToolCallItem(
+  item: CodexLifecycleItem,
+): item is Extract<CodexLifecycleItem, { type: "mcpToolCall" }> {
+  return item.type === "mcpToolCall";
+}
+
+function truncatePreview(value: string, maxLength = 180): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function jsonPreview(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  try {
+    return truncatePreview(JSON.stringify(value));
+  } catch {
+    return undefined;
+  }
+}
+
+function mcpToolTitle(item: Extract<CodexLifecycleItem, { type: "mcpToolCall" }>): string {
+  return `${item.server}/${item.tool}`;
+}
+
+function mcpArgumentsPreview(args: unknown): string | undefined {
+  if (!isRecord(args)) {
+    return jsonPreview(args);
+  }
+
+  const app = trimText(typeof args.app === "string" ? args.app : undefined);
+  if (app) {
+    return `app: ${app}`;
+  }
+
+  return jsonPreview(args);
+}
+
+function mcpResultPreview(
+  result: Extract<CodexLifecycleItem, { type: "mcpToolCall" }>["result"],
+): string | undefined {
+  const content = result?.content;
+  if (!content || content.length === 0) {
+    return undefined;
+  }
+
+  return jsonPreview(content.length === 1 ? content[0] : content);
+}
+
 function itemDetail(item: CodexLifecycleItem): string | undefined {
+  if (isMcpToolCallItem(item)) {
+    const error = trimText(item.error?.message);
+    if (error) {
+      return error;
+    }
+
+    return mcpArgumentsPreview(item.arguments) ?? mcpResultPreview(item.result);
+  }
+
   const candidates = [
     "command" in item ? item.command : undefined,
     "title" in item ? item.title : undefined,
@@ -279,6 +346,61 @@ function itemDetail(item: CodexLifecycleItem): string | undefined {
     return trimmed;
   }
   return undefined;
+}
+
+function itemStatus(
+  item: CodexLifecycleItem,
+  lifecycle: "item.started" | "item.updated" | "item.completed",
+): "inProgress" | "completed" | "failed" | undefined {
+  if (isMcpToolCallItem(item)) {
+    return item.status === "failed"
+      ? "failed"
+      : item.status === "completed"
+        ? "completed"
+        : "inProgress";
+  }
+
+  if (lifecycle === "item.started") {
+    return "inProgress";
+  }
+
+  if (lifecycle === "item.completed") {
+    return "completed";
+  }
+
+  return undefined;
+}
+
+function itemLifecycleTitle(
+  item: CodexLifecycleItem,
+  itemType: CanonicalItemType,
+): string | undefined {
+  if (isMcpToolCallItem(item)) {
+    return mcpToolTitle(item);
+  }
+
+  return itemTitle(itemType);
+}
+
+function itemLifecycleData(
+  event: ProviderEvent,
+  item: CodexLifecycleItem,
+): ProviderEvent["payload"] {
+  if (!isMcpToolCallItem(item)) {
+    return event.payload;
+  }
+
+  const base = isRecord(event.payload) ? event.payload : { payload: event.payload };
+  return {
+    ...base,
+    toolCallId: item.id,
+    server: item.server,
+    tool: item.tool,
+    arguments: item.arguments,
+    status: item.status,
+    ...(item.error ? { error: item.error } : {}),
+    ...(item.result ? { result: item.result } : {}),
+  };
 }
 
 function toRequestTypeFromMethod(method: string): CanonicalRequestType {
@@ -463,12 +585,9 @@ function mapItemLifecycle(
   }
 
   const detail = itemDetail(item);
-  const status =
-    lifecycle === "item.started"
-      ? "inProgress"
-      : lifecycle === "item.completed"
-        ? "completed"
-        : undefined;
+  const status = itemStatus(item, lifecycle);
+  const title = itemLifecycleTitle(item, itemType);
+  const data = itemLifecycleData(event, item);
 
   return {
     ...runtimeEventBase(event, canonicalThreadId),
@@ -476,9 +595,9 @@ function mapItemLifecycle(
     payload: {
       itemType,
       ...(status ? { status } : {}),
-      ...(itemTitle(itemType) ? { title: itemTitle(itemType) } : {}),
+      ...(title ? { title } : {}),
       ...(detail ? { detail } : {}),
-      ...(event.payload !== undefined ? { data: event.payload } : {}),
+      ...(data !== undefined ? { data } : {}),
     },
   };
 }
@@ -1123,6 +1242,29 @@ function mapToRuntimeEvents(
         ...runtimeEventBase(event, canonicalThreadId),
         payload: {
           rateLimits: event.payload ?? {},
+        },
+      },
+    ];
+  }
+
+  if (event.method === "mcpServer/startupStatus/updated") {
+    const payload = readPayload(
+      EffectCodexSchema.V2McpServerStatusUpdatedNotification,
+      event.payload,
+    );
+    if (!payload) {
+      return [];
+    }
+    return [
+      {
+        type: "mcp.status.updated",
+        ...runtimeEventBase(event, canonicalThreadId),
+        payload: {
+          status: {
+            name: payload.name,
+            status: payload.status,
+            ...(trimText(payload.error) ? { error: trimText(payload.error) } : {}),
+          },
         },
       },
     ];

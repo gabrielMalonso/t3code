@@ -168,6 +168,18 @@ function truncateDetail(value: string, limit = 180): string {
   return value.length > limit ? `${value.slice(0, limit - 3)}...` : value;
 }
 
+function recordFieldText(record: unknown, key: string): string | undefined {
+  if (record === null || typeof record !== "object" || Array.isArray(record)) {
+    return undefined;
+  }
+  const value = (record as Record<string, unknown>)[key];
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function normalizeProposedPlanMarkdown(planMarkdown: string | undefined): string | undefined {
   const trimmed = planMarkdown?.trim();
   if (!trimmed) {
@@ -540,6 +552,28 @@ function runtimeEventToActivities(
       ];
     }
 
+    case "mcp.status.updated": {
+      const status = event.payload.status;
+      const name = recordFieldText(status, "name");
+      const state = recordFieldText(status, "status");
+      const error = recordFieldText(status, "error");
+      return [
+        {
+          id: event.eventId,
+          createdAt: event.createdAt,
+          tone: state === "failed" || state === "cancelled" ? "error" : "info",
+          kind: "mcp.status.updated",
+          summary: name && state ? `MCP server ${name} ${state}` : "MCP startup status updated",
+          payload: {
+            status,
+            ...(error ? { error: truncateDetail(error) } : {}),
+          },
+          turnId: toTurnId(event.turnId) ?? null,
+          ...maybeSequence,
+        },
+      ];
+    }
+
     case "item.updated": {
       if (!isToolLifecycleItemType(event.payload.itemType)) {
         return [];
@@ -617,6 +651,7 @@ function runtimeEventToActivities(
           payload: {
             itemType: event.payload.itemType,
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
+            ...(event.payload.data !== undefined ? { data: event.payload.data } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,

@@ -28,7 +28,7 @@ import {
   buildServerProvider,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
-import { expandHomePath } from "../../pathExpansion.ts";
+import { buildCodexProcessEnvironment } from "../CodexEnvironment.ts";
 import { scopedSafeTeardown } from "./scopedSafeTeardown.ts";
 import packageJson from "../../../package.json" with { type: "json" };
 const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnError);
@@ -268,20 +268,15 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
   readonly customModels?: ReadonlyArray<string>;
   readonly environment?: NodeJS.ProcessEnv;
 }) {
-  // `~` is not shell-expanded when env vars are set via `child_process.spawn`,
-  // so `CODEX_HOME=~/.codex_work` would reach codex verbatim and trip
-  // "CODEX_HOME points to '~/.codex_work', but that path does not exist".
-  // Expand here for parity with `CodexTextGeneration`/`CodexSessionRuntime`.
-  const resolvedHomePath = input.homePath ? expandHomePath(input.homePath) : undefined;
   const clientContext = yield* Layer.build(
     CodexClient.layerCommand({
       command: input.binaryPath,
       args: ["app-server"],
       cwd: input.cwd,
-      env: {
-        ...(input.environment ?? process.env),
-        ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
-      },
+      env: buildCodexProcessEnvironment({
+        environment: input.environment,
+        homePath: input.homePath,
+      }),
     }),
   );
   const client = yield* Effect.service(CodexClient.CodexAppServerClient).pipe(
