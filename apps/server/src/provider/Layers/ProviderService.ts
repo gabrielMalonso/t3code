@@ -21,7 +21,7 @@ import {
   ProviderSessionStartInput,
   ProviderStopSessionInput,
   type ProviderInstanceId,
-  type ProviderDriverKind,
+  ProviderDriverKind,
   type ProviderRuntimeEvent,
   type ProviderSession,
 } from "@t3tools/contracts";
@@ -72,6 +72,8 @@ const ProviderRollbackConversationInput = Schema.Struct({
   threadId: ThreadId,
   numTurns: NonNegativeInt,
 });
+
+const CURSOR_PROVIDER = ProviderDriverKind.make("cursor");
 
 function toValidationError(
   operation: string,
@@ -168,6 +170,15 @@ function readSessionActiveTurnId(session: ProviderSession | undefined): string |
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function makeRuntimeTurnKey(input: {
+  readonly providerInstanceId: ProviderInstanceId;
+  readonly provider: ProviderDriverKind;
+  readonly threadId: ThreadId;
+  readonly turnId: string;
+}): string {
+  return `${input.providerInstanceId}:${input.provider}:${input.threadId}:${input.turnId}`;
+}
+
 function readPersistedCwd(
   runtimePayload: ProviderRuntimeBinding["runtimePayload"],
 ): string | undefined {
@@ -231,7 +242,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const registry = yield* ProviderAdapterRegistry;
   const directory = yield* ProviderSessionDirectory;
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
+  const terminalRuntimeTurns = yield* Ref.make(new Set<string>());
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
+  const maxTerminalRuntimeTurns = 2048;
 
   const publishRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
     Effect.succeed(event).pipe(
@@ -287,6 +300,83 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       });
     });
 
+  const rememberTerminalRuntimeTurn = (key: string): Effect.Effect<void> =>
+    Ref.update(terminalRuntimeTurns, (current) => {
+      const next = new Set(current);
+      next.delete(key);
+      next.add(key);
+      while (next.size > maxTerminalRuntimeTurns) {
+        const oldest = next.values().next();
+        if (oldest.done) break;
+        next.delete(oldest.value);
+      }
+      return next;
+    });
+
+  const hasTerminalRuntimeTurn = (key: string): Effect.Effect<boolean> =>
+    Ref.get(terminalRuntimeTurns).pipe(Effect.map((current) => current.has(key)));
+
+  const clearPersistedActiveTurn = (input: {
+    readonly provider: ProviderDriverKind;
+    readonly providerInstanceId: ProviderInstanceId;
+    readonly threadId: ThreadId;
+    readonly turnId: string;
+    readonly lastRuntimeEvent: string;
+    readonly lastRuntimeEventAt: string;
+  }) =>
+    directory.getBinding(input.threadId).pipe(
+      Effect.flatMap((bindingOption) =>
+        Option.match(bindingOption, {
+          onNone: () => Effect.void,
+          onSome: (binding) => {
+            if (
+              binding.provider !== input.provider ||
+              binding.providerInstanceId !== input.providerInstanceId
+            ) {
+              return Effect.void;
+            }
+            if (readPersistedActiveTurnId(binding.runtimePayload) !== input.turnId) {
+              return Effect.void;
+            }
+            return directory.upsert({
+              threadId: input.threadId,
+              provider: input.provider,
+              providerInstanceId: input.providerInstanceId,
+              ...(binding.runtimeMode !== undefined ? { runtimeMode: binding.runtimeMode } : {}),
+              status: binding.status ?? "running",
+              runtimePayload: {
+                activeTurnId: null,
+                lastRuntimeEvent: input.lastRuntimeEvent,
+                lastRuntimeEventAt: input.lastRuntimeEventAt,
+              },
+            });
+          },
+        }),
+      ),
+    );
+
+  const rememberTerminalRuntimeEvent = (
+    source: {
+      readonly instanceId: ProviderInstanceId;
+      readonly provider: ProviderDriverKind;
+    },
+    event: ProviderRuntimeEvent,
+  ): Effect.Effect<void> => {
+    if (
+      (event.type !== "turn.completed" && event.type !== "turn.aborted") ||
+      event.turnId === undefined
+    ) {
+      return Effect.void;
+    }
+    const key = makeRuntimeTurnKey({
+      provider: source.provider,
+      providerInstanceId: source.instanceId,
+      threadId: event.threadId,
+      turnId: event.turnId,
+    });
+    return rememberTerminalRuntimeTurn(key);
+  };
+
   const processRuntimeEvent = (
     source: {
       readonly instanceId: ProviderInstanceId;
@@ -295,6 +385,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     event: ProviderRuntimeEvent,
   ): Effect.Effect<void> =>
     Effect.sync(() => correlateRuntimeEventWithInstance(source, event)).pipe(
+      Effect.tap((canonicalEvent) => rememberTerminalRuntimeEvent(source, canonicalEvent)),
       Effect.flatMap((canonicalEvent) =>
         increment(providerRuntimeEventsTotal, {
           provider: canonicalEvent.provider,
@@ -718,6 +809,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         ...(input.modelSelection?.model ? { "provider.model": input.modelSelection.model } : {}),
       });
       const turn = yield* routed.adapter.sendTurn(input);
+      const runtimeTurnKey = makeRuntimeTurnKey({
+        provider: routed.adapter.provider,
+        providerInstanceId: routed.instanceId,
+        threadId: input.threadId,
+        turnId: turn.turnId,
+      });
       yield* directory.upsert({
         threadId: input.threadId,
         provider: routed.adapter.provider,
@@ -731,6 +828,31 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           lastRuntimeEventAt: yield* nowIso,
         },
       });
+      const terminalRuntimeTurnObserved = yield* hasTerminalRuntimeTurn(runtimeTurnKey);
+      const liveRuntimeTurnIsIdle =
+        routed.adapter.provider === CURSOR_PROVIDER
+          ? yield* routed.adapter.listSessions().pipe(
+              Effect.map((sessions) => {
+                const liveSession = sessions.find((session) => session.threadId === input.threadId);
+                return (
+                  liveSession !== undefined && readSessionActiveTurnId(liveSession) === undefined
+                );
+              }),
+              Effect.orElseSucceed(() => false),
+            )
+          : false;
+      if (terminalRuntimeTurnObserved || liveRuntimeTurnIsIdle) {
+        yield* clearPersistedActiveTurn({
+          provider: routed.adapter.provider,
+          providerInstanceId: routed.instanceId,
+          threadId: input.threadId,
+          turnId: turn.turnId,
+          lastRuntimeEvent: terminalRuntimeTurnObserved
+            ? "provider.sendTurn.completed"
+            : "provider.sendTurn.reconcileIdleRuntime",
+          lastRuntimeEventAt: yield* nowIso,
+        });
+      }
       yield* analytics.record("provider.turn.sent", {
         provider: routed.adapter.provider,
         model: input.modelSelection?.model,

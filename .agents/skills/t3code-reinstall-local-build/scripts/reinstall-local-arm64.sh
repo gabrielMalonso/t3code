@@ -289,8 +289,6 @@ fi
 record_tcc_reset_need
 backup_data_before_reinstall
 
-rm -rf "${APP_PATH}"
-
 VERSION="$(bun -e 'const pkg=require(process.argv[1]); console.log(pkg.version)' "${PACKAGE_JSON}")"
 configure_macos_signing
 
@@ -321,6 +319,12 @@ if [[ ! -d "${DMG_APP}" ]]; then
   exit 1
 fi
 
+if pgrep -f "${APP_PROCESS_PATTERN}" >/dev/null 2>&1; then
+  echo "${APP_NAME} voltou a rodar durante o build; abortando antes de trocar o app." >&2
+  exit 1
+fi
+
+rm -rf "${APP_PATH}"
 ditto "${DMG_APP}" "${APP_PATH}"
 hdiutil detach "${MOUNT_POINT}" -quiet
 rmdir "${MOUNT_POINT}" >/dev/null 2>&1 || true
