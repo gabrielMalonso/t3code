@@ -2,10 +2,10 @@
 
 ## Status atual
 
-- Data: 2026-05-19
-- Branch de trabalho: `t3code/upstream-sync-no-openpets`
-- Upstream integrado nesta wave: `d1e85c4e8` (`upstream/main`)
-- Estado: merge aplicado em `--no-commit`; ancestry do upstream sincronizada; OpenPets removido deliberadamente do fork; custom vivo restante preservado
+- Data: 2026-05-23
+- Branch de trabalho: `feature/macos-reinstall-hardening`
+- Upstream integrado nesta wave: `4f0f24f05` (`upstream/main`)
+- Estado: merge limpo aplicado e validado; selecoes de reasoning por multiplas provider instances absorvidas do upstream; custom vivo preservado
 - Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
 ## Features locais vivas
@@ -81,6 +81,39 @@
 - Se precisar tocar `ChatComposer` ou `ComposerPromptEditor`, fazer o minimo e deixar a adaptacao visivel
 - Se a mudanca for release/build desktop, nao permitir fallback automatico para `GITHUB_REPOSITORY` no feed de updater; o fork precisa de opt-in explicito para nao reinstalar upstream por acidente
 - Se OpenPets aparecer em branch antiga, tratar como custom arqueologico e nao reaplicar.
+
+## 2026-05-23 — Sync ate `4f0f24f05`
+
+- Branch de sync: `feature/macos-reinstall-hardening`
+- Donor local usado para replay seletivo: `66714e727` (`Harden macOS rebuild and preserve local data`)
+- Upstream absorvido:
+  - `4f0f24f05` — `fix: maintain reasoning selections for multiple providers (#2760)`
+  - `ChatComposer` passou a ler `composerModelOptions` por `selectedInstanceId`, nao por driver
+  - `TraitsPicker`/`composerProviderState` agora propagam `instanceId` para persistencia de traits
+  - `composerDraftStore` aceita `instanceId` explicito em `setProviderModelOptions`, preservando opcoes por instancia custom
+- Zona de atrito prevista antes do merge:
+  - `apps/web/src/components/chat/ChatComposer.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/composerDraftStore.ts` — `hotspot-compartilhado`
+  - `apps/web/src/composerDraftStore.test.ts` — `hotspot-compartilhado`
+- Conflitos reais do merge:
+  - nenhum
+- O que foi reaplicado do custom vivo:
+  - nada manualmente; o merge upstream entrou limpo e manteve os hooks/slots custom existentes do composer
+- O que foi deliberadamente deixado de fora do replay:
+  - nenhum replay de `t3code-custom`, mobile, thread loop, file references ou desktop reinstall; o upstream nao tocou esses perimetros
+- Classificacao:
+  - `apps/web/src/components/chat/ChatComposer.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/components/chat/TraitsPicker.tsx` — `core-puro`
+  - `apps/web/src/components/chat/composerProviderState.tsx` — `core-puro`
+  - `apps/web/src/composerDraftStore.ts` — `hotspot-compartilhado`
+  - `apps/web/src/composerDraftStore.test.ts` — `hotspot-compartilhado`
+- Decisao importante:
+  - aceitar o fluxo upstream de `ProviderInstanceId` como fonte de verdade para opcoes de provider; nao criar compat local por `ProviderDriverKind`
+- Validacao final:
+  - `bun fmt`
+  - `bun lint`
+  - `bun typecheck`
+  - `bun run --cwd apps/web test src/composerDraftStore.test.ts`
 
 ## 2026-05-19 — Sync sem OpenPets ate `d1e85c4e8`
 

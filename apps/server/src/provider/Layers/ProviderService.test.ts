@@ -71,6 +71,7 @@ const asThreadId = (value: string): ThreadId => ThreadId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
 const codexInstanceId = ProviderInstanceId.make("codex");
 const claudeAgentInstanceId = ProviderInstanceId.make("claudeAgent");
+const cursorInstanceId = ProviderInstanceId.make("cursor");
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
 const CLAUDE_AGENT_DRIVER = ProviderDriverKind.make("claudeAgent");
 const CURSOR_DRIVER = ProviderDriverKind.make("cursor");
@@ -1220,6 +1221,72 @@ routing.layer("ProviderServiceLive routing", (it) => {
           assert.equal(runtimePayload.activeTurnId, `turn-${String(session.threadId)}`);
           assert.equal(runtimePayload.lastError, null);
           assert.equal(runtimePayload.lastRuntimeEvent, "provider.sendTurn");
+        }
+      }
+    }),
+  );
+
+  it.effect("does not leave synchronous terminal sendTurn results active in runtime storage", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService;
+      const runtimeRepository = yield* ProviderSessionRuntimeRepository;
+
+      const threadId = asThreadId("thread-sync-terminal-clear");
+      yield* provider.startSession(threadId, {
+        provider: CURSOR_DRIVER,
+        providerInstanceId: cursorInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      yield* advanceTestClock(50);
+
+      routing.cursor.sendTurn.mockImplementationOnce((input) =>
+        Effect.sync(() => {
+          const turnId = asTurnId(`turn-${String(input.threadId)}`);
+          routing.cursor.emit({
+            type: "turn.completed",
+            eventId: asEventId("evt-sync-terminal-clear"),
+            provider: CURSOR_DRIVER,
+            createdAt: "2026-01-01T00:00:01.000Z",
+            threadId: input.threadId,
+            turnId,
+            payload: {
+              state: "completed",
+            },
+          });
+          return {
+            threadId: input.threadId,
+            turnId,
+          };
+        }),
+      );
+
+      yield* provider.sendTurn({
+        threadId,
+        input: "hello",
+        attachments: [],
+      });
+      yield* advanceTestClock(50);
+
+      const runtime = yield* runtimeRepository.getByThreadId({ threadId });
+      assert.equal(Option.isSome(runtime), true);
+      if (Option.isSome(runtime)) {
+        const payload = runtime.value.runtimePayload;
+        assert.equal(payload !== null && typeof payload === "object", true);
+        if (payload !== null && typeof payload === "object" && !Array.isArray(payload)) {
+          const runtimePayload = payload as {
+            activeTurnId: string | null;
+            lastRuntimeEvent: string | null;
+          };
+          assert.equal(runtimePayload.activeTurnId, null);
+          assert.include(
+            [
+              "provider.turn.completed",
+              "provider.sendTurn.completed",
+              "provider.sendTurn.reconcileIdleRuntime",
+            ],
+            runtimePayload.lastRuntimeEvent,
+          );
         }
       }
     }),
