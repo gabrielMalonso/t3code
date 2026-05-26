@@ -10,6 +10,16 @@ export interface ResolvedMobilePairingTarget {
   readonly wsBaseUrl: string;
 }
 
+export type MobilePairingInputKind = "token" | "pairing-url" | "hosted-pairing-url";
+
+export interface MobilePairingInputAnalysis {
+  readonly kind: MobilePairingInputKind;
+  readonly credential: string | null;
+  readonly suggestedHttpBaseUrl: string | null;
+  readonly detectedMode: MobileConnectionMode | null;
+  readonly canAutoPair: boolean;
+}
+
 function hasScheme(value: string): boolean {
   return /^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(value);
 }
@@ -42,6 +52,21 @@ function isPrivateOrTailscaleHost(hostname: string): boolean {
   );
 }
 
+function inferMobileConnectionModeFromBaseUrl(url: URL): MobileConnectionMode | null {
+  const hostname = url.hostname.toLowerCase();
+  if (hostname.startsWith("100.") || hostname.endsWith(".ts.net")) {
+    return "tailscale";
+  }
+  if (
+    hostname.startsWith("10.") ||
+    hostname.startsWith("192.168.") ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
+  ) {
+    return "lan";
+  }
+  return null;
+}
+
 export function inferMobileConnectionModeFromPairingInput(
   rawValue: string,
 ): MobileConnectionMode | null {
@@ -53,20 +78,9 @@ export function inferMobileConnectionModeFromPairingInput(
   try {
     const url = new URL(trimmed, window.location.origin);
     const hostedPairingRequest = readHostedPairingRequest(url);
-    const hostname = (
-      hostedPairingRequest ? normalizeMobileBaseUrl(hostedPairingRequest.host) : url
-    ).hostname.toLowerCase();
-    if (hostname.startsWith("100.") || hostname.endsWith(".ts.net")) {
-      return "tailscale";
-    }
-    if (
-      hostname.startsWith("10.") ||
-      hostname.startsWith("192.168.") ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
-    ) {
-      return "lan";
-    }
-    return null;
+    return inferMobileConnectionModeFromBaseUrl(
+      hostedPairingRequest ? normalizeMobileBaseUrl(hostedPairingRequest.host) : url,
+    );
   } catch {
     return null;
   }
@@ -133,6 +147,48 @@ function parsePairingUrl(rawValue: string): { credential: string; suggestedHttpB
     credential,
     suggestedHttpBaseUrl: toHttpBaseUrl(url),
   };
+}
+
+export function analyzeMobilePairingInput(rawValue: string): MobilePairingInputAnalysis {
+  const pairingInput = rawValue.trim();
+  if (!pairingInput || !isPairingUrlLike(pairingInput)) {
+    return {
+      kind: "token",
+      credential: pairingInput || null,
+      suggestedHttpBaseUrl: null,
+      detectedMode: null,
+      canAutoPair: false,
+    };
+  }
+
+  try {
+    const url = new URL(pairingInput, window.location.origin);
+    const hostedPairingRequest = readHostedPairingRequest(url);
+    const parsed = parsePairingUrl(pairingInput);
+    const baseUrl = normalizeMobileBaseUrl(
+      hostedPairingRequest ? hostedPairingRequest.host : parsed.suggestedHttpBaseUrl,
+    );
+
+    return {
+      kind: hostedPairingRequest ? "hosted-pairing-url" : "pairing-url",
+      credential: parsed.credential,
+      suggestedHttpBaseUrl: toHttpBaseUrl(baseUrl),
+      detectedMode: inferMobileConnectionModeFromBaseUrl(baseUrl),
+      canAutoPair: true,
+    };
+  } catch {
+    return {
+      kind: "token",
+      credential: pairingInput,
+      suggestedHttpBaseUrl: null,
+      detectedMode: null,
+      canAutoPair: false,
+    };
+  }
+}
+
+export function shouldAutoPairMobileInput(rawValue: string): boolean {
+  return analyzeMobilePairingInput(rawValue).canAutoPair;
 }
 
 function inheritPortFromPairingUrl(input: {

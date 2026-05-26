@@ -36,6 +36,7 @@ import {
   type MobileConnectionProfile,
 } from "./profileStorage";
 import {
+  analyzeMobilePairingInput,
   inferMobileConnectionModeFromPairingInput,
   resolveMobilePairingTarget,
   shouldRequireExplicitMobileHost,
@@ -43,7 +44,7 @@ import {
 } from "./pairingTarget";
 
 type BusyAction = "pair" | "connect" | "close" | "scan" | "remove" | null;
-type PairingPanel = "code" | "paste" | null;
+type PairingPanel = "code" | null;
 type NeutralView = "connections" | "pair";
 
 const PENDING_NATIVE_DEEP_LINK_STORAGE_KEY = "t3code:pending-mobile-deep-link:v1";
@@ -66,6 +67,16 @@ function isPairingUrl(value: string): boolean {
 
 function requiresTailscaleHost(input: { readonly mode: MobileConnectionMode }): boolean {
   return input.mode === "tailscale";
+}
+
+function modeStatusLabel(mode: MobileConnectionMode | null): string {
+  if (mode === "tailscale") {
+    return "Tailscale";
+  }
+  if (mode === "lan") {
+    return "LAN";
+  }
+  return "backend";
 }
 
 function PairingModeSelector(props: {
@@ -194,6 +205,7 @@ export function MobileNeutralSurface() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [neutralView, setNeutralView] = useState<NeutralView>("connections");
   const [profileToRemove, setProfileToRemove] = useState<MobileConnectionProfile | null>(null);
+  const [hostOverrideVisible, setHostOverrideVisible] = useState(false);
   const handledDeepLinksRef = useRef<Set<string>>(new Set());
   const pendingDeepLinksRef = useRef<Set<string>>(new Set());
 
@@ -258,11 +270,16 @@ export function MobileNeutralSurface() {
       try {
         const pairingInputValue = input.pairingInput.trim();
         const hostValue = input.host.trim();
-        if (input.mode === "lan" && !isPairingUrl(pairingInputValue)) {
-          throw new Error("For LAN, paste the full pairing link.");
+        const analysis = analyzeMobilePairingInput(pairingInputValue);
+        if (input.mode === "lan" && !analysis.canAutoPair) {
+          throw new Error(
+            "This code needs an address. Paste the full Local network pairing URL from the desktop.",
+          );
         }
         if (shouldRequireExplicitMobileHost({ ...input, pairingInput: pairingInputValue })) {
-          throw new Error("Enter the desktop's 100.x IP or .ts.net address.");
+          throw new Error(
+            "This code needs an address. Paste the full Tailscale pairing URL or enter the desktop's 100.x IP or .ts.net address.",
+          );
         }
 
         const target = resolveMobilePairingTarget({
@@ -294,6 +311,7 @@ export function MobileNeutralSurface() {
         setPairingInput("");
         setLabel("");
         setHost(target.httpBaseUrl);
+        setHostOverrideVisible(false);
         await activateMobileProfile(profile.profileId);
         setPairingPanel(null);
         setNeutralView("connections");
@@ -325,6 +343,7 @@ export function MobileNeutralSurface() {
       setPairingInput(parsed.pairingInput);
       setHost(parsed.host);
       setMode(parsed.mode);
+      setHostOverrideVisible(Boolean(parsed.host));
       try {
         const paired = await pairWithInput({
           pairingInput: parsed.pairingInput,
@@ -454,14 +473,27 @@ export function MobileNeutralSurface() {
       }
 
       setPairingInput(trimmed);
+      const analysis = analyzeMobilePairingInput(trimmed);
+      const detectedMode = analysis.detectedMode ?? mode;
+      if (analysis.canAutoPair) {
+        setMode(detectedMode);
+        setHost("");
+        setLabel("");
+        setHostOverrideVisible(false);
+        await pairWithInput({ pairingInput: trimmed, host: "", mode: detectedMode });
+        return;
+      }
+
       if (isPairingUrl(trimmed)) {
         setMode(inferMobileConnectionModeFromPairingInput(trimmed) ?? mode);
         setHost("");
         setLabel("");
-        setPairingPanel("paste");
+        setHostOverrideVisible(false);
+        setPairingPanel("code");
         return;
       }
 
+      setHostOverrideVisible(false);
       setPairingPanel("code");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error));
@@ -472,6 +504,14 @@ export function MobileNeutralSurface() {
 
   function applyPairingInput(value: string) {
     setPairingInput(value);
+    const analysis = analyzeMobilePairingInput(value);
+    if (analysis.detectedMode) {
+      setMode(analysis.detectedMode);
+    }
+    if (analysis.canAutoPair) {
+      setHost("");
+      setHostOverrideVisible(false);
+    }
   }
 
   async function handlePastePairingLink() {
@@ -480,7 +520,16 @@ export function MobileNeutralSurface() {
       const clipboardText = await readClipboardText();
       const trimmed = clipboardText?.trim() ?? "";
       if (trimmed) {
+        const analysis = analyzeMobilePairingInput(trimmed);
+        const detectedMode = analysis.detectedMode ?? mode;
         applyPairingInput(trimmed);
+        if (analysis.canAutoPair) {
+          setMode(detectedMode);
+          await pairWithInput({ pairingInput: trimmed, host: "", mode: detectedMode });
+        } else {
+          setNeutralView("pair");
+          setPairingPanel("code");
+        }
       } else {
         setErrorMessage("Your clipboard is empty.");
       }
@@ -536,16 +585,20 @@ export function MobileNeutralSurface() {
   }
 
   const busy = busyAction !== null;
-  const pairingInputIsUrl = pairingInput.trim() ? isPairingUrl(pairingInput) : false;
-  const mustFillTailscaleHost = requiresTailscaleHost({ mode });
-  const showTailscaleHost = mode === "tailscale";
+  const pairingInputAnalysis = analyzeMobilePairingInput(pairingInput);
+  const inputHasCompletePairingUrl = pairingInputAnalysis.canAutoPair;
+  const mustFillTailscaleHost =
+    requiresTailscaleHost({ mode }) && !inputHasCompletePairingUrl && !host.trim();
+  const showTailscaleHost =
+    mode === "tailscale" && (!inputHasCompletePairingUrl || hostOverrideVisible);
+  const detectedPairingHost = pairingInputAnalysis.suggestedHttpBaseUrl;
   const hasSavedProfiles = savedProfiles.length > 0;
   const showingConnections = neutralView === "connections" && hasSavedProfiles;
   const currentStatus =
     busyAction === "scan"
       ? "Opening scanner"
       : busyAction === "pair"
-        ? "Pairing"
+        ? `Pairing with ${modeStatusLabel(pairingInputAnalysis.detectedMode ?? mode)}`
         : busyAction === "connect"
           ? "Connecting"
           : busyAction === "remove"
@@ -564,8 +617,8 @@ export function MobileNeutralSurface() {
   const heroDescription = showingConnections
     ? "Use LAN on the same network, or Tailscale when you are away."
     : hasSavedProfiles
-      ? "Scan another QR code or enter a pairing code to save another connection."
-      : "Scan the desktop QR code or enter a pairing code to open your projects here.";
+      ? "Scan another QR code, paste a pairing URL, or enter a pairing code."
+      : "Scan or paste the desktop pairing URL to open your projects here.";
 
   return (
     <main className="min-h-dvh overflow-x-hidden overflow-y-auto overscroll-y-contain bg-background text-foreground">
@@ -711,6 +764,15 @@ export function MobileNeutralSurface() {
                 <Button
                   className="h-14 rounded-full text-base"
                   variant="outline"
+                  onClick={handlePastePairingLink}
+                  disabled={busy}
+                >
+                  <Clipboard className="size-5" />
+                  Paste pairing URL
+                </Button>
+                <Button
+                  className="h-14 rounded-full text-base"
+                  variant="outline"
                   onClick={() => {
                     setPairingPanel("code");
                     setErrorMessage(null);
@@ -742,7 +804,7 @@ export function MobileNeutralSurface() {
               <DialogTitle>{inputLabel}</DialogTitle>
               <DialogDescription>
                 {pairingPanel === "code"
-                  ? "For LAN, paste the full link. For Tailscale, add its address below."
+                  ? "Paste a full pairing URL for the easiest setup, or enter a code manually."
                   : "Name this connection and choose how it should connect."}
               </DialogDescription>
             </DialogHeader>
@@ -780,9 +842,11 @@ export function MobileNeutralSurface() {
                   <PairingFieldGroup
                     label={mode === "lan" ? "Local link" : "Token or link"}
                     description={
-                      mode === "lan"
-                        ? "Paste the full link from the desktop."
-                        : "The link provides the token. Add the Tailscale address below."
+                      inputHasCompletePairingUrl
+                        ? "This URL includes the address and one-time token."
+                        : mode === "lan"
+                          ? "Paste the full Local network link from the desktop."
+                          : "Paste a full Tailscale link, or enter a code and address below."
                     }
                     action={
                       <Button
@@ -810,6 +874,35 @@ export function MobileNeutralSurface() {
                   </PairingFieldGroup>
                 ) : null}
 
+                {inputHasCompletePairingUrl && detectedPairingHost ? (
+                  <div className="grid gap-2 rounded-2xl border border-border bg-card p-3 text-left">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                        {modeLabel(pairingInputAnalysis.detectedMode ?? mode)}
+                      </span>
+                      <p className="min-w-0 truncate text-xs text-muted-foreground">
+                        {detectedPairingHost}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      className="h-8 justify-self-start rounded-full px-2.5 text-xs"
+                      variant="ghost"
+                      onClick={() => {
+                        if (hostOverrideVisible) {
+                          setHost("");
+                          setHostOverrideVisible(false);
+                        } else {
+                          setHostOverrideVisible(true);
+                        }
+                      }}
+                      disabled={busy}
+                    >
+                      {hostOverrideVisible ? "Use detected address" : "Edit address"}
+                    </Button>
+                  </div>
+                ) : null}
+
                 {pairingPanel === "code" ? (
                   <>
                     {showTailscaleHost ? (
@@ -820,7 +913,7 @@ export function MobileNeutralSurface() {
                         <Input
                           value={host}
                           onChange={(event) => setHost(event.target.value)}
-                          placeholder="100.x.y.z or macbook.ts.net"
+                          placeholder={detectedPairingHost ?? "100.x.y.z or macbook.ts.net"}
                           disabled={busy}
                           inputMode="url"
                         />
@@ -865,7 +958,6 @@ export function MobileNeutralSurface() {
                 disabled={
                   busy ||
                   (pairingPanel === "code" && !pairingInput.trim()) ||
-                  (pairingPanel === "code" && mode === "lan" && !pairingInputIsUrl) ||
                   (mustFillTailscaleHost && !host.trim())
                 }
               >
