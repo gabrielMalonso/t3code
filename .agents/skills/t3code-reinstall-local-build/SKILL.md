@@ -37,17 +37,19 @@ O script faz:
 
 1. Fecha o app `T3 Code (Alpha)`, se estiver aberto.
 2. Faz backup e fingerprint dos dados persistentes.
-3. Remove `/Applications/T3 Code (Alpha).app`.
-4. Lê a versão em `apps/desktop/package.json`.
+3. Lê a versão em `apps/desktop/package.json`.
+4. Resolve uma identidade macOS estável.
 5. Limpa artefatos arm64 dessa versão em `release/`.
-6. Resolve uma identidade macOS estável e roda `bun run dist:desktop:dmg:arm64` com assinatura habilitada.
-7. Monta o DMG arm64 gerado em `release/`.
-8. Copia `T3 Code (Alpha).app` do DMG para `/Applications`.
-9. Desmonta o DMG.
-10. Verifica que o app instalado não ficou ad-hoc, tem `TeamIdentifier` estável e inclui o entitlement de Apple Events.
-11. Reseta TCC quando necessário para remover permissões antigas presas ao cdhash.
-12. Refaz fingerprint dos dados persistentes e compara com o estado anterior.
-13. Imprime `T3 Code (Alpha) <version> (<build>)` e o caminho do backup.
+6. Roda `bun run dist:desktop:dmg:arm64` com assinatura habilitada.
+7. Monta e valida o DMG arm64 gerado em `release/`.
+8. Confirma que o app não voltou a rodar durante o build.
+9. Remove `/Applications/T3 Code (Alpha).app`.
+10. Copia `T3 Code (Alpha).app` do DMG para `/Applications`.
+11. Desmonta o DMG.
+12. Verifica que o app instalado não ficou ad-hoc, tem `TeamIdentifier` estável e inclui o entitlement de Apple Events.
+13. Reseta TCC quando necessário para remover permissões antigas presas ao cdhash.
+14. Refaz fingerprint dos dados persistentes e compara com o estado anterior.
+15. Imprime `T3 Code (Alpha) <version> (<build>)` e o caminho do backup.
 
 ## Resposta final
 

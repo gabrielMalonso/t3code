@@ -941,6 +941,119 @@ describe("ProviderRuntimeIngestion", () => {
     expect(message?.streaming).toBe(false);
   });
 
+  it("turn-scopes reused Cursor assistant item ids after resume", async () => {
+    const harness = await createHarness();
+    const firstAt = "2099-01-01T00:00:00.000Z";
+    const secondAt = plusMillis(firstAt, 1_000);
+    const reusedCursorItemId = asItemId("assistant:cursor-session:segment:1");
+    const firstMessageId = "assistant:turn-cursor-1:assistant:cursor-session:segment:1";
+    const secondMessageId = "assistant:turn-cursor-2:assistant:cursor-session:segment:1";
+
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-cursor-turn-1-started"),
+      provider: ProviderDriverKind.make("cursor"),
+      createdAt: firstAt,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-cursor-1"),
+    });
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-cursor-turn-1-delta"),
+      provider: ProviderDriverKind.make("cursor"),
+      createdAt: firstAt,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-cursor-1"),
+      itemId: reusedCursorItemId,
+      payload: {
+        streamKind: "assistant_text",
+        delta: "first cursor response",
+      },
+    });
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-cursor-turn-1-item-completed"),
+      provider: ProviderDriverKind.make("cursor"),
+      createdAt: firstAt,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-cursor-1"),
+      itemId: reusedCursorItemId,
+      payload: {
+        itemType: "assistant_message",
+        status: "completed",
+      },
+    });
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-cursor-turn-1-completed"),
+      provider: ProviderDriverKind.make("cursor"),
+      createdAt: firstAt,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-cursor-1"),
+      payload: {
+        state: "completed",
+      },
+    });
+    harness.emit({
+      type: "turn.started",
+      eventId: asEventId("evt-cursor-turn-2-started"),
+      provider: ProviderDriverKind.make("cursor"),
+      createdAt: secondAt,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-cursor-2"),
+    });
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-cursor-turn-2-delta"),
+      provider: ProviderDriverKind.make("cursor"),
+      createdAt: secondAt,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-cursor-2"),
+      itemId: reusedCursorItemId,
+      payload: {
+        streamKind: "assistant_text",
+        delta: "second cursor response",
+      },
+    });
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-cursor-turn-2-item-completed"),
+      provider: ProviderDriverKind.make("cursor"),
+      createdAt: secondAt,
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-cursor-2"),
+      itemId: reusedCursorItemId,
+      payload: {
+        itemType: "assistant_message",
+        status: "completed",
+      },
+    });
+
+    const thread = await waitForThread(
+      harness.readModel,
+      (entry) =>
+        entry.messages.some(
+          (message: ProviderRuntimeTestMessage) =>
+            message.id === firstMessageId && !message.streaming,
+        ) &&
+        entry.messages.some(
+          (message: ProviderRuntimeTestMessage) =>
+            message.id === secondMessageId && !message.streaming,
+        ),
+    );
+
+    const firstMessage = thread.messages.find(
+      (entry: ProviderRuntimeTestMessage) => entry.id === firstMessageId,
+    );
+    const secondMessage = thread.messages.find(
+      (entry: ProviderRuntimeTestMessage) => entry.id === secondMessageId,
+    );
+    expect(firstMessage?.text).toBe("first cursor response");
+    expect(firstMessage?.createdAt).toBe(firstAt);
+    expect(secondMessage?.text).toBe("second cursor response");
+    expect(secondMessage?.createdAt).toBe(secondAt);
+  });
+
   it("uses assistant item completion detail when no assistant deltas were streamed", async () => {
     const harness = await createHarness();
     const now = "2099-01-01T00:00:00.000Z";
