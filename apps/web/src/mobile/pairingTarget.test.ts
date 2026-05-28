@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  analyzeMobilePairingInput,
   inferMobileConnectionModeFromPairingInput,
   resolveMobilePairingTarget,
+  shouldAutoPairMobileInput,
   shouldRequireExplicitMobileHost,
 } from "./pairingTarget";
 
@@ -96,6 +98,65 @@ describe("resolveMobilePairingTarget", () => {
       suggestedHttpBaseUrl: "http://192.168.15.12:3773/",
       httpBaseUrl: "http://100.71.185.10:3773/",
       wsBaseUrl: "ws://100.71.185.10:3773/",
+    });
+  });
+});
+
+describe("analyzeMobilePairingInput", () => {
+  it("marks complete LAN pairing urls as auto-pairable", () => {
+    expect(analyzeMobilePairingInput("http://192.168.15.12:3774/pair#token=EJTVFWLYUVKM")).toEqual({
+      kind: "pairing-url",
+      credential: "EJTVFWLYUVKM",
+      suggestedHttpBaseUrl: "http://192.168.15.12:3774/",
+      detectedMode: "lan",
+      canAutoPair: true,
+    });
+  });
+
+  it("marks complete Tailscale pairing urls as auto-pairable", () => {
+    expect(
+      analyzeMobilePairingInput("http://100.101.102.103:3774/pair#token=EJTVFWLYUVKM"),
+    ).toEqual({
+      kind: "pairing-url",
+      credential: "EJTVFWLYUVKM",
+      suggestedHttpBaseUrl: "http://100.101.102.103:3774/",
+      detectedMode: "tailscale",
+      canAutoPair: true,
+    });
+  });
+
+  it("marks hosted pairing urls as auto-pairable using the embedded backend host", () => {
+    expect(
+      analyzeMobilePairingInput(
+        "https://app.t3.codes/pair?host=http%3A%2F%2F100.71.185.10%3A3773%2F#token=BJL68TGTBXAR",
+      ),
+    ).toEqual({
+      kind: "hosted-pairing-url",
+      credential: "BJL68TGTBXAR",
+      suggestedHttpBaseUrl: "http://100.71.185.10:3773/",
+      detectedMode: "tailscale",
+      canAutoPair: true,
+    });
+  });
+
+  it("keeps bare pairing codes in the manual flow", () => {
+    expect(analyzeMobilePairingInput("EJTVFWLYUVKM")).toEqual({
+      kind: "token",
+      credential: "EJTVFWLYUVKM",
+      suggestedHttpBaseUrl: null,
+      detectedMode: null,
+      canAutoPair: false,
+    });
+    expect(shouldAutoPairMobileInput("EJTVFWLYUVKM")).toBe(false);
+  });
+
+  it("keeps malformed pairing urls in the manual flow", () => {
+    expect(analyzeMobilePairingInput("http://192.168.15.12:3774/pair")).toEqual({
+      kind: "token",
+      credential: "http://192.168.15.12:3774/pair",
+      suggestedHttpBaseUrl: null,
+      detectedMode: null,
+      canAutoPair: false,
     });
   });
 });
