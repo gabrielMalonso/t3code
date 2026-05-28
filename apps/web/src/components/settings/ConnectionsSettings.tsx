@@ -503,6 +503,34 @@ type PairingLinkListRowProps = {
   onRevoke: (id: string) => void;
 };
 
+function PairingQrPopover(props: {
+  readonly url: string;
+  readonly ariaLabel: string;
+  readonly title: string;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger
+        openOnHover
+        delay={250}
+        closeDelay={100}
+        render={
+          <button
+            type="button"
+            className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground/50 outline-none hover:text-foreground"
+            aria-label={props.ariaLabel}
+          />
+        }
+      >
+        <QrCodeIcon aria-hidden className="size-3" />
+      </PopoverTrigger>
+      <PopoverPopup side="top" align="start" tooltipStyle className="w-max">
+        <QRCodeSvg value={props.url} size={88} level="M" marginSize={2} title={props.title} />
+      </PopoverPopup>
+    </Popover>
+  );
+}
+
 const PairingLinkListRow = memo(function PairingLinkListRow({
   pairingLink,
   endpointUrl,
@@ -636,6 +664,27 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   const hostedEndpointCopyOptions = endpointCopyOptions.filter((option) =>
     isHostedAppPairingUrl(option.url),
   );
+  const localPairingQrUrl = useMemo(() => {
+    const endpoint =
+      endpoints
+        .filter((entry) => entry.status !== "unavailable")
+        .find((entry) => endpointDefaultPreferenceKey(entry) === "desktop-core:lan:http") ?? null;
+    return endpoint
+      ? resolveAdvertisedEndpointPairingUrl(endpoint, pairingLink.credential)
+      : shareablePairingUrl;
+  }, [endpoints, pairingLink.credential, shareablePairingUrl]);
+  const tailscalePairingQrUrl = useMemo(() => {
+    const availableEndpoints = endpoints.filter((entry) => entry.status !== "unavailable");
+    const endpoint =
+      availableEndpoints.find(
+        (entry) => endpointDefaultPreferenceKey(entry) === "tailscale:ip:http",
+      ) ??
+      availableEndpoints.find(
+        (entry) => endpointDefaultPreferenceKey(entry) === "tailscale:magicdns:https",
+      ) ??
+      null;
+    return endpoint ? resolveAdvertisedEndpointPairingUrl(endpoint, pairingLink.credential) : null;
+  }, [endpoints, pairingLink.credential]);
   const renderEndpointMenuItems = (
     options: typeof endpointCopyOptions = endpointCopyOptions,
     renderDetail = true,
@@ -722,35 +771,24 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
               dotClassName="bg-amber-400"
             />
             <h3 className="text-sm font-medium text-foreground">{primaryLabel}</h3>
-            <Popover>
-              {shareablePairingUrl ? (
-                <>
-                  <PopoverTrigger
-                    openOnHover
-                    delay={250}
-                    closeDelay={100}
-                    render={
-                      <button
-                        type="button"
-                        className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground/50 outline-none hover:text-foreground"
-                        aria-label="Show QR code"
-                      />
-                    }
-                  >
-                    <QrCodeIcon aria-hidden className="size-3" />
-                  </PopoverTrigger>
-                  <PopoverPopup side="top" align="start" tooltipStyle className="w-max">
-                    <QRCodeSvg
-                      value={shareablePairingUrl}
-                      size={88}
-                      level="M"
-                      marginSize={2}
-                      title="Pairing link — scan to open on another device"
-                    />
-                  </PopoverPopup>
-                </>
-              ) : null}
-            </Popover>
+            {localPairingQrUrl || tailscalePairingQrUrl ? (
+              <span className="inline-flex items-center gap-0.5">
+                {localPairingQrUrl ? (
+                  <PairingQrPopover
+                    url={localPairingQrUrl}
+                    ariaLabel="Show local network QR code"
+                    title="Local network pairing link"
+                  />
+                ) : null}
+                {tailscalePairingQrUrl && tailscalePairingQrUrl !== localPairingQrUrl ? (
+                  <PairingQrPopover
+                    url={tailscalePairingQrUrl}
+                    ariaLabel="Show Tailscale QR code"
+                    title="Tailscale pairing link"
+                  />
+                ) : null}
+              </span>
+            ) : null}
           </div>
           <p className="text-xs text-muted-foreground" title={expiresAbsolute}>
             {[roleLabel, formatExpiresInLabel(pairingLink.expiresAt, nowMs)].join(" · ")}
