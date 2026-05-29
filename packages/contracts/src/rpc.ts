@@ -59,6 +59,7 @@ import {
   ProjectWriteFileInput,
   ProjectWriteFileResult,
 } from "./project.ts";
+import { PointNShootComposerIntakeStreamEvent } from "./pointNShoot.ts";
 import {
   TerminalClearInput,
   TerminalCloseInput,
@@ -166,6 +167,7 @@ export const WS_METHODS = {
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
+  subscribePointNShootComposerIntake: "pointNShoot.subscribeComposerIntake",
 } as const;
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -487,6 +489,15 @@ export const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess,
   stream: true,
 });
 
+export const WsSubscribePointNShootComposerIntakeRpc = Rpc.make(
+  WS_METHODS.subscribePointNShootComposerIntake,
+  {
+    payload: Schema.Struct({}),
+    success: PointNShootComposerIntakeStreamEvent,
+    stream: true,
+  },
+);
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerGetConfigRpc,
   WsServerListProviderSkillsRpc,
@@ -530,6 +541,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,
+  WsSubscribePointNShootComposerIntakeRpc,
   WsOrchestrationDispatchCommandRpc,
   WsOrchestrationCompactThreadRpc,
   WsOrchestrationGetTurnDiffRpc,

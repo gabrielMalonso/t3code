@@ -4,6 +4,7 @@ import { EllipsisIcon, ListTodoIcon, Minimize2Icon } from "lucide-react";
 import { Button } from "../ui/button";
 import {
   Menu,
+  MenuCheckboxItem,
   MenuItem,
   MenuPopup,
   MenuRadioGroup,
@@ -22,7 +23,9 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   showInteractionModeToggle: boolean;
   traitsMenuContent?: ReactNode;
   compactContextDisabled?: boolean;
+  pointNShootBridgeEnabled?: boolean;
   onCompactContext?: () => void;
+  onPointNShootBridgeEnabledChange?: (enabled: boolean) => void;
   onToggleInteractionMode: () => void;
   onTogglePlanSidebar: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -76,16 +79,29 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
           <MenuRadioItem value="auto-accept-edits">Auto-accept edits</MenuRadioItem>
           <MenuRadioItem value="full-access">Full access</MenuRadioItem>
         </MenuRadioGroup>
-        {props.onCompactContext ? (
+        {props.onCompactContext || props.onPointNShootBridgeEnabledChange ? (
           <>
             <MenuDivider />
-            <MenuItem
-              disabled={props.compactContextDisabled}
-              onClick={() => props.onCompactContext?.()}
-            >
-              <Minimize2Icon className="size-4 shrink-0" />
-              Compact context
-            </MenuItem>
+            {props.onCompactContext ? (
+              <MenuItem
+                disabled={props.compactContextDisabled}
+                onClick={() => props.onCompactContext?.()}
+              >
+                <Minimize2Icon className="size-4 shrink-0" />
+                Compact context
+              </MenuItem>
+            ) : null}
+            {props.onPointNShootBridgeEnabledChange ? (
+              <MenuCheckboxItem
+                checked={props.pointNShootBridgeEnabled ?? false}
+                variant="switch"
+                onCheckedChange={(checked) =>
+                  props.onPointNShootBridgeEnabledChange?.(checked === true)
+                }
+              >
+                PointNShoot bridge
+              </MenuCheckboxItem>
+            ) : null}
           </>
         ) : null}
         {props.loopMenuContent ? (

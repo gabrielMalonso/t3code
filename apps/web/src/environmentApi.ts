@@ -9,6 +9,8 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
   return {
     server: {
       listProviderSkills: rpcClient.server.listProviderSkills,
+      subscribePointNShootComposerIntake: (callback, options) =>
+        rpcClient.server.subscribePointNShootComposerIntake(callback, options),
     },
     terminal: {
       open: (input) => rpcClient.terminal.open(input as never),

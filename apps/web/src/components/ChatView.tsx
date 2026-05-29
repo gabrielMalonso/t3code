@@ -113,7 +113,7 @@ import {
 } from "~/projectScripts";
 import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
-import { useSettings } from "../hooks/useSettings";
+import { useSettings, useUpdateSettings } from "../hooks/useSettings";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import {
@@ -190,6 +190,13 @@ import {
   isVersionMismatchDismissed,
   resolveServerConfigVersionMismatch,
 } from "../versionSkew";
+import {
+  appendExternalComposerIntakePrompt,
+  buildExternalComposerIntakeResponse,
+  composerFileReferenceFromExternalIntake,
+  type ExternalComposerIntakeRequest,
+  validateExternalComposerIntakeMessage,
+} from "../externalComposerIntake";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
@@ -630,6 +637,7 @@ export default function ChatView(props: ChatViewProps) {
     routeKind === "server" ? store.threadLastVisitedAtById[routeThreadKey] : undefined,
   );
   const settings = useSettings();
+  const { updateSettings } = useUpdateSettings();
   const showPlanSidebar = settings.showPlanSidebar;
   const setStickyComposerModelSelection = useComposerDraftStore(
     (store) => store.setStickyModelSelection,
@@ -1667,6 +1675,132 @@ export default function ChatView(props: ChatViewProps) {
     setComposerDraftFileReferences,
     setComposerDraftTerminalContexts,
   });
+
+  const pointNShootBridgeEnabled = settings.pointNShootBridgeEnabled;
+  const insertExternalComposerIntakeRequest = useCallback(
+    (request: ExternalComposerIntakeRequest) => {
+      const nextPrompt = appendExternalComposerIntakePrompt({
+        currentPrompt: promptRef.current,
+        incomingPrompt: request.prompt,
+        append: request.append,
+      });
+      promptRef.current = nextPrompt;
+      setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+
+      const fileReference = composerFileReferenceFromExternalIntake({
+        image: request.image,
+        id: randomUUID(),
+      });
+      if (
+        fileReference &&
+        !composerFileReferencesRef.current.some(
+          (reference) => reference.path === fileReference.path,
+        )
+      ) {
+        const nextFileReferences = [...composerFileReferencesRef.current, fileReference];
+        composerFileReferencesRef.current = nextFileReferences;
+        setComposerDraftFileReferences(composerDraftTarget, nextFileReferences);
+      }
+
+      if (request.focus) {
+        window.requestAnimationFrame(() => {
+          composerRef.current?.resetCursorState({
+            cursor: nextPrompt.length,
+            prompt: nextPrompt,
+            detectTrigger: false,
+          });
+          composerRef.current?.focusAtEnd();
+        });
+      }
+
+      toastManager.add({
+        type: "success",
+        title: "PointNShoot sent to Composer",
+      });
+    },
+    [
+      composerDraftTarget,
+      composerFileReferencesRef,
+      composerRef,
+      promptRef,
+      setComposerDraftFileReferences,
+      setComposerDraftPrompt,
+    ],
+  );
+
+  const handlePointNShootBridgeEnabledChange = useCallback(
+    (enabled: boolean) => {
+      updateSettings({ pointNShootBridgeEnabled: enabled });
+      toastManager.add({
+        type: enabled ? "success" : "info",
+        title: enabled ? "PointNShoot bridge enabled" : "PointNShoot bridge disabled",
+      });
+    },
+    [updateSettings],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const postIntakeResponse = (
+      requestId: string,
+      result: { readonly ok: true } | { readonly ok: false; readonly reason: string },
+    ) => {
+      window.postMessage(
+        buildExternalComposerIntakeResponse(requestId, result),
+        window.location.origin,
+      );
+    };
+
+    const handleExternalComposerIntakeMessage = (event: MessageEvent<unknown>) => {
+      if (event.source !== window || event.origin !== window.location.origin) {
+        return;
+      }
+
+      const validation = validateExternalComposerIntakeMessage(event.data);
+      if (!validation.ok) {
+        if (validation.requestId) {
+          postIntakeResponse(validation.requestId, {
+            ok: false,
+            reason: validation.reason,
+          });
+        }
+        return;
+      }
+
+      if (!pointNShootBridgeEnabled) {
+        postIntakeResponse(validation.request.requestId, {
+          ok: false,
+          reason: "pointnshoot-bridge-disabled",
+        });
+        return;
+      }
+
+      insertExternalComposerIntakeRequest(validation.request);
+      postIntakeResponse(validation.request.requestId, { ok: true });
+    };
+
+    window.addEventListener("message", handleExternalComposerIntakeMessage);
+    return () => {
+      window.removeEventListener("message", handleExternalComposerIntakeMessage);
+    };
+  }, [insertExternalComposerIntakeRequest, pointNShootBridgeEnabled]);
+
+  useEffect(() => {
+    if (!pointNShootBridgeEnabled) return;
+    const api = readEnvironmentApi(environmentId);
+    if (!api) return;
+
+    return api.server.subscribePointNShootComposerIntake((event) => {
+      if (event.type !== "composerIntakeReceived") return;
+      const validation = validateExternalComposerIntakeMessage(event.payload);
+      if (!validation.ok) {
+        console.warn("[PointNShoot] ignored invalid composer intake", validation.reason);
+        return;
+      }
+      insertExternalComposerIntakeRequest(validation.request);
+    });
+  }, [environmentId, insertExternalComposerIntakeRequest, pointNShootBridgeEnabled]);
   const activeTerminalLaunchContext =
     terminalLaunchContext?.threadId === activeThreadId
       ? terminalLaunchContext
@@ -3726,6 +3860,8 @@ export default function ChatView(props: ChatViewProps) {
                   toggleInteractionMode={toggleInteractionMode}
                   handleRuntimeModeChange={handleRuntimeModeChange}
                   handleInteractionModeChange={handleInteractionModeChange}
+                  pointNShootBridgeEnabled={pointNShootBridgeEnabled}
+                  onPointNShootBridgeEnabledChange={handlePointNShootBridgeEnabledChange}
                   togglePlanSidebar={togglePlanSidebar}
                   focusComposer={focusComposer}
                   scheduleComposerFocus={scheduleComposerFocus}
