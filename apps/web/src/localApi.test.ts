@@ -93,6 +93,8 @@ const rpcClientMock = {
     subscribeConfig: vi.fn(),
     subscribeLifecycle: vi.fn(),
     subscribeAuthAccess: vi.fn(),
+    updatePointNShootComposerIntakeSubscription: vi.fn(),
+    ackPointNShootComposerIntake: vi.fn(),
     subscribePointNShootComposerIntake: vi.fn(),
   },
   orchestration: {
@@ -228,6 +230,7 @@ function makeDesktopBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridg
     setTheme: async () => undefined,
     showContextMenu: async () => null,
     openExternal: async () => true,
+    activateWindow: async () => undefined,
     onMenuAction: () => () => undefined,
     getUpdateState: async () => {
       throw new Error("getUpdateState not implemented in test");

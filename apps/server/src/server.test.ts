@@ -709,8 +709,10 @@ const buildAppUnderTest = (options?: {
       Layer.provide(
         Layer.mock(PointNShootComposerIntake)({
           hasActiveSubscribers: Effect.succeed(false),
-          publish: () => Effect.void,
-          stream: Stream.empty,
+          publish: () => Effect.succeed(false),
+          updateSubscription: () => Effect.void,
+          ack: () => Effect.void,
+          stream: () => Stream.empty,
           ...options?.layers?.pointNShootComposerIntake,
         }),
       ),
@@ -1098,22 +1100,17 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("accepts PointNShoot composer intake when the bridge is enabled", () =>
+  it.effect("accepts PointNShoot composer intake when a chat is registered", () =>
     Effect.gen(function* () {
       const published: PointNShootComposerIntakeRequest[] = [];
       yield* buildAppUnderTest({
         layers: {
-          serverSettings: {
-            getSettings: Effect.succeed({
-              ...DEFAULT_SERVER_SETTINGS,
-              pointNShootBridgeEnabled: true,
-            }),
-          },
           pointNShootComposerIntake: {
             hasActiveSubscribers: Effect.succeed(true),
             publish: (request) =>
               Effect.sync(() => {
                 published.push(request);
+                return true;
               }),
           },
         },
@@ -1153,12 +1150,12 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("rejects PointNShoot composer intake while the bridge is disabled", () =>
+  it.effect("rejects PointNShoot composer intake when no chat is registered", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest({
         layers: {
           pointNShootComposerIntake: {
-            hasActiveSubscribers: Effect.succeed(true),
+            hasActiveSubscribers: Effect.succeed(false),
           },
         },
       });
@@ -1182,10 +1179,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       });
       const body = (yield* response.json) as { readonly ok: boolean; readonly reason?: string };
 
-      assert.equal(response.status, 403);
+      assert.equal(response.status, 409);
       assert.deepEqual(body, {
         ok: false,
-        reason: "pointnshoot-bridge-disabled",
+        reason: "composer-not-connected",
       });
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
@@ -2081,6 +2078,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         "b3",
         "content-type",
         "traceparent",
+        "x-pointnshoot-extension-id",
       ]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );

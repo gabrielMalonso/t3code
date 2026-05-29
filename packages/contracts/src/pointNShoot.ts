@@ -29,9 +29,27 @@ export const PointNShootComposerIntakeRequest = Schema.Struct({
 });
 export type PointNShootComposerIntakeRequest = typeof PointNShootComposerIntakeRequest.Type;
 
+export const PointNShootComposerIntakeSubscription = Schema.Struct({
+  subscriberId: TrimmedNonEmptyString,
+  threadId: Schema.NullOr(TrimmedNonEmptyString),
+  activatedAtEpochMs: Schema.Number,
+  clientKind: Schema.optionalKey(Schema.Literals(["browser", "desktop"])),
+});
+export type PointNShootComposerIntakeSubscription =
+  typeof PointNShootComposerIntakeSubscription.Type;
+
+export const PointNShootComposerIntakeDeliveryAck = Schema.Struct({
+  subscriberId: TrimmedNonEmptyString,
+  deliveryId: TrimmedNonEmptyString,
+  ok: Schema.Boolean,
+});
+export type PointNShootComposerIntakeDeliveryAck = typeof PointNShootComposerIntakeDeliveryAck.Type;
+
 export const PointNShootComposerIntakeStreamEvent = Schema.Struct({
   version: Schema.Literal(1),
   type: Schema.Literal("composerIntakeReceived"),
+  deliveryId: TrimmedNonEmptyString,
+  subscriberId: TrimmedNonEmptyString,
   payload: PointNShootComposerIntakeRequest,
 });
 export type PointNShootComposerIntakeStreamEvent = typeof PointNShootComposerIntakeStreamEvent.Type;
