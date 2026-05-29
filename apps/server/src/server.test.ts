@@ -17,6 +17,9 @@ import {
   type OrchestrationCommand,
   type OrchestrationEvent,
   ORCHESTRATION_WS_METHODS,
+  POINTNSHOOT_COMPOSER_INTAKE_REQUEST_TYPE,
+  POINTNSHOOT_EXTENSION_ORIGIN,
+  type PointNShootComposerIntakeRequest,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -100,6 +103,10 @@ import {
   RepositoryIdentityResolver,
   type RepositoryIdentityResolverShape,
 } from "./project/Services/RepositoryIdentityResolver.ts";
+import {
+  PointNShootComposerIntake,
+  type PointNShootComposerIntakeShape,
+} from "./pointNShootComposerIntake.ts";
 import {
   ServerEnvironment,
   type ServerEnvironmentShape,
@@ -342,6 +349,7 @@ const buildAppUnderTest = (options?: {
     serverRuntimeStartup?: Partial<ServerRuntimeStartupShape>;
     serverEnvironment?: Partial<ServerEnvironmentShape>;
     repositoryIdentityResolver?: Partial<RepositoryIdentityResolverShape>;
+    pointNShootComposerIntake?: Partial<PointNShootComposerIntakeShape>;
   };
 }) =>
   Effect.gen(function* () {
@@ -698,6 +706,14 @@ const buildAppUnderTest = (options?: {
           ...options?.layers?.checkpointDiffQuery,
         }),
       ),
+      Layer.provide(
+        Layer.mock(PointNShootComposerIntake)({
+          hasActiveSubscribers: Effect.succeed(false),
+          publish: () => Effect.void,
+          stream: Stream.empty,
+          ...options?.layers?.pointNShootComposerIntake,
+        }),
+      ),
     );
 
     const appLayer = servedRoutesLayer.pipe(
@@ -934,6 +950,7 @@ const assertBrowserApiCorsHeaders = (headers: Headers) => {
     "b3",
     "content-type",
     "traceparent",
+    "x-pointnshoot-extension-id",
   ]);
 };
 const crossOriginClientOrigin = "http://remote-client.test:3773";
@@ -1078,6 +1095,98 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(response.status, 200);
       assertBrowserApiCorsHeaders(response.headers);
       assert.deepEqual(body, testEnvironmentDescriptor);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("accepts PointNShoot composer intake when the bridge is enabled", () =>
+    Effect.gen(function* () {
+      const published: PointNShootComposerIntakeRequest[] = [];
+      yield* buildAppUnderTest({
+        layers: {
+          serverSettings: {
+            getSettings: Effect.succeed({
+              ...DEFAULT_SERVER_SETTINGS,
+              pointNShootBridgeEnabled: true,
+            }),
+          },
+          pointNShootComposerIntake: {
+            hasActiveSubscribers: Effect.succeed(true),
+            publish: (request) =>
+              Effect.sync(() => {
+                published.push(request);
+              }),
+          },
+        },
+      });
+
+      const payload = {
+        type: POINTNSHOOT_COMPOSER_INTAKE_REQUEST_TYPE,
+        requestId: "pns-test",
+        source: "pointnshoot",
+        action: "insert",
+        prompt: "# UI Note",
+        append: true,
+        focus: true,
+        image: {
+          path: "/Users/test/Downloads/PointNShoot-PNG/button.png",
+          name: "button.png",
+          mimeType: "image/png",
+          sizeBytes: 1234,
+          width: 960,
+          height: 720,
+        },
+      } satisfies PointNShootComposerIntakeRequest;
+
+      const response = yield* HttpClient.post("/api/pointnshoot/composer-intake", {
+        headers: {
+          "content-type": "application/json",
+          origin: POINTNSHOOT_EXTENSION_ORIGIN,
+        },
+        // @effect-diagnostics-next-line preferSchemaOverJson:off
+        body: HttpBody.text(JSON.stringify(payload), "application/json"),
+      });
+      const body = (yield* response.json) as { readonly ok: boolean; readonly requestId?: string };
+
+      assert.equal(response.status, 200);
+      assert.deepEqual(body, { ok: true, requestId: "pns-test" });
+      assert.equal(published[0]?.requestId, "pns-test");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("rejects PointNShoot composer intake while the bridge is disabled", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({
+        layers: {
+          pointNShootComposerIntake: {
+            hasActiveSubscribers: Effect.succeed(true),
+          },
+        },
+      });
+
+      const response = yield* HttpClient.post("/api/pointnshoot/composer-intake", {
+        headers: {
+          "content-type": "application/json",
+          origin: POINTNSHOOT_EXTENSION_ORIGIN,
+        },
+        body: HttpBody.text(
+          // @effect-diagnostics-next-line preferSchemaOverJson:off
+          JSON.stringify({
+            type: POINTNSHOOT_COMPOSER_INTAKE_REQUEST_TYPE,
+            requestId: "pns-test",
+            source: "pointnshoot",
+            prompt: "# UI Note",
+            image: null,
+          }),
+          "application/json",
+        ),
+      });
+      const body = (yield* response.json) as { readonly ok: boolean; readonly reason?: string };
+
+      assert.equal(response.status, 403);
+      assert.deepEqual(body, {
+        ok: false,
+        reason: "pointnshoot-bridge-disabled",
+      });
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

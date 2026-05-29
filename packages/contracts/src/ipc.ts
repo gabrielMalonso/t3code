@@ -25,6 +25,7 @@ import type {
   ProjectWriteFileInput,
   ProjectWriteFileResult,
 } from "./project.ts";
+import type { PointNShootComposerIntakeStreamEvent } from "./pointNShoot.ts";
 import type { ProviderInstanceId } from "./providerInstance.ts";
 import type {
   ServerConfig,
@@ -509,6 +510,12 @@ export interface EnvironmentApi {
     listProviderSkills: (
       input: ServerListProviderSkillsInput,
     ) => Promise<ServerListProviderSkillsResult>;
+    subscribePointNShootComposerIntake: (
+      callback: (event: PointNShootComposerIntakeStreamEvent) => void,
+      options?: {
+        onResubscribe?: () => void;
+      },
+    ) => () => void;
   };
   terminal: {
     open: (input: typeof TerminalOpenInput.Encoded) => Promise<TerminalSessionSnapshot>;

@@ -208,6 +208,8 @@ function createMockEnvironmentApi(input: {
       listProviderSkills: (async () => ({
         skills: [],
       })) as EnvironmentApi["server"]["listProviderSkills"],
+      subscribePointNShootComposerIntake: (() => () =>
+        undefined) as EnvironmentApi["server"]["subscribePointNShootComposerIntake"],
     },
     terminal: {} as EnvironmentApi["terminal"],
     projects: {} as EnvironmentApi["projects"],

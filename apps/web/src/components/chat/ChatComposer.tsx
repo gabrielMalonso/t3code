@@ -495,6 +495,8 @@ export interface ChatComposerProps {
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
+  pointNShootBridgeEnabled: boolean;
+  onPointNShootBridgeEnabledChange: (enabled: boolean) => void;
   togglePlanSidebar: () => void;
 
   focusComposer: () => void;
@@ -572,6 +574,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     toggleInteractionMode,
     handleRuntimeModeChange,
     handleInteractionModeChange,
+    pointNShootBridgeEnabled,
+    onPointNShootBridgeEnabledChange,
     togglePlanSidebar,
     focusComposer,
     scheduleComposerFocus,
@@ -2398,6 +2402,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       traitsMenuContent={providerTraitsMenuContent}
                       compactContextDisabled={!canCompactContext}
                       onCompactContext={handleCompactContext}
+                      pointNShootBridgeEnabled={pointNShootBridgeEnabled}
+                      onPointNShootBridgeEnabledChange={onPointNShootBridgeEnabledChange}
                       onToggleInteractionMode={toggleInteractionMode}
                       onTogglePlanSidebar={togglePlanSidebar}
                       onRuntimeModeChange={handleRuntimeModeChange}

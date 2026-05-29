@@ -49,7 +49,12 @@ function booleanDescriptor(id: string, label: string) {
   };
 }
 
-async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: string }) {
+async function mountMenu(props?: {
+  modelSelection?: ModelSelection;
+  prompt?: string;
+  pointNShootBridgeEnabled?: boolean;
+  onPointNShootBridgeEnabledChange?: (enabled: boolean) => void;
+}) {
   const threadId = ThreadId.make("thread-compact-menu");
   const threadRef = scopeThreadRef(LOCAL_ENVIRONMENT_ID, threadId);
   const threadKey = scopedThreadKey(threadRef);
@@ -153,6 +158,14 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
           onPromptChange={onPromptChange}
         />
       }
+      compactContextDisabled={false}
+      onCompactContext={vi.fn()}
+      {...(props?.pointNShootBridgeEnabled !== undefined
+        ? { pointNShootBridgeEnabled: props.pointNShootBridgeEnabled }
+        : {})}
+      {...(props?.onPointNShootBridgeEnabledChange
+        ? { onPointNShootBridgeEnabledChange: props.onPointNShootBridgeEnabledChange }
+        : {})}
       onToggleInteractionMode={vi.fn()}
       onTogglePlanSidebar={vi.fn()}
       onRuntimeModeChange={vi.fn()}
@@ -271,6 +284,21 @@ describe("CompactComposerControlsMenu", () => {
       expect(text).toContain("Reasoning");
       expect(text).not.toContain("ultrathink");
     });
+  });
+
+  it("shows the PointNShoot bridge switch below compact context", async () => {
+    const onPointNShootBridgeEnabledChange = vi.fn();
+    await using _ = await mountMenu({
+      pointNShootBridgeEnabled: false,
+      onPointNShootBridgeEnabledChange,
+    });
+
+    await page.getByLabelText("More composer controls").click();
+    await page.getByText("PointNShoot bridge").click();
+
+    expect(onPointNShootBridgeEnabledChange).toHaveBeenCalledWith(true);
+    const text = document.body.textContent ?? "";
+    expect(text.indexOf("Compact context")).toBeLessThan(text.indexOf("PointNShoot bridge"));
   });
 
   it("warns when ultrathink appears in prompt body text", async () => {
