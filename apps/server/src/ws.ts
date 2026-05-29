@@ -1591,10 +1591,22 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             }),
             { "rpc.aggregate": "auth" },
           ),
-        [WS_METHODS.subscribePointNShootComposerIntake]: (_input) =>
+        [WS_METHODS.pointNShootUpdateComposerIntakeSubscription]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.pointNShootUpdateComposerIntakeSubscription,
+            pointNShootComposerIntake.updateSubscription(input).pipe(Effect.as({})),
+            { "rpc.aggregate": "pointnshoot" },
+          ),
+        [WS_METHODS.pointNShootAckComposerIntake]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.pointNShootAckComposerIntake,
+            pointNShootComposerIntake.ack(input).pipe(Effect.as({})),
+            { "rpc.aggregate": "pointnshoot" },
+          ),
+        [WS_METHODS.subscribePointNShootComposerIntake]: (input) =>
           observeRpcStream(
             WS_METHODS.subscribePointNShootComposerIntake,
-            pointNShootComposerIntake.stream,
+            pointNShootComposerIntake.stream(input),
             { "rpc.aggregate": "pointnshoot" },
           ),
       });

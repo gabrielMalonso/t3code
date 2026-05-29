@@ -143,7 +143,13 @@ export interface WsRpcClient {
     readonly subscribeConfig: RpcStreamMethod<typeof WS_METHODS.subscribeServerConfig>;
     readonly subscribeLifecycle: RpcStreamMethod<typeof WS_METHODS.subscribeServerLifecycle>;
     readonly subscribeAuthAccess: RpcStreamMethod<typeof WS_METHODS.subscribeAuthAccess>;
-    readonly subscribePointNShootComposerIntake: RpcStreamMethod<
+    readonly updatePointNShootComposerIntakeSubscription: RpcUnaryMethod<
+      typeof WS_METHODS.pointNShootUpdateComposerIntakeSubscription
+    >;
+    readonly ackPointNShootComposerIntake: RpcUnaryMethod<
+      typeof WS_METHODS.pointNShootAckComposerIntake
+    >;
+    readonly subscribePointNShootComposerIntake: RpcInputStreamMethod<
       typeof WS_METHODS.subscribePointNShootComposerIntake
     >;
   };
@@ -301,9 +307,15 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
           ...options,
           tag: WS_METHODS.subscribeAuthAccess,
         }),
-      subscribePointNShootComposerIntake: (listener, options) =>
+      updatePointNShootComposerIntakeSubscription: (input) =>
+        transport.request((client) =>
+          client[WS_METHODS.pointNShootUpdateComposerIntakeSubscription](input),
+        ),
+      ackPointNShootComposerIntake: (input) =>
+        transport.request((client) => client[WS_METHODS.pointNShootAckComposerIntake](input)),
+      subscribePointNShootComposerIntake: (input, listener, options) =>
         transport.subscribe(
-          (client) => client[WS_METHODS.subscribePointNShootComposerIntake]({}),
+          (client) => client[WS_METHODS.subscribePointNShootComposerIntake](input),
           listener,
           {
             ...options,

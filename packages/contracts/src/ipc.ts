@@ -25,7 +25,11 @@ import type {
   ProjectWriteFileInput,
   ProjectWriteFileResult,
 } from "./project.ts";
-import type { PointNShootComposerIntakeStreamEvent } from "./pointNShoot.ts";
+import type {
+  PointNShootComposerIntakeDeliveryAck,
+  PointNShootComposerIntakeStreamEvent,
+  PointNShootComposerIntakeSubscription,
+} from "./pointNShoot.ts";
 import type { ProviderInstanceId } from "./providerInstance.ts";
 import type {
   ServerConfig,
@@ -421,6 +425,7 @@ export interface DesktopBridge {
     position?: { x: number; y: number },
   ) => Promise<T | null>;
   openExternal: (url: string) => Promise<boolean>;
+  activateWindow: () => Promise<void>;
   onMenuAction: (listener: (action: string) => void) => () => void;
   getUpdateState: () => Promise<DesktopUpdateState>;
   setUpdateChannel: (channel: DesktopUpdateChannel) => Promise<DesktopUpdateState>;
@@ -510,7 +515,12 @@ export interface EnvironmentApi {
     listProviderSkills: (
       input: ServerListProviderSkillsInput,
     ) => Promise<ServerListProviderSkillsResult>;
+    updatePointNShootComposerIntakeSubscription: (
+      subscription: PointNShootComposerIntakeSubscription,
+    ) => Promise<void>;
+    ackPointNShootComposerIntake: (ack: PointNShootComposerIntakeDeliveryAck) => Promise<void>;
     subscribePointNShootComposerIntake: (
+      subscription: PointNShootComposerIntakeSubscription,
       callback: (event: PointNShootComposerIntakeStreamEvent) => void,
       options?: {
         onResubscribe?: () => void;

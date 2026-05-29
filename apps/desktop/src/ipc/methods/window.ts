@@ -133,3 +133,16 @@ export const openExternal = makeIpcMethod({
     return yield* shell.openExternal(url);
   }),
 });
+
+export const activateWindow = makeIpcMethod({
+  channel: IpcChannels.ACTIVATE_WINDOW_CHANNEL,
+  payload: Schema.Undefined,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.activateWindow")(function* () {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const window = yield* electronWindow.currentMainOrFirst;
+    if (Option.isSome(window)) {
+      yield* electronWindow.reveal(window.value);
+    }
+  }),
+});

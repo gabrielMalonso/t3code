@@ -5,6 +5,7 @@ import {
   type EnvironmentId,
   type MessageId,
   type ModelSelection,
+  type PointNShootComposerIntakeSubscription,
   type ProjectScript,
   type ProjectId,
   type ProviderApprovalDecision,
@@ -357,6 +358,18 @@ type ChatViewProps =
       routeKind: "draft";
       draftId: DraftId;
     };
+
+async function prepareExternalComposerFocus(): Promise<void> {
+  if (typeof window === "undefined") return;
+
+  await window.desktopBridge?.activateWindow().catch((error: unknown) => {
+    console.warn("[PointNShoot] failed to activate desktop window", error);
+  });
+
+  await new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+}
 
 interface TerminalLaunchContext {
   threadId: ThreadId;
@@ -1677,8 +1690,58 @@ export default function ChatView(props: ChatViewProps) {
   });
 
   const pointNShootBridgeEnabled = settings.pointNShootBridgeEnabled;
+  const pointNShootSubscriberBaseIdRef = useRef(`pointnshoot-composer-${randomUUID()}`);
+  const [pointNShootTargetActivatedAtEpochMs, setPointNShootTargetActivatedAtEpochMs] = useState(
+    () => Date.now(),
+  );
+  const pointNShootSubscriptionRef = useRef<PointNShootComposerIntakeSubscription>({
+    subscriberId: pointNShootSubscriberBaseIdRef.current,
+    threadId: activeThreadId ?? null,
+    activatedAtEpochMs: pointNShootTargetActivatedAtEpochMs,
+    clientKind: typeof window !== "undefined" && window.desktopBridge ? "desktop" : "browser",
+  });
+
+  useEffect(() => {
+    setPointNShootTargetActivatedAtEpochMs(Date.now());
+  }, [activeThreadId, environmentId]);
+
+  useEffect(() => {
+    pointNShootSubscriptionRef.current = {
+      subscriberId: pointNShootSubscriberBaseIdRef.current,
+      threadId: activeThreadId ?? null,
+      activatedAtEpochMs: pointNShootTargetActivatedAtEpochMs,
+      clientKind: window.desktopBridge ? "desktop" : "browser",
+    };
+  }, [activeThreadId, pointNShootTargetActivatedAtEpochMs]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const markActiveTarget = () => {
+      setPointNShootTargetActivatedAtEpochMs(Date.now());
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        markActiveTarget();
+      }
+    };
+
+    window.addEventListener("focus", markActiveTarget);
+    window.addEventListener("pageshow", markActiveTarget);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", markActiveTarget);
+      window.removeEventListener("pageshow", markActiveTarget);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
   const insertExternalComposerIntakeRequest = useCallback(
-    (request: ExternalComposerIntakeRequest) => {
+    async (request: ExternalComposerIntakeRequest) => {
+      if (request.focus) {
+        await prepareExternalComposerFocus();
+      }
+
       const nextPrompt = appendExternalComposerIntakePrompt({
         currentPrompt: promptRef.current,
         incomingPrompt: request.prompt,
@@ -1703,14 +1766,17 @@ export default function ChatView(props: ChatViewProps) {
       }
 
       if (request.focus) {
-        window.requestAnimationFrame(() => {
-          composerRef.current?.resetCursorState({
-            cursor: nextPrompt.length,
-            prompt: nextPrompt,
-            detectTrigger: false,
+        await new Promise<void>((resolve) => {
+          window.requestAnimationFrame(() => {
+            resolve();
           });
-          composerRef.current?.focusAtEnd();
         });
+        composerRef.current?.resetCursorState({
+          cursor: nextPrompt.length,
+          prompt: nextPrompt,
+          detectTrigger: false,
+        });
+        composerRef.current?.focusAtEnd();
       }
 
       toastManager.add({
@@ -1727,6 +1793,11 @@ export default function ChatView(props: ChatViewProps) {
       setComposerDraftPrompt,
     ],
   );
+  const insertExternalComposerIntakeRequestRef = useRef(insertExternalComposerIntakeRequest);
+
+  useEffect(() => {
+    insertExternalComposerIntakeRequestRef.current = insertExternalComposerIntakeRequest;
+  }, [insertExternalComposerIntakeRequest]);
 
   const handlePointNShootBridgeEnabledChange = useCallback(
     (enabled: boolean) => {
@@ -1776,8 +1847,17 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
 
-      insertExternalComposerIntakeRequest(validation.request);
-      postIntakeResponse(validation.request.requestId, { ok: true });
+      void insertExternalComposerIntakeRequest(validation.request)
+        .then(() => {
+          postIntakeResponse(validation.request.requestId, { ok: true });
+        })
+        .catch((error: unknown) => {
+          console.warn("[PointNShoot] failed to insert composer intake", error);
+          postIntakeResponse(validation.request.requestId, {
+            ok: false,
+            reason: "composer-insert-failed",
+          });
+        });
     };
 
     window.addEventListener("message", handleExternalComposerIntakeMessage);
@@ -1786,21 +1866,68 @@ export default function ChatView(props: ChatViewProps) {
     };
   }, [insertExternalComposerIntakeRequest, pointNShootBridgeEnabled]);
 
+  const updatePointNShootSubscription = useCallback(() => {
+    if (!pointNShootBridgeEnabled) return;
+    const api = readEnvironmentApi(environmentId);
+    if (!api) return;
+
+    void api.server
+      .updatePointNShootComposerIntakeSubscription(pointNShootSubscriptionRef.current)
+      .catch((error: unknown) => {
+        console.warn("[PointNShoot] failed to refresh composer target", error);
+      });
+  }, [environmentId, pointNShootBridgeEnabled]);
+
+  useEffect(() => {
+    updatePointNShootSubscription();
+  }, [activeThreadId, pointNShootTargetActivatedAtEpochMs, updatePointNShootSubscription]);
+
+  useEffect(() => {
+    if (!pointNShootBridgeEnabled) return;
+    const intervalId = window.setInterval(updatePointNShootSubscription, 5_000);
+    return () => window.clearInterval(intervalId);
+  }, [pointNShootBridgeEnabled, updatePointNShootSubscription]);
+
   useEffect(() => {
     if (!pointNShootBridgeEnabled) return;
     const api = readEnvironmentApi(environmentId);
     if (!api) return;
 
-    return api.server.subscribePointNShootComposerIntake((event) => {
-      if (event.type !== "composerIntakeReceived") return;
-      const validation = validateExternalComposerIntakeMessage(event.payload);
-      if (!validation.ok) {
-        console.warn("[PointNShoot] ignored invalid composer intake", validation.reason);
-        return;
-      }
-      insertExternalComposerIntakeRequest(validation.request);
-    });
-  }, [environmentId, insertExternalComposerIntakeRequest, pointNShootBridgeEnabled]);
+    return api.server.subscribePointNShootComposerIntake(
+      pointNShootSubscriptionRef.current,
+      (event) => {
+        if (event.type !== "composerIntakeReceived") return;
+        const validation = validateExternalComposerIntakeMessage(event.payload);
+        if (!validation.ok) {
+          console.warn("[PointNShoot] ignored invalid composer intake", validation.reason);
+          void api.server.ackPointNShootComposerIntake({
+            subscriberId: event.subscriberId,
+            deliveryId: event.deliveryId,
+            ok: false,
+          });
+          return;
+        }
+        void insertExternalComposerIntakeRequestRef
+          .current(validation.request)
+          .then(() =>
+            api.server.ackPointNShootComposerIntake({
+              subscriberId: event.subscriberId,
+              deliveryId: event.deliveryId,
+              ok: true,
+            }),
+          )
+          .catch((error: unknown) => {
+            console.warn("[PointNShoot] failed to insert composer intake", error);
+            return api.server.ackPointNShootComposerIntake({
+              subscriberId: event.subscriberId,
+              deliveryId: event.deliveryId,
+              ok: false,
+            });
+          });
+      },
+      { onResubscribe: updatePointNShootSubscription },
+    );
+  }, [environmentId, pointNShootBridgeEnabled, updatePointNShootSubscription]);
   const activeTerminalLaunchContext =
     terminalLaunchContext?.threadId === activeThreadId
       ? terminalLaunchContext

@@ -59,7 +59,11 @@ import {
   ProjectWriteFileInput,
   ProjectWriteFileResult,
 } from "./project.ts";
-import { PointNShootComposerIntakeStreamEvent } from "./pointNShoot.ts";
+import {
+  PointNShootComposerIntakeDeliveryAck,
+  PointNShootComposerIntakeStreamEvent,
+  PointNShootComposerIntakeSubscription,
+} from "./pointNShoot.ts";
 import {
   TerminalClearInput,
   TerminalCloseInput,
@@ -155,6 +159,10 @@ export const WS_METHODS = {
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
   serverSignalProcess: "server.signalProcess",
+
+  // PointNShoot methods
+  pointNShootUpdateComposerIntakeSubscription: "pointNShoot.updateComposerIntakeSubscription",
+  pointNShootAckComposerIntake: "pointNShoot.ackComposerIntake",
 
   // Source control methods
   sourceControlLookupRepository: "sourceControl.lookupRepository",
@@ -489,10 +497,23 @@ export const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess,
   stream: true,
 });
 
+export const WsPointNShootUpdateComposerIntakeSubscriptionRpc = Rpc.make(
+  WS_METHODS.pointNShootUpdateComposerIntakeSubscription,
+  {
+    payload: PointNShootComposerIntakeSubscription,
+    success: Schema.Struct({}),
+  },
+);
+
+export const WsPointNShootAckComposerIntakeRpc = Rpc.make(WS_METHODS.pointNShootAckComposerIntake, {
+  payload: PointNShootComposerIntakeDeliveryAck,
+  success: Schema.Struct({}),
+});
+
 export const WsSubscribePointNShootComposerIntakeRpc = Rpc.make(
   WS_METHODS.subscribePointNShootComposerIntake,
   {
-    payload: Schema.Struct({}),
+    payload: PointNShootComposerIntakeSubscription,
     success: PointNShootComposerIntakeStreamEvent,
     stream: true,
   },
@@ -541,6 +562,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,
+  WsPointNShootUpdateComposerIntakeSubscriptionRpc,
+  WsPointNShootAckComposerIntakeRpc,
   WsSubscribePointNShootComposerIntakeRpc,
   WsOrchestrationDispatchCommandRpc,
   WsOrchestrationCompactThreadRpc,

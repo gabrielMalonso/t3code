@@ -4,16 +4,16 @@ import {
   PointNShootComposerIntakeRequest,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 
 import { browserApiCorsHeaders } from "./httpCors.ts";
 import { PointNShootComposerIntake } from "./pointNShootComposerIntake.ts";
-import { ServerSettingsService } from "./serverSettings.ts";
 
 const pointNShootCorsHeaders = {
   ...browserApiCorsHeaders,
-  "access-control-allow-headers": `${browserApiCorsHeaders["access-control-allow-headers"]}, x-pointnshoot-extension-id`,
+  "access-control-allow-private-network": "true",
 } as const;
 
 const PointNShootRequestHeaders = Schema.Struct({
@@ -39,7 +39,13 @@ function composerIntakeJson(body: unknown, status: number) {
   });
 }
 
-export const pointNShootComposerIntakeRouteLayer = HttpRouter.add(
+const pointNShootComposerIntakeOptionsRouteLayer = HttpRouter.add(
+  "OPTIONS",
+  "/api/pointnshoot/composer-intake",
+  Effect.succeed(HttpServerResponse.empty({ status: 204, headers: pointNShootCorsHeaders })),
+);
+
+const pointNShootComposerIntakePostRouteLayer = HttpRouter.add(
   "POST",
   "/api/pointnshoot/composer-intake",
   Effect.gen(function* () {
@@ -57,21 +63,12 @@ export const pointNShootComposerIntakeRouteLayer = HttpRouter.add(
       );
     }
 
-    const serverSettings = yield* ServerSettingsService;
-    const settings = yield* serverSettings.getSettings;
-    if (!settings.pointNShootBridgeEnabled) {
-      return composerIntakeJson(
-        {
-          ok: false,
-          reason: "pointnshoot-bridge-disabled",
-        },
-        403,
-      );
-    }
-
     const intake = yield* PointNShootComposerIntake;
     const hasSubscribers = yield* intake.hasActiveSubscribers;
     if (!hasSubscribers) {
+      yield* Effect.logWarning("PointNShoot composer intake rejected", {
+        reason: "composer-not-connected",
+      });
       return composerIntakeJson(
         {
           ok: false,
@@ -88,7 +85,26 @@ export const pointNShootComposerIntakeRouteLayer = HttpRouter.add(
       })),
     );
 
-    yield* intake.publish(payload);
+    const delivered = yield* intake.publish(payload);
+    if (!delivered) {
+      yield* Effect.logWarning("PointNShoot composer intake rejected", {
+        requestId: payload.requestId,
+        reason: "composer-not-connected",
+      });
+      return composerIntakeJson(
+        {
+          ok: false,
+          reason: "composer-not-connected",
+        },
+        409,
+      );
+    }
+
+    yield* Effect.logInfo("PointNShoot composer intake delivered", {
+      requestId: payload.requestId,
+      imagePath: payload.image?.path ?? null,
+    });
+
     return composerIntakeJson(
       {
         ok: true,
@@ -113,4 +129,9 @@ export const pointNShootComposerIntakeRouteLayer = HttpRouter.add(
       ),
     ),
   ),
+);
+
+export const pointNShootComposerIntakeRouteLayer = Layer.mergeAll(
+  pointNShootComposerIntakeOptionsRouteLayer,
+  pointNShootComposerIntakePostRouteLayer,
 );
