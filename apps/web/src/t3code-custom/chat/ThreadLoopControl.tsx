@@ -1,11 +1,8 @@
 import type { ThreadId } from "@t3tools/contracts";
 import {
   AlertCircleIcon,
-  ArchiveIcon,
-  MinusIcon,
   PauseIcon,
   PlayIcon,
-  PlusIcon,
   RefreshCwIcon,
   RepeatIcon,
   Trash2Icon,
@@ -14,8 +11,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
+import { Collapsible, CollapsibleContent } from "../../components/ui/collapsible";
 import { Label } from "../../components/ui/label";
+import {
+  NumberField,
+  NumberFieldDecrement,
+  NumberFieldGroup,
+  NumberFieldIncrement,
+  NumberFieldInput,
+} from "../../components/ui/number-field";
 import {
   Sheet,
   SheetContent,
@@ -29,6 +33,7 @@ import {
 import { Switch } from "../../components/ui/switch";
 import { Textarea } from "../../components/ui/textarea";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../../components/ui/tooltip";
+import { cn } from "~/lib/utils";
 import type { ThreadLoop } from "~/types";
 
 const THREAD_LOOP_INTERVAL_PRESETS = [1, 5, 15, 30, 60, 240] as const;
@@ -36,11 +41,7 @@ const THREAD_LOOP_COMPACT_EVERY_PRESETS = [1, 2, 3, 4] as const;
 const THREAD_LOOP_COMPACT_THRESHOLD_PRESETS = [50, 60, 70, 80] as const;
 const THREAD_LOOP_COMPACT_THRESHOLD_MIN = 50;
 const THREAD_LOOP_COMPACT_THRESHOLD_MAX = 80;
-const THREAD_LOOP_COMPACT_TIMINGS = [
-  { value: "disabled", label: "Off" },
-  { value: "before", label: "Before" },
-] as const;
-type EditableCompactTiming = (typeof THREAD_LOOP_COMPACT_TIMINGS)[number]["value"];
+type EditableCompactTiming = "disabled" | "before";
 
 function normalizeCompactTiming(
   timing: "disabled" | "before" | "after" | undefined,
@@ -146,6 +147,214 @@ function LoopChipLabel({
   );
 }
 
+const presetChipClassName = (selected: boolean) =>
+  cn(
+    "inline-flex h-7 min-w-9 items-center justify-center rounded-full border px-2.5 font-mono text-xs transition-all duration-150 sm:h-6 sm:min-w-8 sm:text-[0.6875rem]",
+    "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+    selected
+      ? "border-primary/40 bg-primary/12 font-medium text-primary shadow-[inset_0_0_0_1px] shadow-primary/16 dark:border-primary/24 dark:bg-primary/18"
+      : "border-transparent bg-muted/50 text-muted-foreground hover:bg-muted/80 hover:text-foreground",
+  );
+
+function isLoopToggleSwitchTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('[data-slot="switch"]') !== null;
+}
+
+function LoopToggleCard({
+  id,
+  checked,
+  onCheckedChange,
+  className,
+  children,
+}: {
+  id: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const toggle = () => onCheckedChange(!checked);
+
+  return (
+    <div
+      id={`${id}-label`}
+      role="button"
+      tabIndex={0}
+      aria-pressed={checked}
+      className={cn("flex cursor-pointer items-center justify-between gap-3", className)}
+      onClick={(event) => {
+        if (isLoopToggleSwitchTarget(event.target)) return;
+        toggle();
+      }}
+      onKeyDown={(event) => {
+        if (isLoopToggleSwitchTarget(event.target)) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          toggle();
+        }
+      }}
+    >
+      <div className="min-w-0">{children}</div>
+      <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
+    </div>
+  );
+}
+
+function LoopSection({
+  title,
+  description,
+  children,
+  className,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={cn(
+        "overflow-hidden rounded-xl border border-border/55 bg-card/40 shadow-xs/5",
+        className,
+      )}
+    >
+      <div className="space-y-0.5 border-b border-border/45 bg-muted/24 px-3.5 py-2.5">
+        <h3 className="text-sm font-medium leading-none tracking-tight">{title}</h3>
+        {description ? (
+          <p className="text-muted-foreground text-xs leading-relaxed">{description}</p>
+        ) : null}
+      </div>
+      <div className="space-y-3 px-3.5 py-3">{children}</div>
+    </section>
+  );
+}
+
+function PresetChipRow<T extends string | number>({
+  presets,
+  value,
+  onSelect,
+  format = String,
+  ariaLabel,
+}: {
+  presets: readonly T[];
+  value: T;
+  onSelect: (value: T) => void;
+  format?: (value: T) => string;
+  ariaLabel: string;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1" role="group" aria-label={ariaLabel}>
+      {presets.map((preset) => {
+        const selected = value === preset;
+        return (
+          <button
+            key={String(preset)}
+            type="button"
+            aria-pressed={selected}
+            onClick={() => onSelect(preset)}
+            className={presetChipClassName(selected)}
+          >
+            {format(preset)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function LoopNumberControl({
+  id,
+  label,
+  ariaLabel,
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+  suffix,
+  presets,
+  formatPreset = String,
+  presetAriaLabel,
+}: {
+  id: string;
+  label?: string;
+  ariaLabel: string;
+  value: number;
+  onChange: (value: number) => void;
+  min: number;
+  max?: number;
+  step?: number;
+  suffix?: string;
+  presets?: readonly number[];
+  formatPreset?: (value: number) => string;
+  presetAriaLabel?: string;
+}) {
+  const resolvedAriaLabel = ariaLabel ?? label ?? "Value";
+
+  return (
+    <div className="space-y-2">
+      {label ? (
+        <Label htmlFor={id} className="text-xs text-muted-foreground">
+          {label}
+        </Label>
+      ) : null}
+      <div className="flex items-center gap-2">
+        <NumberField
+          id={id}
+          className="w-auto gap-0"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onValueChange={(next) => {
+            if (next !== null && Number.isFinite(next)) {
+              onChange(next);
+            }
+          }}
+          size="sm"
+        >
+          <NumberFieldGroup className="h-7 w-[7.25rem] rounded-lg sm:h-6.5">
+            <NumberFieldDecrement
+              aria-label={`Decrease ${resolvedAriaLabel.toLowerCase()}`}
+              className="px-2 sm:px-2 [&_svg]:size-3.5"
+            />
+            <NumberFieldInput
+              aria-label={resolvedAriaLabel}
+              className="h-7 w-10 grow-0 px-0 font-mono text-xs leading-7 sm:h-6.5 sm:leading-6.5"
+              inputMode="numeric"
+            />
+            <NumberFieldIncrement
+              aria-label={`Increase ${resolvedAriaLabel.toLowerCase()}`}
+              className="px-2 sm:px-2 [&_svg]:size-3.5"
+            />
+          </NumberFieldGroup>
+        </NumberField>
+        {suffix ? <span className="text-muted-foreground text-xs">{suffix}</span> : null}
+      </div>
+      {presets && presetAriaLabel ? (
+        <PresetChipRow
+          presets={presets}
+          value={value}
+          onSelect={onChange}
+          format={formatPreset}
+          ariaLabel={presetAriaLabel}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function LoopHistoryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-3 py-2 first:pt-0 last:pb-0">
+      <span className="text-muted-foreground text-xs">{label}</span>
+      <span className="text-right font-mono text-[0.6875rem] leading-snug text-foreground/90 tabular-nums">
+        {value}
+      </span>
+    </div>
+  );
+}
+
 export default function ThreadLoopControl(props: {
   threadId: ThreadId;
   loop: ThreadLoop | null | undefined;
@@ -167,15 +376,13 @@ export default function ThreadLoopControl(props: {
   const [open, setOpen] = useState(false);
   const [enabled, setEnabled] = useState(props.loop?.enabled ?? true);
   const [prompt, setPrompt] = useState(props.loop?.prompt ?? "");
-  const [intervalMinutes, setIntervalMinutes] = useState(String(props.loop?.intervalMinutes ?? 30));
+  const [intervalMinutes, setIntervalMinutes] = useState(props.loop?.intervalMinutes ?? 30);
   const [compactTiming, setCompactTiming] = useState<EditableCompactTiming>(
     normalizeCompactTiming(props.loop?.compactTiming),
   );
-  const [compactEveryRuns, setCompactEveryRuns] = useState(
-    String(props.loop?.compactEveryRuns ?? 1),
-  );
+  const [compactEveryRuns, setCompactEveryRuns] = useState(props.loop?.compactEveryRuns ?? 1);
   const [compactContextUsageThresholdPercent, setCompactContextUsageThresholdPercent] = useState(
-    String(props.loop?.compactContextUsageThresholdPercent ?? THREAD_LOOP_COMPACT_THRESHOLD_MIN),
+    props.loop?.compactContextUsageThresholdPercent ?? THREAD_LOOP_COMPACT_THRESHOLD_MIN,
   );
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -187,16 +394,17 @@ export default function ThreadLoopControl(props: {
     if (!open) return;
     setEnabled(props.loop?.enabled ?? true);
     setPrompt(props.loop?.prompt ?? "");
-    setIntervalMinutes(String(props.loop?.intervalMinutes ?? 30));
+    setIntervalMinutes(props.loop?.intervalMinutes ?? 30);
     setCompactTiming(normalizeCompactTiming(props.loop?.compactTiming));
-    setCompactEveryRuns(String(props.loop?.compactEveryRuns ?? 1));
+    setCompactEveryRuns(props.loop?.compactEveryRuns ?? 1);
     setCompactContextUsageThresholdPercent(
-      String(props.loop?.compactContextUsageThresholdPercent ?? THREAD_LOOP_COMPACT_THRESHOLD_MIN),
+      props.loop?.compactContextUsageThresholdPercent ?? THREAD_LOOP_COMPACT_THRESHOLD_MIN,
     );
     setError(null);
   }, [open, props.loop]);
 
   const status = useMemo(() => deriveStatus(props.loop), [props.loop]);
+  const compactEnabled = compactTiming !== "disabled";
 
   const tooltipText = useMemo(() => {
     if (!props.loop) return "Configure a recurring loop";
@@ -242,33 +450,27 @@ export default function ThreadLoopControl(props: {
 
   const handleSave = async () => {
     const trimmedPrompt = prompt.trim();
-    const parsedInterval = Number.parseInt(intervalMinutes, 10);
-    const parsedCompactEveryRuns = Number.parseInt(compactEveryRuns, 10);
-    const parsedCompactContextUsageThresholdPercent = Number.parseInt(
-      compactContextUsageThresholdPercent,
-      10,
-    );
 
     if (trimmedPrompt.length === 0) {
       setError("Prompt is required.");
       return;
     }
-    if (!Number.isInteger(parsedInterval) || parsedInterval < 1) {
+    if (!Number.isInteger(intervalMinutes) || intervalMinutes < 1) {
       setError("Interval must be at least 1 minute.");
       return;
     }
     if (
       compactTiming !== "disabled" &&
-      (!Number.isInteger(parsedCompactEveryRuns) || parsedCompactEveryRuns < 1)
+      (!Number.isInteger(compactEveryRuns) || compactEveryRuns < 1)
     ) {
       setError("Compaction counter must be at least 1 run.");
       return;
     }
     if (
       compactTiming !== "disabled" &&
-      (!Number.isInteger(parsedCompactContextUsageThresholdPercent) ||
-        parsedCompactContextUsageThresholdPercent < THREAD_LOOP_COMPACT_THRESHOLD_MIN ||
-        parsedCompactContextUsageThresholdPercent > THREAD_LOOP_COMPACT_THRESHOLD_MAX)
+      (!Number.isInteger(compactContextUsageThresholdPercent) ||
+        compactContextUsageThresholdPercent < THREAD_LOOP_COMPACT_THRESHOLD_MIN ||
+        compactContextUsageThresholdPercent > THREAD_LOOP_COMPACT_THRESHOLD_MAX)
     ) {
       setError("Compaction threshold must be between 50% and 80%.");
       return;
@@ -280,16 +482,14 @@ export default function ThreadLoopControl(props: {
       await props.onUpsertLoop(props.threadId, {
         enabled,
         prompt: trimmedPrompt,
-        intervalMinutes: parsedInterval,
+        intervalMinutes,
         compactTiming,
         compactEveryRuns:
-          compactTiming === "disabled"
-            ? Math.max(1, parsedCompactEveryRuns || 1)
-            : parsedCompactEveryRuns,
+          compactTiming === "disabled" ? Math.max(1, compactEveryRuns || 1) : compactEveryRuns,
         compactContextUsageThresholdPercent:
           compactTiming === "disabled"
             ? THREAD_LOOP_COMPACT_THRESHOLD_MIN
-            : parsedCompactContextUsageThresholdPercent,
+            : compactContextUsageThresholdPercent,
       });
       setOpen(false);
     } catch (nextError) {
@@ -396,409 +596,193 @@ export default function ThreadLoopControl(props: {
         </div>
       )}
 
-      <SheetContent side="right">
-        <SheetHeader>
+      <SheetContent side="right" className="max-w-md">
+        <SheetHeader className="gap-3 pe-8">
           <SheetTitle>Thread loop</SheetTitle>
-          <SheetDescription>
+          <SheetDescription className="text-pretty leading-relaxed">
             Configure a recurring prompt that runs automatically on a schedule. The server skips
             ticks while the thread is busy.
           </SheetDescription>
         </SheetHeader>
-        <SheetPanel className="space-y-5">
-          {props.loop ? (
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
-              <div className="flex items-center gap-2.5">
-                <StatusDot status={status} />
-                <span className="text-sm font-medium">
-                  {status === "active"
-                    ? "Running"
+        <SheetPanel className="space-y-3.5">
+          <LoopToggleCard
+            id="thread-loop-enabled"
+            checked={enabled}
+            onCheckedChange={setEnabled}
+            className="rounded-xl border border-border/55 bg-muted/16 px-3.5 py-3"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              {props.loop ? <StatusDot status={status} /> : null}
+              <span className="text-sm font-medium">
+                {props.loop
+                  ? status === "active"
+                    ? "Loop running"
                     : status === "paused"
-                      ? "Paused"
+                      ? "Loop paused"
                       : status === "error"
-                        ? "Error"
-                        : "Off"}
-                </span>
-                {props.loop.nextRunAt && status === "active" ? (
-                  <Badge variant="outline" size="sm">
-                    Next {formatRelativeTime(props.loop.nextRunAt)}
-                  </Badge>
-                ) : null}
-              </div>
-              <Switch id="thread-loop-enabled" checked={enabled} onCheckedChange={setEnabled} />
+                        ? "Loop error"
+                        : "Loop off"
+                  : "Enable loop"}
+              </span>
+              {props.loop?.nextRunAt && status === "active" ? (
+                <Badge variant="outline" size="sm" className="font-normal">
+                  Next {formatRelativeTime(props.loop.nextRunAt)}
+                </Badge>
+              ) : null}
             </div>
-          ) : (
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
-              <div className="space-y-0.5">
-                <Label htmlFor="thread-loop-enabled" className="text-sm">
-                  Enable loop
-                </Label>
-                <p className="text-muted-foreground text-xs">
-                  The loop will start running after you save.
-                </p>
-              </div>
-              <Switch id="thread-loop-enabled" checked={enabled} onCheckedChange={setEnabled} />
-            </div>
-          )}
+          </LoopToggleCard>
 
-          <div className="space-y-2.5">
-            <Label htmlFor="thread-loop-interval" className="text-sm">
-              Interval
-            </Label>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-xs"
-                onClick={() => {
-                  const current = Number.parseInt(intervalMinutes, 10);
-                  if (Number.isInteger(current) && current > 1) {
-                    setIntervalMinutes(String(current - 1));
-                  }
-                }}
-                disabled={Number.parseInt(intervalMinutes, 10) <= 1}
-                aria-label="Decrease interval"
-              >
-                <MinusIcon className="size-3.5" />
-              </Button>
-              <Input
-                id="thread-loop-interval"
-                type="number"
-                min={1}
-                step={1}
-                value={intervalMinutes}
-                onChange={(event) => setIntervalMinutes(event.target.value)}
-                className="h-7 w-16 font-mono text-xs sm:h-6 sm:text-[0.6875rem] [&_input]:h-full [&_input]:leading-[inherit] [&_input]:px-0 [&_input]:text-center [&_input]:[appearance:textfield] [&_input]:[-moz-appearance:textfield] [&_input::-webkit-inner-spin-button]:appearance-none [&_input::-webkit-outer-spin-button]:appearance-none"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-xs"
-                onClick={() => {
-                  const current = Number.parseInt(intervalMinutes, 10);
-                  if (Number.isInteger(current)) {
-                    setIntervalMinutes(String(current + 1));
-                  }
-                }}
-                aria-label="Increase interval"
-              >
-                <PlusIcon className="size-3.5" />
-              </Button>
-              <span className="text-muted-foreground text-xs">(min)</span>
-            </div>
+          <LoopSection title="Interval">
+            <LoopNumberControl
+              id="thread-loop-interval"
+              ariaLabel="Interval in minutes"
+              value={intervalMinutes}
+              onChange={setIntervalMinutes}
+              min={1}
+              suffix="min"
+              presets={THREAD_LOOP_INTERVAL_PRESETS}
+              formatPreset={formatInterval}
+              presetAriaLabel="Interval presets"
+            />
+          </LoopSection>
 
-            <div className="flex flex-wrap gap-1.5">
-              {THREAD_LOOP_INTERVAL_PRESETS.map((presetMinutes) => {
-                const selected = intervalMinutes === String(presetMinutes);
-                return (
-                  <button
-                    key={presetMinutes}
-                    type="button"
-                    onClick={() => setIntervalMinutes(String(presetMinutes))}
-                    className={[
-                      "inline-flex h-7 items-center rounded-md border px-2.5 font-mono text-xs transition-colors duration-100 sm:h-6 sm:text-[0.6875rem]",
-                      "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-                      selected
-                        ? "border-primary/30 bg-primary/10 text-primary font-medium dark:border-primary/20 dark:bg-primary/16"
-                        : "border-input bg-background text-muted-foreground hover:bg-accent/50 dark:bg-input/32 dark:hover:bg-input/48",
-                    ].join(" ")}
-                  >
-                    {formatInterval(presetMinutes)}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="space-y-2.5">
-            <Label className="text-sm">Context compaction</Label>
-            <div className="flex flex-wrap gap-1.5">
-              {THREAD_LOOP_COMPACT_TIMINGS.map((option) => {
-                const selected = compactTiming === option.value;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setCompactTiming(option.value)}
-                    className={[
-                      "inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors duration-100 sm:h-6 sm:text-[0.6875rem]",
-                      "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-                      selected
-                        ? "border-primary/30 bg-primary/10 text-primary font-medium dark:border-primary/20 dark:bg-primary/16"
-                        : "border-input bg-background text-muted-foreground hover:bg-accent/50 dark:bg-input/32 dark:hover:bg-input/48",
-                    ].join(" ")}
-                  >
-                    <ArchiveIcon className="size-3" />
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-muted-foreground text-xs leading-relaxed">
-              Runs before the scheduled loop when the counter is reached.
-            </p>
-            {compactTiming !== "disabled" ? (
-              <div className="space-y-2 rounded-lg border border-border/60 bg-muted/10 px-3.5 py-3">
-                <Label htmlFor="thread-loop-compact-every" className="text-xs">
-                  Compact every
-                </Label>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon-xs"
-                    onClick={() => {
-                      const current = Number.parseInt(compactEveryRuns, 10);
-                      if (Number.isInteger(current) && current > 1) {
-                        setCompactEveryRuns(String(current - 1));
-                      }
-                    }}
-                    disabled={Number.parseInt(compactEveryRuns, 10) <= 1}
-                    aria-label="Decrease compaction counter"
-                  >
-                    <MinusIcon className="size-3.5" />
-                  </Button>
-                  <Input
-                    id="thread-loop-compact-every"
-                    type="number"
-                    min={1}
-                    step={1}
-                    value={compactEveryRuns}
-                    onChange={(event) => setCompactEveryRuns(event.target.value)}
-                    className="h-7 w-16 font-mono text-xs sm:h-6 sm:text-[0.6875rem] [&_input]:h-full [&_input]:leading-[inherit] [&_input]:px-0 [&_input]:text-center [&_input]:[appearance:textfield] [&_input]:[-moz-appearance:textfield] [&_input::-webkit-inner-spin-button]:appearance-none [&_input::-webkit-outer-spin-button]:appearance-none"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon-xs"
-                    onClick={() => {
-                      const current = Number.parseInt(compactEveryRuns, 10);
-                      if (Number.isInteger(current)) {
-                        setCompactEveryRuns(String(current + 1));
-                      }
-                    }}
-                    aria-label="Increase compaction counter"
-                  >
-                    <PlusIcon className="size-3.5" />
-                  </Button>
-                  <span className="text-muted-foreground text-xs">runs</span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {THREAD_LOOP_COMPACT_EVERY_PRESETS.map((preset) => {
-                    const selected = compactEveryRuns === String(preset);
-                    return (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => setCompactEveryRuns(String(preset))}
-                        className={[
-                          "inline-flex h-7 items-center rounded-md border px-2.5 font-mono text-xs transition-colors duration-100 sm:h-6 sm:text-[0.6875rem]",
-                          "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-                          selected
-                            ? "border-primary/30 bg-primary/10 text-primary font-medium dark:border-primary/20 dark:bg-primary/16"
-                            : "border-input bg-background text-muted-foreground hover:bg-accent/50 dark:bg-input/32 dark:hover:bg-input/48",
-                        ].join(" ")}
-                      >
-                        {preset}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="space-y-2 pt-1">
-                  <Label htmlFor="thread-loop-compact-threshold" className="text-xs">
-                    Context threshold
-                  </Label>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon-xs"
-                      onClick={() => {
-                        const current = Number.parseInt(compactContextUsageThresholdPercent, 10);
-                        if (
-                          Number.isInteger(current) &&
-                          current > THREAD_LOOP_COMPACT_THRESHOLD_MIN
-                        ) {
-                          setCompactContextUsageThresholdPercent(
-                            String(Math.max(THREAD_LOOP_COMPACT_THRESHOLD_MIN, current - 5)),
-                          );
-                        }
-                      }}
-                      disabled={
-                        Number.parseInt(compactContextUsageThresholdPercent, 10) <=
-                        THREAD_LOOP_COMPACT_THRESHOLD_MIN
-                      }
-                      aria-label="Decrease context threshold"
-                    >
-                      <MinusIcon className="size-3.5" />
-                    </Button>
-                    <Input
-                      id="thread-loop-compact-threshold"
-                      type="number"
-                      min={THREAD_LOOP_COMPACT_THRESHOLD_MIN}
-                      max={THREAD_LOOP_COMPACT_THRESHOLD_MAX}
-                      step={5}
-                      value={compactContextUsageThresholdPercent}
-                      onChange={(event) =>
-                        setCompactContextUsageThresholdPercent(event.target.value)
-                      }
-                      className="h-7 w-16 font-mono text-xs sm:h-6 sm:text-[0.6875rem] [&_input]:h-full [&_input]:leading-[inherit] [&_input]:px-0 [&_input]:text-center [&_input]:[appearance:textfield] [&_input]:[-moz-appearance:textfield] [&_input::-webkit-inner-spin-button]:appearance-none [&_input::-webkit-outer-spin-button]:appearance-none"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon-xs"
-                      onClick={() => {
-                        const current = Number.parseInt(compactContextUsageThresholdPercent, 10);
-                        if (
-                          Number.isInteger(current) &&
-                          current < THREAD_LOOP_COMPACT_THRESHOLD_MAX
-                        ) {
-                          setCompactContextUsageThresholdPercent(
-                            String(Math.min(THREAD_LOOP_COMPACT_THRESHOLD_MAX, current + 5)),
-                          );
-                        }
-                      }}
-                      disabled={
-                        Number.parseInt(compactContextUsageThresholdPercent, 10) >=
-                        THREAD_LOOP_COMPACT_THRESHOLD_MAX
-                      }
-                      aria-label="Increase context threshold"
-                    >
-                      <PlusIcon className="size-3.5" />
-                    </Button>
-                    <span className="text-muted-foreground text-xs">%</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {THREAD_LOOP_COMPACT_THRESHOLD_PRESETS.map((preset) => {
-                      const selected = compactContextUsageThresholdPercent === String(preset);
-                      return (
-                        <button
-                          key={preset}
-                          type="button"
-                          onClick={() => setCompactContextUsageThresholdPercent(String(preset))}
-                          className={[
-                            "inline-flex h-7 items-center rounded-md border px-2.5 font-mono text-xs transition-colors duration-100 sm:h-6 sm:text-[0.6875rem]",
-                            "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-                            selected
-                              ? "border-primary/30 bg-primary/10 text-primary font-medium dark:border-primary/20 dark:bg-primary/16"
-                              : "border-input bg-background text-muted-foreground hover:bg-accent/50 dark:bg-input/32 dark:hover:bg-input/48",
-                          ].join(" ")}
-                        >
-                          {preset}%
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="thread-loop-prompt" className="text-sm">
-              Prompt
-            </Label>
+          <LoopSection title="Prompt" description="What the agent should do on each scheduled run.">
             <Textarea
               id="thread-loop-prompt"
-              rows={6}
+              rows={5}
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
               placeholder="Check the deployment status and summarize any issues."
-              className="text-sm leading-relaxed"
+              className="min-h-[7.5rem] resize-y border-border/60 bg-background/70 text-sm leading-relaxed"
             />
-          </div>
+          </LoopSection>
+
+          <section className="overflow-hidden rounded-xl border border-border/55 bg-card/40 shadow-xs/5">
+            <LoopToggleCard
+              id="thread-loop-compact-enabled"
+              checked={compactEnabled}
+              onCheckedChange={(checked) => setCompactTiming(checked ? "before" : "disabled")}
+              className="px-3.5 py-2.5"
+            >
+              <div className="space-y-0.5">
+                <span className="text-sm font-medium">Context compaction</span>
+                <p className="text-muted-foreground text-xs leading-relaxed">
+                  Runs before the scheduled loop when the counter is reached.
+                </p>
+              </div>
+            </LoopToggleCard>
+
+            <Collapsible open={compactEnabled}>
+              <CollapsibleContent className="transition-[height,opacity] duration-300 ease-in-out data-ending-style:opacity-0 data-starting-style:opacity-0 data-open:opacity-100 motion-reduce:transition-none">
+                <div className="space-y-3 border-t border-border/45 px-3.5 py-3">
+                  <LoopNumberControl
+                    id="thread-loop-compact-every"
+                    label="Compact every"
+                    ariaLabel="Compact every runs"
+                    value={compactEveryRuns}
+                    onChange={setCompactEveryRuns}
+                    min={1}
+                    suffix="runs"
+                    presets={THREAD_LOOP_COMPACT_EVERY_PRESETS}
+                    presetAriaLabel="Compaction frequency presets"
+                  />
+                  <LoopNumberControl
+                    id="thread-loop-compact-threshold"
+                    label="Context threshold"
+                    ariaLabel="Context threshold percent"
+                    value={compactContextUsageThresholdPercent}
+                    onChange={setCompactContextUsageThresholdPercent}
+                    min={THREAD_LOOP_COMPACT_THRESHOLD_MIN}
+                    max={THREAD_LOOP_COMPACT_THRESHOLD_MAX}
+                    step={5}
+                    suffix="%"
+                    presets={THREAD_LOOP_COMPACT_THRESHOLD_PRESETS}
+                    formatPreset={(preset) => `${preset}%`}
+                    presetAriaLabel="Context threshold presets"
+                  />
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          </section>
 
           {props.loop ? (
-            <div className="space-y-2">
-              <span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
-                History
-              </span>
-              <div className="divide-y divide-border/40 rounded-lg border border-border/60 bg-muted/10 text-sm">
-                <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-                  <span className="text-muted-foreground text-xs">Next run</span>
-                  <span className="text-xs tabular-nums">
-                    {formatTimestamp(props.loop.nextRunAt)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-                  <span className="text-muted-foreground text-xs">Last run</span>
-                  <span className="text-xs tabular-nums">
-                    {formatTimestamp(props.loop.lastRunAt)}
-                  </span>
-                </div>
+            <LoopSection title="Run history">
+              <div className="divide-y divide-border/40">
+                <LoopHistoryRow label="Next run" value={formatTimestamp(props.loop.nextRunAt)} />
+                <LoopHistoryRow label="Last run" value={formatTimestamp(props.loop.lastRunAt)} />
                 {(props.loop.compactTiming ?? "disabled") !== "disabled" ? (
-                  <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-                    <span className="text-muted-foreground text-xs">Compaction count</span>
-                    <span className="text-xs tabular-nums">
-                      {props.loop.runsSinceCompaction ?? 0}/{props.loop.compactEveryRuns ?? 1}
-                    </span>
-                  </div>
+                  <LoopHistoryRow
+                    label="Compaction count"
+                    value={`${props.loop.runsSinceCompaction ?? 0}/${props.loop.compactEveryRuns ?? 1}`}
+                  />
                 ) : null}
                 {(props.loop.compactTiming ?? "disabled") !== "disabled" ? (
-                  <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-                    <span className="text-muted-foreground text-xs">Context threshold</span>
-                    <span className="text-xs tabular-nums">
-                      {props.loop.compactContextUsageThresholdPercent ??
-                        THREAD_LOOP_COMPACT_THRESHOLD_MIN}
-                      %
-                    </span>
-                  </div>
+                  <LoopHistoryRow
+                    label="Context threshold"
+                    value={`${props.loop.compactContextUsageThresholdPercent ?? THREAD_LOOP_COMPACT_THRESHOLD_MIN}%`}
+                  />
                 ) : null}
               </div>
               {props.loop.lastError ? (
-                <div className="rounded-lg border border-warning/20 bg-warning/6 px-3.5 py-2.5 dark:border-warning/14 dark:bg-warning/10">
+                <div className="rounded-lg border border-warning/22 bg-warning/6 px-3 py-2.5 dark:border-warning/14 dark:bg-warning/10">
                   <div className="flex items-center gap-1.5 text-xs font-medium text-warning-foreground">
-                    <AlertCircleIcon className="size-3.5 shrink-0" />
+                    <AlertCircleIcon className="size-3.5 shrink-0" aria-hidden />
                     Last run error
                   </div>
-                  <p className="mt-1 text-xs leading-relaxed text-warning-foreground/80">
+                  <p className="mt-1 text-xs leading-relaxed text-warning-foreground/85">
                     {props.loop.lastError}
                   </p>
                 </div>
               ) : null}
-            </div>
+            </LoopSection>
           ) : null}
 
           {error ? (
-            <div className="rounded-lg border border-destructive/20 bg-destructive/6 px-3.5 py-2.5 text-destructive-foreground text-sm dark:border-destructive/14 dark:bg-destructive/10">
+            <div
+              className="rounded-xl border border-destructive/22 bg-destructive/6 px-3.5 py-2.5 text-sm text-destructive-foreground dark:border-destructive/14 dark:bg-destructive/10"
+              role="alert"
+            >
               {error}
             </div>
           ) : null}
         </SheetPanel>
-        <SheetFooter className="items-stretch sm:items-center sm:justify-between">
-          <div className="flex flex-1 flex-col-reverse gap-2 sm:flex-row sm:items-center">
-            {props.loop ? (
+        <SheetFooter className="gap-3 sm:items-center sm:justify-between">
+          {props.loop ? (
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
               <Button
                 type="button"
                 variant="destructive-outline"
                 size="sm"
+                className="sm:order-1"
                 onClick={() => void handleDelete()}
                 disabled={isDeleting || isSaving || isRunningNow}
               >
                 <Trash2Icon className="size-3.5" />
                 {isDeleting ? "Deleting\u2026" : "Delete"}
               </Button>
-            ) : null}
-            {props.loop ? (
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
+                className="sm:order-2"
                 onClick={() => void handleRunNow()}
                 disabled={isDeleting || isSaving || isRunningNow}
               >
                 <RefreshCwIcon className="size-3.5" />
                 {isRunningNow ? "Running\u2026" : "Run now"}
               </Button>
-            ) : null}
-          </div>
+            </div>
+          ) : (
+            <span className="hidden sm:block sm:flex-1" />
+          )}
           <Button
             type="button"
             size="sm"
+            className="w-full sm:w-auto"
             onClick={() => void handleSave()}
-            disabled={isSaving || isDeleting}
+            disabled={isSaving || isDeleting || isRunningNow}
           >
-            {isSaving ? "Saving\u2026" : props.loop ? "Update" : "Create loop"}
+            {isSaving ? "Saving\u2026" : props.loop ? "Save changes" : "Create loop"}
           </Button>
         </SheetFooter>
       </SheetContent>
