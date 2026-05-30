@@ -2,7 +2,7 @@ import * as Schema from "effect/Schema";
 
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
-export const POINTNSHOOT_EXTENSION_ID = "bjfbbbpniplpolcnbmehjcopajibfnhf";
+export const POINTNSHOOT_EXTENSION_ID = "jjhmghmfefnjjkfipbpgdgmekbbjeeon";
 export const POINTNSHOOT_EXTENSION_ORIGIN = `chrome-extension://${POINTNSHOOT_EXTENSION_ID}`;
 export const POINTNSHOOT_COMPOSER_INTAKE_REQUEST_TYPE =
   "t3code.composer-intake.request.v1" as const;
