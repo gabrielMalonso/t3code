@@ -1,7 +1,11 @@
 import type { CaptureFailureReason } from "./types";
 
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function toCaptureFailureReason(error: unknown): CaptureFailureReason {
-  const message = error instanceof Error ? error.message : String(error ?? "");
+  const message = errorMessage(error ?? "");
 
   if (/restricted|cannot access|chrome:\/\//i.test(message)) return "restricted-page";
   if (/clipboard|permission denied|notallowed/i.test(message)) return "clipboard-blocked";

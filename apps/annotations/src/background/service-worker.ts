@@ -5,7 +5,7 @@ import {
   getConfiguredDownloadFolder,
 } from "./downloads";
 import { deliverToT3Composer, readT3ComposerStatus } from "./t3-composer";
-import { toCaptureFailureReason } from "../shared/errors";
+import { errorMessage, toCaptureFailureReason } from "../shared/errors";
 import {
   isCaptureRequestMessage,
   isRenderImageResult,
@@ -25,6 +25,20 @@ import { buildUiNote } from "../shared/ui-note";
 
 const OFFSCREEN_PATH = "offscreen/offscreen.html";
 let creatingOffscreen: Promise<void> | null = null;
+
+type T3Diagnostic = {
+  level: "info" | "warn";
+  step: string;
+  message: string;
+  details: Record<string, unknown>;
+};
+
+type RuntimeWithContexts = typeof chrome.runtime & {
+  getContexts?: (filter: {
+    contextTypes?: string[];
+    documentUrls?: string[];
+  }) => Promise<unknown[]>;
+};
 
 chrome.action.onClicked.addListener((tab) => {
   void activateTab(tab);
@@ -46,7 +60,7 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
         sendResponse({
           ok: false,
           reason: "t3-status-failed",
-          message: error instanceof Error ? error.message : String(error),
+          message: errorMessage(error),
         }),
       );
     return true;
@@ -108,25 +122,17 @@ async function handleCapture(
       { requestId: request.id, reason: "capture-preflight" },
       undefined,
       (diagnostic) => {
-        diagnostics = appendDiagnostic(
-          diagnostics,
-          makeDiagnostic(
-            "background",
-            diagnostic.level,
-            `t3:${diagnostic.step}`,
-            diagnostic.message,
-            diagnostic.details,
-          ),
-        );
+        diagnostics = appendT3Diagnostic(diagnostics, diagnostic);
       },
     );
+    const preflightConnected = isT3BridgeConnected(preflight);
     diagnostics = appendDiagnostic(
       diagnostics,
       makeDiagnostic(
         "background",
-        isT3BridgeConnected(preflight) ? "info" : "warn",
+        preflightConnected ? "info" : "warn",
         "t3:preflight",
-        isT3BridgeConnected(preflight)
+        preflightConnected
           ? "T3 Composer bridge target is connected before capture."
           : "T3 Composer bridge target is not connected before capture.",
         { requestId: request.id, ...t3BridgeStatusDetails(preflight) },
@@ -232,16 +238,7 @@ async function handleCapture(
       undefined,
       undefined,
       (diagnostic) => {
-        diagnostics = appendDiagnostic(
-          diagnostics,
-          makeDiagnostic(
-            "background",
-            diagnostic.level,
-            `t3:${diagnostic.step}`,
-            diagnostic.message,
-            diagnostic.details,
-          ),
-        );
+        diagnostics = appendT3Diagnostic(diagnostics, diagnostic);
       },
     );
     diagnostics = appendDiagnostic(
@@ -301,6 +298,22 @@ function t3BridgeStatusDetails(status: T3ComposerBridgeStatusResult): Record<str
   };
 }
 
+function appendT3Diagnostic(
+  entries: DiagnosticLogEntry[],
+  diagnostic: T3Diagnostic,
+): DiagnosticLogEntry[] {
+  return appendDiagnostic(
+    entries,
+    makeDiagnostic(
+      "background",
+      diagnostic.level,
+      `t3:${diagnostic.step}`,
+      diagnostic.message,
+      diagnostic.details,
+    ),
+  );
+}
+
 function captureVisibleTab(windowId: number | undefined): Promise<string> {
   return new Promise((resolve, reject) => {
     const callback = (dataUrl?: string) => {
@@ -328,19 +341,7 @@ function captureVisibleTab(windowId: number | undefined): Promise<string> {
 }
 
 async function ensureOffscreenDocument(): Promise<void> {
-  const offscreenUrl = chrome.runtime.getURL(OFFSCREEN_PATH);
-  const runtimeWithContexts = chrome.runtime as typeof chrome.runtime & {
-    getContexts?: (filter: {
-      contextTypes?: string[];
-      documentUrls?: string[];
-    }) => Promise<unknown[]>;
-  };
-
-  const contexts = await runtimeWithContexts.getContexts?.({
-    contextTypes: ["OFFSCREEN_DOCUMENT"],
-    documentUrls: [offscreenUrl],
-  });
-
+  const contexts = await getOffscreenContexts();
   if (contexts && contexts.length > 0) return;
 
   if (!creatingOffscreen) {
@@ -359,19 +360,7 @@ async function ensureOffscreenDocument(): Promise<void> {
 }
 
 async function closeOffscreenDocument(): Promise<void> {
-  const offscreenUrl = chrome.runtime.getURL(OFFSCREEN_PATH);
-  const runtimeWithContexts = chrome.runtime as typeof chrome.runtime & {
-    getContexts?: (filter: {
-      contextTypes?: string[];
-      documentUrls?: string[];
-    }) => Promise<unknown[]>;
-  };
-
-  const contexts = await runtimeWithContexts.getContexts?.({
-    contextTypes: ["OFFSCREEN_DOCUMENT"],
-    documentUrls: [offscreenUrl],
-  });
-
+  const contexts = await getOffscreenContexts();
   if (!contexts || contexts.length === 0) return;
 
   try {
@@ -379,6 +368,16 @@ async function closeOffscreenDocument(): Promise<void> {
   } catch (error) {
     console.warn("[Annotations] could not close offscreen document", error);
   }
+}
+
+async function getOffscreenContexts(): Promise<unknown[] | undefined> {
+  const offscreenUrl = chrome.runtime.getURL(OFFSCREEN_PATH);
+  const runtimeWithContexts = chrome.runtime as RuntimeWithContexts;
+
+  return runtimeWithContexts.getContexts?.({
+    contextTypes: ["OFFSCREEN_DOCUMENT"],
+    documentUrls: [offscreenUrl],
+  });
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {

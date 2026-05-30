@@ -1,4 +1,12 @@
 export const ROOT_ID = "annotations-root";
+const HOSTILE_PAGE_EVENTS = [
+  "pointerdown",
+  "mousedown",
+  "mouseup",
+  "pointerup",
+  "click",
+  "focusin",
+] as const;
 
 export type AnnotationsShadow = {
   host: HTMLDivElement;
@@ -37,10 +45,7 @@ function stopPropagation(event: Event): void {
 }
 
 export function stopHostilePageHandlers(element: HTMLElement): void {
-  element.addEventListener("pointerdown", stopPropagation);
-  element.addEventListener("mousedown", stopPropagation);
-  element.addEventListener("mouseup", stopPropagation);
-  element.addEventListener("pointerup", stopPropagation);
-  element.addEventListener("click", stopPropagation);
-  element.addEventListener("focusin", stopPropagation);
+  for (const eventName of HOSTILE_PAGE_EVENTS) {
+    element.addEventListener(eventName, stopPropagation);
+  }
 }

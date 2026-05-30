@@ -1,4 +1,7 @@
+import { clamp, intersectRects } from "./geometry";
 import type { Rect, ViewportInfo } from "./types";
+
+export { intersectRects } from "./geometry";
 
 export type ScreenshotSize = {
   width: number;
@@ -106,20 +109,6 @@ function fitRectWithinBounds(rect: Rect, bounds: ScreenshotSize): Rect {
   };
 }
 
-export function intersectRects(a: Rect, b: Rect): Rect {
-  const x1 = Math.max(a.x, b.x);
-  const y1 = Math.max(a.y, b.y);
-  const x2 = Math.min(a.x + a.width, b.x + b.width);
-  const y2 = Math.min(a.y + a.height, b.y + b.height);
-
-  return {
-    x: x1,
-    y: y1,
-    width: Math.max(0, x2 - x1),
-    height: Math.max(0, y2 - y1),
-  };
-}
-
 export function clampRect(rect: Rect, bounds: ScreenshotSize): Rect {
   const x = clamp(rect.x, 0, bounds.width);
   const y = clamp(rect.y, 0, bounds.height);
@@ -132,8 +121,4 @@ export function clampRect(rect: Rect, bounds: ScreenshotSize): Rect {
     width: Math.max(1, Math.ceil(right - x)),
     height: Math.max(1, Math.ceil(bottom - y)),
   };
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }
