@@ -1,3 +1,4 @@
+import { errorMessage } from "../shared/errors";
 import { isT3ComposerBridgeStatusResult } from "../shared/messages";
 import type {
   SavedImage,
@@ -242,7 +243,7 @@ export async function deliverToT3Composer(
       "delivery:open-t3-failed",
       {
         requestId: payload.requestId,
-        message: error instanceof Error ? error.message : String(error),
+        message: errorMessage(error),
       },
       onDiagnostic,
     );
@@ -250,7 +251,7 @@ export async function deliverToT3Composer(
       ok: false,
       requestId: payload.requestId,
       reason: "t3-open-failed",
-      message: error instanceof Error ? error.message : String(error),
+      message: errorMessage(error),
     };
   }
 }
@@ -363,7 +364,7 @@ async function deliverPayloadToTab(
       ok: false,
       requestId: payload.requestId,
       reason: "t3-injection-failed",
-      message: error instanceof Error ? error.message : String(error),
+      message: errorMessage(error),
     };
   }
 }
@@ -449,7 +450,7 @@ async function deliverPayloadToHttpBridgeEndpoint(
       ok: false,
       requestId: payload.requestId,
       reason: "t3-http-failed",
-      message: error instanceof Error ? error.message : String(error),
+      message: errorMessage(error),
     };
   } finally {
     clearTimeout(timeout);
@@ -517,7 +518,7 @@ async function fetchT3ComposerStatusEndpoint(
     return {
       ok: false,
       reason: "t3-status-http-failed",
-      message: error instanceof Error ? error.message : String(error),
+      message: errorMessage(error),
     };
   } finally {
     clearTimeout(timeout);

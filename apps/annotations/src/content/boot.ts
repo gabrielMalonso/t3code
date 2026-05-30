@@ -28,6 +28,7 @@ import { elementLabel, elementRect, findPickTarget, placeFixedBox } from "./sele
 import { clipboardCapabilityDetails } from "../shared/clipboard-diagnostics";
 import { COPY } from "../shared/copy";
 import { appendDiagnostic, errorDiagnostic, makeDiagnostic } from "../shared/diagnostics";
+import { errorMessage } from "../shared/errors";
 import { isT3ComposerBridgeStatusResult, MESSAGE_TYPES } from "../shared/messages";
 import type {
   CaptureFallback,
@@ -41,6 +42,14 @@ import { buildMinimalUiNote, buildUiNote } from "../shared/ui-note";
 type AnnotationsState = "idle" | "picking" | "locked" | "capturing" | "fallback";
 const CONTROLLER_VERSION = "0.4.0";
 const RECENT_DELIVERY_STATUS_GRACE_MS = 120_000;
+const BLOCKED_INTERACTION_EVENTS = [
+  "pointerup",
+  "mousedown",
+  "mouseup",
+  "click",
+  "dblclick",
+  "contextmenu",
+] as const;
 type SuccessfulDelivery = Extract<T3ComposerDeliveryResult, { ok: true }>;
 
 declare global {
@@ -74,12 +83,9 @@ class AnnotationsController {
 
     this.refs.eventShield.addEventListener("pointermove", this.handleShieldPointerMove);
     this.refs.eventShield.addEventListener("pointerdown", this.handleShieldPointerDown);
-    this.refs.eventShield.addEventListener("pointerup", this.handleShieldBlockedEvent);
-    this.refs.eventShield.addEventListener("mousedown", this.handleShieldBlockedEvent);
-    this.refs.eventShield.addEventListener("mouseup", this.handleShieldBlockedEvent);
-    this.refs.eventShield.addEventListener("click", this.handleShieldBlockedEvent);
-    this.refs.eventShield.addEventListener("dblclick", this.handleShieldBlockedEvent);
-    this.refs.eventShield.addEventListener("contextmenu", this.handleShieldBlockedEvent);
+    for (const eventName of BLOCKED_INTERACTION_EVENTS) {
+      this.refs.eventShield.addEventListener(eventName, this.handleShieldBlockedEvent);
+    }
     this.refs.hudPickButton.addEventListener("click", () => this.togglePick());
     this.refs.hudCloseButton.addEventListener("click", () => this.hideOverlay());
     this.refs.debugButton.addEventListener("click", () => this.toggleDebugMode());
@@ -192,12 +198,9 @@ class AnnotationsController {
     if (this.listenersAttached) return;
     window.addEventListener("pointermove", this.handlePagePointerMove, true);
     window.addEventListener("pointerdown", this.handlePagePointerDown, true);
-    window.addEventListener("pointerup", this.handlePageBlockedEvent, true);
-    window.addEventListener("mousedown", this.handlePageBlockedEvent, true);
-    window.addEventListener("mouseup", this.handlePageBlockedEvent, true);
-    window.addEventListener("click", this.handlePageBlockedEvent, true);
-    window.addEventListener("dblclick", this.handlePageBlockedEvent, true);
-    window.addEventListener("contextmenu", this.handlePageBlockedEvent, true);
+    for (const eventName of BLOCKED_INTERACTION_EVENTS) {
+      window.addEventListener(eventName, this.handlePageBlockedEvent, true);
+    }
     document.addEventListener("pointermove", this.handlePointerMove, true);
     document.addEventListener("click", this.handleClick, true);
     document.addEventListener("keydown", this.handleKeyDown, true);
@@ -210,12 +213,9 @@ class AnnotationsController {
     if (!this.listenersAttached) return;
     window.removeEventListener("pointermove", this.handlePagePointerMove, true);
     window.removeEventListener("pointerdown", this.handlePagePointerDown, true);
-    window.removeEventListener("pointerup", this.handlePageBlockedEvent, true);
-    window.removeEventListener("mousedown", this.handlePageBlockedEvent, true);
-    window.removeEventListener("mouseup", this.handlePageBlockedEvent, true);
-    window.removeEventListener("click", this.handlePageBlockedEvent, true);
-    window.removeEventListener("dblclick", this.handlePageBlockedEvent, true);
-    window.removeEventListener("contextmenu", this.handlePageBlockedEvent, true);
+    for (const eventName of BLOCKED_INTERACTION_EVENTS) {
+      window.removeEventListener(eventName, this.handlePageBlockedEvent, true);
+    }
     document.removeEventListener("pointermove", this.handlePointerMove, true);
     document.removeEventListener("click", this.handleClick, true);
     document.removeEventListener("keydown", this.handleKeyDown, true);
@@ -454,7 +454,7 @@ class AnnotationsController {
           scope: "content",
           level: "error",
           step: "runtime:send-message:error",
-          message: error instanceof Error ? error.message : String(error),
+          message: errorMessage(error),
           details:
             error instanceof Error ? { name: error.name, stack: error.stack ?? null } : undefined,
         },
@@ -507,7 +507,7 @@ class AnnotationsController {
       const status = {
         ok: false,
         reason: "t3-status-request-failed",
-        message: error instanceof Error ? error.message : String(error),
+        message: errorMessage(error),
       } satisfies T3ComposerBridgeStatusResult;
 
       if (refreshSeq === this.bridgeStatusRefreshSeq) {
