@@ -546,8 +546,10 @@ function shouldTryNextStatusEndpoint(result: T3ComposerBridgeStatusResult): bool
 
 function isHttpEndpointCompatibilityFailure(reason: string): boolean {
   return (
+    reason === "annotations-extension-not-allowed" ||
     reason === "t3-http-failed" ||
     reason === "t3-http-200" ||
+    reason === "t3-http-403" ||
     reason === "t3-http-404" ||
     reason === "t3-http-405"
   );

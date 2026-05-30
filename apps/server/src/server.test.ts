@@ -966,6 +966,8 @@ const assertBrowserApiCorsHeaders = (headers: Headers) => {
 };
 const crossOriginClientOrigin = "http://remote-client.test:3773";
 const annotationsExtensionOrigin = `chrome-extension://${POINTNSHOOT_EXTENSION_ID}`;
+const unpackedAnnotationsExtensionId = "abcabcabcabcabcabcabcabcabcabcab";
+const unpackedAnnotationsExtensionOrigin = `chrome-extension://${unpackedAnnotationsExtensionId}`;
 const untrustedAnnotationsExtensionOrigin = "chrome-extension://bjfbbbpniplpolcnbmehjcopajibfnhf";
 
 const getWsServerUrl = (
@@ -1203,6 +1205,100 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       });
       assert.deepEqual(published, []);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect(
+    "accepts Annotations composer intake from an unpacked extension when origin and header match",
+    () =>
+      Effect.gen(function* () {
+        const published: PointNShootComposerIntakeRequest[] = [];
+        yield* buildAppUnderTest({
+          layers: {
+            pointNShootComposerIntake: {
+              hasActiveSubscribers: Effect.succeed(true),
+              publish: (request) =>
+                Effect.sync(() => {
+                  published.push(request);
+                  return true;
+                }),
+            },
+          },
+        });
+
+        const response = yield* HttpClient.post("/api/annotations/composer-intake", {
+          headers: {
+            "content-type": "application/json",
+            origin: unpackedAnnotationsExtensionOrigin,
+            "x-annotations-extension-id": unpackedAnnotationsExtensionId,
+          },
+          body: HttpBody.text(
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify({
+              type: POINTNSHOOT_COMPOSER_INTAKE_REQUEST_TYPE,
+              requestId: "pns-unpacked-extension",
+              source: "annotations",
+              prompt: "# UI Note",
+              image: null,
+            }),
+            "application/json",
+          ),
+        });
+        const body = (yield* response.json) as {
+          readonly ok: boolean;
+          readonly requestId?: string;
+        };
+
+        assert.equal(response.status, 200);
+        assert.deepEqual(body, { ok: true, requestId: "pns-unpacked-extension" });
+        assert.equal(published[0]?.requestId, "pns-unpacked-extension");
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect(
+    "rejects Annotations composer intake when the extension origin and header disagree",
+    () =>
+      Effect.gen(function* () {
+        const published: PointNShootComposerIntakeRequest[] = [];
+        yield* buildAppUnderTest({
+          layers: {
+            pointNShootComposerIntake: {
+              hasActiveSubscribers: Effect.succeed(true),
+              publish: (request) =>
+                Effect.sync(() => {
+                  published.push(request);
+                  return true;
+                }),
+            },
+          },
+        });
+
+        const response = yield* HttpClient.post("/api/annotations/composer-intake", {
+          headers: {
+            "content-type": "application/json",
+            origin: untrustedAnnotationsExtensionOrigin,
+            "x-annotations-extension-id": POINTNSHOOT_EXTENSION_ID,
+          },
+          body: HttpBody.text(
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify({
+              type: POINTNSHOOT_COMPOSER_INTAKE_REQUEST_TYPE,
+              requestId: "pns-spoofed-extension",
+              source: "annotations",
+              prompt: "# UI Note",
+              image: null,
+            }),
+            "application/json",
+          ),
+        });
+        const body = (yield* response.json) as { readonly ok: boolean; readonly reason?: string };
+
+        assert.equal(response.status, 403);
+        assert.deepEqual(body, {
+          ok: false,
+          reason: "annotations-extension-not-allowed",
+        });
+        assert.deepEqual(published, []);
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect("reports the active Annotations composer target", () =>
