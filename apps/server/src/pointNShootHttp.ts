@@ -25,10 +25,9 @@ function isAllowedPointNShootRequest(headers: typeof PointNShootRequestHeaders.T
 
   if (origin) {
     const originExtensionId = readChromeExtensionOriginId(origin);
-    return (
-      originExtensionId === POINTNSHOOT_EXTENSION_ID &&
-      (extensionId === undefined || extensionId === POINTNSHOOT_EXTENSION_ID)
-    );
+    if (!originExtensionId) return false;
+    if (extensionId === undefined) return originExtensionId === POINTNSHOOT_EXTENSION_ID;
+    return extensionId === originExtensionId;
   }
 
   return extensionId === POINTNSHOOT_EXTENSION_ID;

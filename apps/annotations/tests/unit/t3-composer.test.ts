@@ -160,6 +160,49 @@ describe("deliverToT3Composer", () => {
     expect(api.tabs.query).not.toHaveBeenCalled();
   });
 
+  it("falls back to a T3 tab when the HTTP bridge rejects the extension id", async () => {
+    const fetchApi = vi.fn(async () => ({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+      json: async () => ({ ok: false, reason: "annotations-extension-not-allowed" }),
+    })) as unknown as typeof fetch;
+    const api = createChromeApi({
+      tabs: [
+        tab({
+          id: 11,
+          url: "http://127.0.0.1:3773/thread/demo",
+          title: "T3 Code",
+        }),
+      ],
+      executeScript: successfulExecuteScript,
+    });
+
+    await expect(
+      deliverToT3Composer(
+        {
+          markdownPrompt: "# UI Note",
+          savedImage,
+          requestId: "pns-test",
+        },
+        api,
+        fetchApi,
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      requestId: "pns-test",
+      tabId: 11,
+      url: "http://127.0.0.1:3773/thread/demo",
+      mode: "tab",
+    });
+
+    expect(fetchApi).toHaveBeenCalledTimes(2);
+    expect(api.tabs.query).toHaveBeenCalledWith({
+      url: ["http://127.0.0.1/*", "http://localhost/*"],
+      windowType: "normal",
+    });
+  });
+
   it("injects the payload into an existing T3 tab", async () => {
     const executeScriptCalls: unknown[] = [];
     const executeScript: T3ComposerDeliveryChrome["scripting"]["executeScript"] = async (
