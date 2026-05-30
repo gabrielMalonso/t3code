@@ -6,7 +6,7 @@ export const EXTERNAL_COMPOSER_INTAKE_RESPONSE_TYPE = "t3code.composer-intake.re
 export const EXTERNAL_COMPOSER_INTAKE_MAX_PROMPT_LENGTH = 100_000;
 const EXTERNAL_COMPOSER_INTAKE_MAX_PATH_LENGTH = 4_096;
 
-export type ExternalComposerIntakeSource = "pointnshoot";
+export type ExternalComposerIntakeSource = "annotations" | "pointnshoot";
 export type ExternalComposerIntakeAction = "insert";
 
 export type ExternalComposerIntakeImage = {
@@ -59,7 +59,7 @@ export function validateExternalComposerIntakeMessage(
     return { ok: false, requestId, reason: "invalid-request-id" };
   }
 
-  if (value.source !== "pointnshoot") {
+  if (value.source !== "annotations" && value.source !== "pointnshoot") {
     return { ok: false, requestId, reason: "unsupported-source" };
   }
 
@@ -89,7 +89,7 @@ export function validateExternalComposerIntakeMessage(
     request: {
       type: EXTERNAL_COMPOSER_INTAKE_REQUEST_TYPE,
       requestId,
-      source: "pointnshoot",
+      source: value.source,
       action: "insert",
       prompt,
       append: value.append !== false,
@@ -120,7 +120,7 @@ export function composerFileReferenceFromExternalIntake(input: {
 
   return {
     id: input.id,
-    name: image.name?.trim() || basenameFromPath(image.path) || "pointnshoot.png",
+    name: image.name?.trim() || basenameFromPath(image.path) || "annotations.png",
     path: image.path,
     mimeType: image.mimeType?.trim() || "image/png",
     sizeBytes: typeof image.sizeBytes === "number" && image.sizeBytes >= 0 ? image.sizeBytes : 0,

@@ -1,6 +1,7 @@
 import type {
   PointNShootComposerIntakeDeliveryAck,
   PointNShootComposerIntakeRequest,
+  PointNShootComposerIntakeStatus,
   PointNShootComposerIntakeStreamEvent,
   PointNShootComposerIntakeSubscription,
 } from "@t3tools/contracts";
@@ -17,6 +18,7 @@ import * as Stream from "effect/Stream";
 
 export interface PointNShootComposerIntakeShape {
   readonly hasActiveSubscribers: Effect.Effect<boolean>;
+  readonly getStatus: Effect.Effect<PointNShootComposerIntakeStatus>;
   readonly publish: (request: PointNShootComposerIntakeRequest) => Effect.Effect<boolean>;
   readonly updateSubscription: (
     subscription: PointNShootComposerIntakeSubscription,
@@ -106,7 +108,7 @@ export const PointNShootComposerIntakeLive = Layer.effect(
           );
           yield* removePendingDelivery(pendingDeliveriesRef, deliveryId);
           if (acked) {
-            yield* Effect.logInfo("PointNShoot composer intake acknowledged", {
+            yield* Effect.logInfo("Annotations composer intake acknowledged", {
               requestId: request.requestId,
               deliveryId,
               subscriberId: subscriber.subscriberId,
@@ -138,6 +140,7 @@ export const PointNShootComposerIntakeLive = Layer.effect(
           next.set(subscription.subscriberId, {
             ...current,
             threadId: subscription.threadId,
+            threadTitle: subscription.threadTitle ?? null,
             activatedAtEpochMs: subscription.activatedAtEpochMs,
             lastSeenAtEpochMs: now,
           });
@@ -210,6 +213,48 @@ export const PointNShootComposerIntakeLive = Layer.effect(
           ),
         ),
       ),
+      getStatus: Effect.gen(function* () {
+        const now = yield* Clock.currentTimeMillis;
+        const subscribers = yield* Ref.get(subscribersRef);
+        const subscriber = selectActivePointNShootSubscriber(
+          [...subscribers.values()].filter((entry) => isDeliverableSubscriber(entry, now)),
+        );
+
+        if (!subscriber) {
+          return {
+            ok: true,
+            connected: false,
+            reason: "composer-not-connected",
+            checkedAtEpochMs: now,
+            target: null,
+          } satisfies PointNShootComposerIntakeStatus;
+        }
+        const threadId = subscriber.threadId;
+        if (threadId === null) {
+          return {
+            ok: true,
+            connected: false,
+            reason: "composer-not-connected",
+            checkedAtEpochMs: now,
+            target: null,
+          } satisfies PointNShootComposerIntakeStatus;
+        }
+
+        return {
+          ok: true,
+          connected: true,
+          reason: null,
+          checkedAtEpochMs: now,
+          target: {
+            subscriberId: subscriber.subscriberId,
+            threadId,
+            threadTitle: subscriber.threadTitle ?? null,
+            clientKind: subscriber.clientKind ?? "browser",
+            activatedAtEpochMs: subscriber.activatedAtEpochMs,
+            lastSeenAtEpochMs: subscriber.lastSeenAtEpochMs,
+          },
+        } satisfies PointNShootComposerIntakeStatus;
+      }),
       updateSubscription,
       ack,
       publish,

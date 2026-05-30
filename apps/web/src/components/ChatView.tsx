@@ -363,7 +363,7 @@ async function prepareExternalComposerFocus(): Promise<void> {
   if (typeof window === "undefined") return;
 
   await window.desktopBridge?.activateWindow().catch((error: unknown) => {
-    console.warn("[PointNShoot] failed to activate desktop window", error);
+    console.warn("[Annotations] failed to activate desktop window", error);
   });
 
   await new Promise<void>((resolve) => {
@@ -1690,13 +1690,14 @@ export default function ChatView(props: ChatViewProps) {
   });
 
   const pointNShootBridgeEnabled = settings.pointNShootBridgeEnabled;
-  const pointNShootSubscriberBaseIdRef = useRef(`pointnshoot-composer-${randomUUID()}`);
+  const pointNShootSubscriberBaseIdRef = useRef(`annotations-composer-${randomUUID()}`);
   const [pointNShootTargetActivatedAtEpochMs, setPointNShootTargetActivatedAtEpochMs] = useState(
     () => Date.now(),
   );
   const pointNShootSubscriptionRef = useRef<PointNShootComposerIntakeSubscription>({
     subscriberId: pointNShootSubscriberBaseIdRef.current,
     threadId: activeThreadId ?? null,
+    threadTitle: activeThread?.title?.trim() ? activeThread.title : null,
     activatedAtEpochMs: pointNShootTargetActivatedAtEpochMs,
     clientKind: typeof window !== "undefined" && window.desktopBridge ? "desktop" : "browser",
   });
@@ -1709,10 +1710,11 @@ export default function ChatView(props: ChatViewProps) {
     pointNShootSubscriptionRef.current = {
       subscriberId: pointNShootSubscriberBaseIdRef.current,
       threadId: activeThreadId ?? null,
+      threadTitle: activeThread?.title?.trim() ? activeThread.title : null,
       activatedAtEpochMs: pointNShootTargetActivatedAtEpochMs,
       clientKind: window.desktopBridge ? "desktop" : "browser",
     };
-  }, [activeThreadId, pointNShootTargetActivatedAtEpochMs]);
+  }, [activeThread?.title, activeThreadId, pointNShootTargetActivatedAtEpochMs]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1781,7 +1783,7 @@ export default function ChatView(props: ChatViewProps) {
 
       toastManager.add({
         type: "success",
-        title: "PointNShoot sent to Composer",
+        title: "Annotations sent to Composer",
       });
     },
     [
@@ -1804,7 +1806,7 @@ export default function ChatView(props: ChatViewProps) {
       updateSettings({ pointNShootBridgeEnabled: enabled });
       toastManager.add({
         type: enabled ? "success" : "info",
-        title: enabled ? "PointNShoot bridge enabled" : "PointNShoot bridge disabled",
+        title: enabled ? "Annotations bridge enabled" : "Annotations bridge disabled",
       });
     },
     [updateSettings],
@@ -1842,7 +1844,7 @@ export default function ChatView(props: ChatViewProps) {
       if (!pointNShootBridgeEnabled) {
         postIntakeResponse(validation.request.requestId, {
           ok: false,
-          reason: "pointnshoot-bridge-disabled",
+          reason: "annotations-bridge-disabled",
         });
         return;
       }
@@ -1852,7 +1854,7 @@ export default function ChatView(props: ChatViewProps) {
           postIntakeResponse(validation.request.requestId, { ok: true });
         })
         .catch((error: unknown) => {
-          console.warn("[PointNShoot] failed to insert composer intake", error);
+          console.warn("[Annotations] failed to insert composer intake", error);
           postIntakeResponse(validation.request.requestId, {
             ok: false,
             reason: "composer-insert-failed",
@@ -1874,7 +1876,7 @@ export default function ChatView(props: ChatViewProps) {
     void api.server
       .updatePointNShootComposerIntakeSubscription(pointNShootSubscriptionRef.current)
       .catch((error: unknown) => {
-        console.warn("[PointNShoot] failed to refresh composer target", error);
+        console.warn("[Annotations] failed to refresh composer target", error);
       });
   }, [environmentId, pointNShootBridgeEnabled]);
 
@@ -1899,7 +1901,7 @@ export default function ChatView(props: ChatViewProps) {
         if (event.type !== "composerIntakeReceived") return;
         const validation = validateExternalComposerIntakeMessage(event.payload);
         if (!validation.ok) {
-          console.warn("[PointNShoot] ignored invalid composer intake", validation.reason);
+          console.warn("[Annotations] ignored invalid composer intake", validation.reason);
           void api.server.ackPointNShootComposerIntake({
             subscriberId: event.subscriberId,
             deliveryId: event.deliveryId,
@@ -1917,7 +1919,7 @@ export default function ChatView(props: ChatViewProps) {
             }),
           )
           .catch((error: unknown) => {
-            console.warn("[PointNShoot] failed to insert composer intake", error);
+            console.warn("[Annotations] failed to insert composer intake", error);
             return api.server.ackPointNShootComposerIntake({
               subscriberId: event.subscriberId,
               deliveryId: event.deliveryId,

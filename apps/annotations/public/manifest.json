@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Annotations",
+  "description": "Selecione um elemento, anote, salve um PNG local e copie uma UI Note para agentes de código.",
+  "version": "0.1.0",
+  "action": {
+    "default_title": "Annotations"
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "permissions": ["activeTab", "scripting", "offscreen", "downloads", "storage", "clipboardWrite"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
+  "commands": {
+    "toggle-annotations": {
+      "suggested_key": {
+        "default": "Alt+A",
+        "mac": "Alt+A"
+      },
+      "description": "Abrir o overlay ou alternar o modo Pick do Annotations"
+    }
+  }
+}

@@ -99,7 +99,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
                   props.onPointNShootBridgeEnabledChange?.(checked === true)
                 }
               >
-                PointNShoot bridge
+                Annotations bridge
               </MenuCheckboxItem>
             ) : null}
           </>

@@ -18,8 +18,8 @@ import {
   type OrchestrationEvent,
   ORCHESTRATION_WS_METHODS,
   POINTNSHOOT_COMPOSER_INTAKE_REQUEST_TYPE,
-  POINTNSHOOT_EXTENSION_ORIGIN,
   type PointNShootComposerIntakeRequest,
+  type PointNShootComposerIntakeStatus,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -709,6 +709,13 @@ const buildAppUnderTest = (options?: {
       Layer.provide(
         Layer.mock(PointNShootComposerIntake)({
           hasActiveSubscribers: Effect.succeed(false),
+          getStatus: Effect.succeed({
+            ok: true,
+            connected: false,
+            reason: "composer-not-connected",
+            checkedAtEpochMs: 0,
+            target: null,
+          }),
           publish: () => Effect.succeed(false),
           updateSubscription: () => Effect.void,
           ack: () => Effect.void,
@@ -952,10 +959,12 @@ const assertBrowserApiCorsHeaders = (headers: Headers) => {
     "b3",
     "content-type",
     "traceparent",
+    "x-annotations-extension-id",
     "x-pointnshoot-extension-id",
   ]);
 };
 const crossOriginClientOrigin = "http://remote-client.test:3773";
+const annotationsExtensionOrigin = "chrome-extension://jjhmghmfefnjjkfipbpgdgmekbbjeeon";
 
 const getWsServerUrl = (
   pathname = "",
@@ -1100,7 +1109,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("accepts PointNShoot composer intake when a chat is registered", () =>
+  it.effect("accepts Annotations composer intake when a chat is registered", () =>
     Effect.gen(function* () {
       const published: PointNShootComposerIntakeRequest[] = [];
       yield* buildAppUnderTest({
@@ -1119,13 +1128,13 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const payload = {
         type: POINTNSHOOT_COMPOSER_INTAKE_REQUEST_TYPE,
         requestId: "pns-test",
-        source: "pointnshoot",
+        source: "annotations",
         action: "insert",
         prompt: "# UI Note",
         append: true,
         focus: true,
         image: {
-          path: "/Users/test/Downloads/PointNShoot-PNG/button.png",
+          path: "/Users/test/Downloads/Annotations-PNG/button.png",
           name: "button.png",
           mimeType: "image/png",
           sizeBytes: 1234,
@@ -1134,10 +1143,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         },
       } satisfies PointNShootComposerIntakeRequest;
 
-      const response = yield* HttpClient.post("/api/pointnshoot/composer-intake", {
+      const response = yield* HttpClient.post("/api/annotations/composer-intake", {
         headers: {
           "content-type": "application/json",
-          origin: POINTNSHOOT_EXTENSION_ORIGIN,
+          origin: annotationsExtensionOrigin,
         },
         // @effect-diagnostics-next-line preferSchemaOverJson:off
         body: HttpBody.text(JSON.stringify(payload), "application/json"),
@@ -1150,7 +1159,78 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("rejects PointNShoot composer intake when no chat is registered", () =>
+  it.effect("reports the active Annotations composer target", () =>
+    Effect.gen(function* () {
+      const status = {
+        ok: true,
+        connected: true,
+        reason: null,
+        checkedAtEpochMs: 123,
+        target: {
+          subscriberId: "annotations-composer-test",
+          threadId: "thread-test",
+          threadTitle: "Integrar extensão ao Composer",
+          clientKind: "desktop",
+          activatedAtEpochMs: 100,
+          lastSeenAtEpochMs: 120,
+        },
+      } satisfies PointNShootComposerIntakeStatus;
+
+      yield* buildAppUnderTest({
+        layers: {
+          pointNShootComposerIntake: {
+            getStatus: Effect.succeed(status),
+          },
+        },
+      });
+
+      const response = yield* HttpClient.get("/api/annotations/composer-intake/status", {
+        headers: {
+          origin: annotationsExtensionOrigin,
+        },
+      });
+      const body = (yield* response.json) as PointNShootComposerIntakeStatus;
+
+      assert.equal(response.status, 200);
+      assert.deepEqual(body, status);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("reports when Annotations has no active composer target", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({
+        layers: {
+          pointNShootComposerIntake: {
+            getStatus: Effect.succeed({
+              ok: true,
+              connected: false,
+              reason: "composer-not-connected",
+              checkedAtEpochMs: 456,
+              target: null,
+            }),
+          },
+        },
+      });
+
+      const response = yield* HttpClient.get("/api/annotations/composer-intake/status", {
+        headers: {
+          origin: annotationsExtensionOrigin,
+        },
+      });
+      const body = (yield* response.json) as PointNShootComposerIntakeStatus;
+
+      assert.equal(response.status, 200);
+      assert.deepEqual(body, {
+        ok: true,
+        connected: false,
+        reason: "composer-not-connected",
+        checkedAtEpochMs: 456,
+        target: null,
+      });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("rejects Annotations composer intake when no chat is registered", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest({
         layers: {
@@ -1160,17 +1240,17 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         },
       });
 
-      const response = yield* HttpClient.post("/api/pointnshoot/composer-intake", {
+      const response = yield* HttpClient.post("/api/annotations/composer-intake", {
         headers: {
           "content-type": "application/json",
-          origin: POINTNSHOOT_EXTENSION_ORIGIN,
+          origin: annotationsExtensionOrigin,
         },
         body: HttpBody.text(
           // @effect-diagnostics-next-line preferSchemaOverJson:off
           JSON.stringify({
             type: POINTNSHOOT_COMPOSER_INTAKE_REQUEST_TYPE,
             requestId: "pns-test",
-            source: "pointnshoot",
+            source: "annotations",
             prompt: "# UI Note",
             image: null,
           }),
@@ -2078,6 +2158,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         "b3",
         "content-type",
         "traceparent",
+        "x-annotations-extension-id",
         "x-pointnshoot-extension-id",
       ]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
