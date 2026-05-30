@@ -6,6 +6,8 @@ import type {
   UnifiedSettings,
 } from "@t3tools/contracts";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+import * as Duration from "effect/Duration";
+import * as Equal from "effect/Equal";
 
 function collapseOtelSignalsUrl(input: {
   readonly tracesUrl: string;
@@ -87,5 +89,82 @@ export function buildProviderInstanceUpdatePatch(input: {
     ...(input.textGenerationModelSelection !== undefined
       ? { textGenerationModelSelection: input.textGenerationModelSelection }
       : {}),
+  };
+}
+
+export function collectRestoreDefaultSettingLabels(input: {
+  readonly theme: string;
+  readonly settings: UnifiedSettings;
+}): string[] {
+  const isGitWritingModelDirty = !Equal.equals(
+    input.settings.textGenerationModelSelection ?? null,
+    DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
+  );
+
+  return [
+    ...(input.theme !== "system" ? ["Theme"] : []),
+    ...(input.settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
+      ? ["Time format"]
+      : []),
+    ...(input.settings.sidebarThreadPreviewCount !==
+    DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount
+      ? ["Visible threads"]
+      : []),
+    ...(input.settings.diffWordWrap !== DEFAULT_UNIFIED_SETTINGS.diffWordWrap
+      ? ["Diff line wrapping"]
+      : []),
+    ...(input.settings.showPlanSidebar !== DEFAULT_UNIFIED_SETTINGS.showPlanSidebar
+      ? ["Plan sidebar"]
+      : []),
+    ...(input.settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace
+      ? ["Diff whitespace changes"]
+      : []),
+    ...(input.settings.autoOpenPlanSidebar !== DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar
+      ? ["Auto-open task panel"]
+      : []),
+    ...(input.settings.enableAssistantStreaming !==
+    DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
+      ? ["Assistant output"]
+      : []),
+    ...(input.settings.pointNShootBridgeEnabled !==
+    DEFAULT_UNIFIED_SETTINGS.pointNShootBridgeEnabled
+      ? ["Annotations bridge"]
+      : []),
+    ...(Duration.toMillis(input.settings.automaticGitFetchInterval) !==
+    Duration.toMillis(DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval)
+      ? ["Automatic Git fetch interval"]
+      : []),
+    ...(input.settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
+      ? ["New thread mode"]
+      : []),
+    ...(input.settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory
+      ? ["Add project base directory"]
+      : []),
+    ...(input.settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive
+      ? ["Archive confirmation"]
+      : []),
+    ...(input.settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete
+      ? ["Delete confirmation"]
+      : []),
+    ...(isGitWritingModelDirty ? ["Git writing model"] : []),
+  ];
+}
+
+export function buildRestoreDefaultsSettingsPatch(): Partial<UnifiedSettings> {
+  return {
+    timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
+    diffWordWrap: DEFAULT_UNIFIED_SETTINGS.diffWordWrap,
+    diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
+    sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
+    showPlanSidebar: DEFAULT_UNIFIED_SETTINGS.showPlanSidebar,
+    autoOpenPlanSidebar: DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar,
+    enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
+    pointNShootBridgeEnabled: DEFAULT_UNIFIED_SETTINGS.pointNShootBridgeEnabled,
+    automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
+    defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
+    addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
+    confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
+    confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
+    textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
   };
 }

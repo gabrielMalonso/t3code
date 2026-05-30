@@ -18,6 +18,7 @@ import {
   type OrchestrationEvent,
   ORCHESTRATION_WS_METHODS,
   POINTNSHOOT_COMPOSER_INTAKE_REQUEST_TYPE,
+  POINTNSHOOT_EXTENSION_ID,
   type PointNShootComposerIntakeRequest,
   type PointNShootComposerIntakeStatus,
   ProjectId,
@@ -964,7 +965,8 @@ const assertBrowserApiCorsHeaders = (headers: Headers) => {
   ]);
 };
 const crossOriginClientOrigin = "http://remote-client.test:3773";
-const annotationsExtensionOrigin = "chrome-extension://jjhmghmfefnjjkfipbpgdgmekbbjeeon";
+const annotationsExtensionOrigin = `chrome-extension://${POINTNSHOOT_EXTENSION_ID}`;
+const untrustedAnnotationsExtensionOrigin = "chrome-extension://bjfbbbpniplpolcnbmehjcopajibfnhf";
 
 const getWsServerUrl = (
   pathname = "",
@@ -1156,6 +1158,50 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(response.status, 200);
       assert.deepEqual(body, { ok: true, requestId: "pns-test" });
       assert.equal(published[0]?.requestId, "pns-test");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("rejects Annotations composer intake from an untrusted extension origin", () =>
+    Effect.gen(function* () {
+      const published: PointNShootComposerIntakeRequest[] = [];
+      yield* buildAppUnderTest({
+        layers: {
+          pointNShootComposerIntake: {
+            hasActiveSubscribers: Effect.succeed(true),
+            publish: (request) =>
+              Effect.sync(() => {
+                published.push(request);
+                return true;
+              }),
+          },
+        },
+      });
+
+      const response = yield* HttpClient.post("/api/annotations/composer-intake", {
+        headers: {
+          "content-type": "application/json",
+          origin: untrustedAnnotationsExtensionOrigin,
+        },
+        body: HttpBody.text(
+          // @effect-diagnostics-next-line preferSchemaOverJson:off
+          JSON.stringify({
+            type: POINTNSHOOT_COMPOSER_INTAKE_REQUEST_TYPE,
+            requestId: "pns-untrusted-extension",
+            source: "annotations",
+            prompt: "# UI Note",
+            image: null,
+          }),
+          "application/json",
+        ),
+      });
+      const body = (yield* response.json) as { readonly ok: boolean; readonly reason?: string };
+
+      assert.equal(response.status, 403);
+      assert.deepEqual(body, {
+        ok: false,
+        reason: "annotations-extension-not-allowed",
+      });
+      assert.deepEqual(published, []);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
