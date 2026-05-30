@@ -20,7 +20,7 @@ export type PointNShootComposerIntakeImage = typeof PointNShootComposerIntakeIma
 export const PointNShootComposerIntakeRequest = Schema.Struct({
   type: Schema.Literal(POINTNSHOOT_COMPOSER_INTAKE_REQUEST_TYPE),
   requestId: TrimmedNonEmptyString,
-  source: Schema.Literal("pointnshoot"),
+  source: Schema.Literals(["annotations", "pointnshoot"]),
   action: Schema.optionalKey(Schema.Literal("insert")),
   prompt: TrimmedNonEmptyString,
   append: Schema.optionalKey(Schema.Boolean),
@@ -32,11 +32,32 @@ export type PointNShootComposerIntakeRequest = typeof PointNShootComposerIntakeR
 export const PointNShootComposerIntakeSubscription = Schema.Struct({
   subscriberId: TrimmedNonEmptyString,
   threadId: Schema.NullOr(TrimmedNonEmptyString),
+  threadTitle: Schema.optionalKey(Schema.NullOr(TrimmedNonEmptyString)),
   activatedAtEpochMs: Schema.Number,
   clientKind: Schema.optionalKey(Schema.Literals(["browser", "desktop"])),
 });
 export type PointNShootComposerIntakeSubscription =
   typeof PointNShootComposerIntakeSubscription.Type;
+
+export const PointNShootComposerIntakeStatusTarget = Schema.Struct({
+  subscriberId: TrimmedNonEmptyString,
+  threadId: TrimmedNonEmptyString,
+  threadTitle: Schema.NullOr(TrimmedNonEmptyString),
+  clientKind: Schema.Literals(["browser", "desktop"]),
+  activatedAtEpochMs: Schema.Number,
+  lastSeenAtEpochMs: Schema.Number,
+});
+export type PointNShootComposerIntakeStatusTarget =
+  typeof PointNShootComposerIntakeStatusTarget.Type;
+
+export const PointNShootComposerIntakeStatus = Schema.Struct({
+  ok: Schema.Literal(true),
+  connected: Schema.Boolean,
+  reason: Schema.NullOr(Schema.Literal("composer-not-connected")),
+  checkedAtEpochMs: Schema.Number,
+  target: Schema.NullOr(PointNShootComposerIntakeStatusTarget),
+});
+export type PointNShootComposerIntakeStatus = typeof PointNShootComposerIntakeStatus.Type;
 
 export const PointNShootComposerIntakeDeliveryAck = Schema.Struct({
   subscriberId: TrimmedNonEmptyString,

@@ -8,14 +8,14 @@ import {
 } from "./externalComposerIntake";
 
 describe("validateExternalComposerIntakeMessage", () => {
-  it("accepts a PointNShoot composer intake payload", () => {
+  it("accepts an Annotations composer intake payload", () => {
     const result = validateExternalComposerIntakeMessage({
       type: EXTERNAL_COMPOSER_INTAKE_REQUEST_TYPE,
-      requestId: "pns-1",
-      source: "pointnshoot",
+      requestId: "annotations-1",
+      source: "annotations",
       prompt: "  # UI Note\n\n## Prompt\n\nAjuste este botão.  ",
       image: {
-        path: " /Users/test/Downloads/PointNShoot-PNG/button.png ",
+        path: " /Users/test/Downloads/Annotations-PNG/button.png ",
         name: "button.png",
         mimeType: "image/png",
         sizeBytes: 1234,
@@ -28,14 +28,14 @@ describe("validateExternalComposerIntakeMessage", () => {
       ok: true,
       request: {
         type: EXTERNAL_COMPOSER_INTAKE_REQUEST_TYPE,
-        requestId: "pns-1",
-        source: "pointnshoot",
+        requestId: "annotations-1",
+        source: "annotations",
         action: "insert",
         prompt: "# UI Note\n\n## Prompt\n\nAjuste este botão.",
         append: true,
         focus: true,
         image: {
-          path: "/Users/test/Downloads/PointNShoot-PNG/button.png",
+          path: "/Users/test/Downloads/Annotations-PNG/button.png",
           name: "button.png",
           mimeType: "image/png",
           sizeBytes: 1234,
@@ -106,7 +106,7 @@ describe("composerFileReferenceFromExternalIntake", () => {
       composerFileReferenceFromExternalIntake({
         id: "ref-1",
         image: {
-          path: "/Users/test/Downloads/PointNShoot-PNG/button.png",
+          path: "/Users/test/Downloads/Annotations-PNG/button.png",
           mimeType: "image/png",
           sizeBytes: 1234,
         },
@@ -114,7 +114,7 @@ describe("composerFileReferenceFromExternalIntake", () => {
     ).toEqual({
       id: "ref-1",
       name: "button.png",
-      path: "/Users/test/Downloads/PointNShoot-PNG/button.png",
+      path: "/Users/test/Downloads/Annotations-PNG/button.png",
       mimeType: "image/png",
       sizeBytes: 1234,
     });

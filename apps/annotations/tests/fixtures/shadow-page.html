@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Annotations Shadow Fixture</title>
+  </head>
+  <body>
+    <div id="open-shadow"></div>
+    <script>
+      const root = document.querySelector("#open-shadow").attachShadow({ mode: "open" });
+      root.innerHTML = "<button class='shadow-action'>Acao no shadow</button>";
+    </script>
+  </body>
+</html>

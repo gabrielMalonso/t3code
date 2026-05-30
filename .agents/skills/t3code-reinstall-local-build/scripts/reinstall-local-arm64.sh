@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="/Volumes/SSD1TB/Projetos/t3code"
+REPO="${T3CODE_REPO:-/Volumes/SSD1TB/Projetos/t3code}"
 APP_NAME="T3 Code (Alpha)"
 APP_ID="com.t3tools.t3code"
 APP_PATH="/Applications/${APP_NAME}.app"

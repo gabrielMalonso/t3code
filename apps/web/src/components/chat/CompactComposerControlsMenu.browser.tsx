@@ -286,7 +286,7 @@ describe("CompactComposerControlsMenu", () => {
     });
   });
 
-  it("shows the PointNShoot bridge switch below compact context", async () => {
+  it("shows the Annotations bridge switch below compact context", async () => {
     const onPointNShootBridgeEnabledChange = vi.fn();
     await using _ = await mountMenu({
       pointNShootBridgeEnabled: false,
@@ -294,11 +294,11 @@ describe("CompactComposerControlsMenu", () => {
     });
 
     await page.getByLabelText("More composer controls").click();
-    await page.getByText("PointNShoot bridge").click();
+    await page.getByText("Annotations bridge").click();
 
     expect(onPointNShootBridgeEnabledChange).toHaveBeenCalledWith(true);
     const text = document.body.textContent ?? "";
-    expect(text.indexOf("Compact context")).toBeLessThan(text.indexOf("PointNShoot bridge"));
+    expect(text.indexOf("Compact context")).toBeLessThan(text.indexOf("Annotations bridge"));
   });
 
   it("warns when ultrathink appears in prompt body text", async () => {
