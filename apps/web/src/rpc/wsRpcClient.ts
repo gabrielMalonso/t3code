@@ -143,14 +143,12 @@ export interface WsRpcClient {
     readonly subscribeConfig: RpcStreamMethod<typeof WS_METHODS.subscribeServerConfig>;
     readonly subscribeLifecycle: RpcStreamMethod<typeof WS_METHODS.subscribeServerLifecycle>;
     readonly subscribeAuthAccess: RpcStreamMethod<typeof WS_METHODS.subscribeAuthAccess>;
-    readonly updatePointNShootComposerIntakeSubscription: RpcUnaryMethod<
-      typeof WS_METHODS.pointNShootUpdateComposerIntakeSubscription
+    readonly updateExternalComposerIntakeSubscription: RpcUnaryMethod<
+      typeof WS_METHODS.externalComposerIntakeUpdateSubscription
     >;
-    readonly ackPointNShootComposerIntake: RpcUnaryMethod<
-      typeof WS_METHODS.pointNShootAckComposerIntake
-    >;
-    readonly subscribePointNShootComposerIntake: RpcInputStreamMethod<
-      typeof WS_METHODS.subscribePointNShootComposerIntake
+    readonly ackExternalComposerIntake: RpcUnaryMethod<typeof WS_METHODS.externalComposerIntakeAck>;
+    readonly subscribeExternalComposerIntake: RpcInputStreamMethod<
+      typeof WS_METHODS.subscribeExternalComposerIntake
     >;
   };
   readonly orchestration: {
@@ -307,19 +305,19 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
           ...options,
           tag: WS_METHODS.subscribeAuthAccess,
         }),
-      updatePointNShootComposerIntakeSubscription: (input) =>
+      updateExternalComposerIntakeSubscription: (input) =>
         transport.request((client) =>
-          client[WS_METHODS.pointNShootUpdateComposerIntakeSubscription](input),
+          client[WS_METHODS.externalComposerIntakeUpdateSubscription](input),
         ),
-      ackPointNShootComposerIntake: (input) =>
-        transport.request((client) => client[WS_METHODS.pointNShootAckComposerIntake](input)),
-      subscribePointNShootComposerIntake: (input, listener, options) =>
+      ackExternalComposerIntake: (input) =>
+        transport.request((client) => client[WS_METHODS.externalComposerIntakeAck](input)),
+      subscribeExternalComposerIntake: (input, listener, options) =>
         transport.subscribe(
-          (client) => client[WS_METHODS.subscribePointNShootComposerIntake](input),
+          (client) => client[WS_METHODS.subscribeExternalComposerIntake](input),
           listener,
           {
             ...options,
-            tag: WS_METHODS.subscribePointNShootComposerIntake,
+            tag: WS_METHODS.subscribeExternalComposerIntake,
           },
         ),
     },

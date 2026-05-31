@@ -9,14 +9,14 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
   return {
     server: {
       listProviderSkills: rpcClient.server.listProviderSkills,
-      updatePointNShootComposerIntakeSubscription: (subscription) =>
+      updateExternalComposerIntakeSubscription: (subscription) =>
         rpcClient.server
-          .updatePointNShootComposerIntakeSubscription(subscription)
+          .updateExternalComposerIntakeSubscription(subscription)
           .then(() => undefined),
-      ackPointNShootComposerIntake: (ack) =>
-        rpcClient.server.ackPointNShootComposerIntake(ack).then(() => undefined),
-      subscribePointNShootComposerIntake: (subscription, callback, options) =>
-        rpcClient.server.subscribePointNShootComposerIntake(subscription, callback, options),
+      ackExternalComposerIntake: (ack) =>
+        rpcClient.server.ackExternalComposerIntake(ack).then(() => undefined),
+      subscribeExternalComposerIntake: (subscription, callback, options) =>
+        rpcClient.server.subscribeExternalComposerIntake(subscription, callback, options),
     },
     terminal: {
       open: (input) => rpcClient.terminal.open(input as never),

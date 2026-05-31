@@ -52,8 +52,8 @@ function booleanDescriptor(id: string, label: string) {
 async function mountMenu(props?: {
   modelSelection?: ModelSelection;
   prompt?: string;
-  pointNShootBridgeEnabled?: boolean;
-  onPointNShootBridgeEnabledChange?: (enabled: boolean) => void;
+  annotationsBridgeEnabled?: boolean;
+  onAnnotationsBridgeEnabledChange?: (enabled: boolean) => void;
 }) {
   const threadId = ThreadId.make("thread-compact-menu");
   const threadRef = scopeThreadRef(LOCAL_ENVIRONMENT_ID, threadId);
@@ -160,11 +160,11 @@ async function mountMenu(props?: {
       }
       compactContextDisabled={false}
       onCompactContext={vi.fn()}
-      {...(props?.pointNShootBridgeEnabled !== undefined
-        ? { pointNShootBridgeEnabled: props.pointNShootBridgeEnabled }
+      {...(props?.annotationsBridgeEnabled !== undefined
+        ? { annotationsBridgeEnabled: props.annotationsBridgeEnabled }
         : {})}
-      {...(props?.onPointNShootBridgeEnabledChange
-        ? { onPointNShootBridgeEnabledChange: props.onPointNShootBridgeEnabledChange }
+      {...(props?.onAnnotationsBridgeEnabledChange
+        ? { onAnnotationsBridgeEnabledChange: props.onAnnotationsBridgeEnabledChange }
         : {})}
       onToggleInteractionMode={vi.fn()}
       onTogglePlanSidebar={vi.fn()}
@@ -287,16 +287,16 @@ describe("CompactComposerControlsMenu", () => {
   });
 
   it("shows the Annotations bridge switch below compact context", async () => {
-    const onPointNShootBridgeEnabledChange = vi.fn();
+    const onAnnotationsBridgeEnabledChange = vi.fn();
     await using _ = await mountMenu({
-      pointNShootBridgeEnabled: false,
-      onPointNShootBridgeEnabledChange,
+      annotationsBridgeEnabled: false,
+      onAnnotationsBridgeEnabledChange,
     });
 
     await page.getByLabelText("More composer controls").click();
     await page.getByText("Annotations bridge").click();
 
-    expect(onPointNShootBridgeEnabledChange).toHaveBeenCalledWith(true);
+    expect(onAnnotationsBridgeEnabledChange).toHaveBeenCalledWith(true);
     const text = document.body.textContent ?? "";
     expect(text.indexOf("Compact context")).toBeLessThan(text.indexOf("Annotations bridge"));
   });

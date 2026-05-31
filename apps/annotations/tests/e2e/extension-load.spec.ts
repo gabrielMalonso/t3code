@@ -1,5 +1,5 @@
 import { chromium, expect, test } from "@playwright/test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,10 @@ const manifestPath = fileURLToPath(new URL("../../dist/manifest.json", import.me
 
 test("loads the unpacked extension service worker", async () => {
   test.skip(!existsSync(manifestPath), "Run bun run build before bun run e2e.");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+    host_permissions?: string[];
+  };
+  expect(manifest.host_permissions).toContain("<all_urls>");
 
   const userDataDir = mkdtempSync(join(tmpdir(), "annotations-"));
   const context = await chromium.launchPersistentContext(userDataDir, {

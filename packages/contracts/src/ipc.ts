@@ -26,10 +26,10 @@ import type {
   ProjectWriteFileResult,
 } from "./project.ts";
 import type {
-  PointNShootComposerIntakeDeliveryAck,
-  PointNShootComposerIntakeStreamEvent,
-  PointNShootComposerIntakeSubscription,
-} from "./pointNShoot.ts";
+  ExternalComposerIntakeDeliveryAck,
+  ExternalComposerIntakeStreamEvent,
+  ExternalComposerIntakeSubscription,
+} from "./externalComposerIntake.ts";
 import type { ProviderInstanceId } from "./providerInstance.ts";
 import type {
   ServerConfig,
@@ -515,13 +515,13 @@ export interface EnvironmentApi {
     listProviderSkills: (
       input: ServerListProviderSkillsInput,
     ) => Promise<ServerListProviderSkillsResult>;
-    updatePointNShootComposerIntakeSubscription: (
-      subscription: PointNShootComposerIntakeSubscription,
+    updateExternalComposerIntakeSubscription: (
+      subscription: ExternalComposerIntakeSubscription,
     ) => Promise<void>;
-    ackPointNShootComposerIntake: (ack: PointNShootComposerIntakeDeliveryAck) => Promise<void>;
-    subscribePointNShootComposerIntake: (
-      subscription: PointNShootComposerIntakeSubscription,
-      callback: (event: PointNShootComposerIntakeStreamEvent) => void,
+    ackExternalComposerIntake: (ack: ExternalComposerIntakeDeliveryAck) => Promise<void>;
+    subscribeExternalComposerIntake: (
+      subscription: ExternalComposerIntakeSubscription,
+      callback: (event: ExternalComposerIntakeStreamEvent) => void,
       options?: {
         onResubscribe?: () => void;
       },

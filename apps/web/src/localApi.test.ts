@@ -93,9 +93,9 @@ const rpcClientMock = {
     subscribeConfig: vi.fn(),
     subscribeLifecycle: vi.fn(),
     subscribeAuthAccess: vi.fn(),
-    updatePointNShootComposerIntakeSubscription: vi.fn(),
-    ackPointNShootComposerIntake: vi.fn(),
-    subscribePointNShootComposerIntake: vi.fn(),
+    updateExternalComposerIntakeSubscription: vi.fn(),
+    ackExternalComposerIntake: vi.fn(),
+    subscribeExternalComposerIntake: vi.fn(),
   },
   orchestration: {
     dispatchCommand: vi.fn(),

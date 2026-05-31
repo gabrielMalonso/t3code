@@ -1,12 +1,11 @@
 import type { ComposerFileReference } from "./t3code-custom/file-references";
 
-export const EXTERNAL_COMPOSER_INTAKE_REQUEST_TYPE = "t3code.composer-intake.request.v1";
-export const EXTERNAL_COMPOSER_INTAKE_RESPONSE_TYPE = "t3code.composer-intake.response.v1";
+export const EXTERNAL_COMPOSER_INTAKE_REQUEST_TYPE = "t3code.external-composer-intake.request.v1";
 
 export const EXTERNAL_COMPOSER_INTAKE_MAX_PROMPT_LENGTH = 100_000;
 const EXTERNAL_COMPOSER_INTAKE_MAX_PATH_LENGTH = 4_096;
 
-export type ExternalComposerIntakeSource = "annotations" | "pointnshoot";
+export type ExternalComposerIntakeSource = "annotations";
 export type ExternalComposerIntakeAction = "insert";
 
 export type ExternalComposerIntakeImage = {
@@ -33,20 +32,6 @@ export type ExternalComposerIntakeValidation =
   | { readonly ok: true; readonly request: ExternalComposerIntakeRequest }
   | { readonly ok: false; readonly requestId: string | null; readonly reason: string };
 
-export type ExternalComposerIntakeResponse =
-  | {
-      readonly type: typeof EXTERNAL_COMPOSER_INTAKE_RESPONSE_TYPE;
-      readonly requestId: string;
-      readonly ok: true;
-      readonly status: "inserted";
-    }
-  | {
-      readonly type: typeof EXTERNAL_COMPOSER_INTAKE_RESPONSE_TYPE;
-      readonly requestId: string;
-      readonly ok: false;
-      readonly reason: string;
-    };
-
 export function validateExternalComposerIntakeMessage(
   value: unknown,
 ): ExternalComposerIntakeValidation {
@@ -59,7 +44,7 @@ export function validateExternalComposerIntakeMessage(
     return { ok: false, requestId, reason: "invalid-request-id" };
   }
 
-  if (value.source !== "annotations" && value.source !== "pointnshoot") {
+  if (value.source !== "annotations") {
     return { ok: false, requestId, reason: "unsupported-source" };
   }
 
@@ -124,26 +109,6 @@ export function composerFileReferenceFromExternalIntake(input: {
     path: image.path,
     mimeType: image.mimeType?.trim() || "image/png",
     sizeBytes: typeof image.sizeBytes === "number" && image.sizeBytes >= 0 ? image.sizeBytes : 0,
-  };
-}
-
-export function buildExternalComposerIntakeResponse(
-  requestId: string,
-  result: { readonly ok: true } | { readonly ok: false; readonly reason: string },
-): ExternalComposerIntakeResponse {
-  if (result.ok) {
-    return {
-      type: EXTERNAL_COMPOSER_INTAKE_RESPONSE_TYPE,
-      requestId,
-      ok: true,
-      status: "inserted",
-    };
-  }
-  return {
-    type: EXTERNAL_COMPOSER_INTAKE_RESPONSE_TYPE,
-    requestId,
-    ok: false,
-    reason: result.reason,
   };
 }
 

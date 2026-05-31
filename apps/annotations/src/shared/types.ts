@@ -116,9 +116,7 @@ export type T3ComposerDeliveryResult =
   | {
       ok: true;
       requestId?: string;
-      tabId: number | null;
       url: string | null;
-      mode?: "http" | "tab";
     }
   | {
       ok: false;
@@ -140,7 +138,7 @@ export type T3ComposerBridgeStatusResult =
   | {
       ok: true;
       connected: boolean;
-      reason: "composer-not-connected" | null;
+      reason: "bridge-disabled" | "composer-not-connected" | "no-active-composer" | null;
       checkedAtEpochMs: number;
       target: T3ComposerBridgeStatusTarget | null;
     }

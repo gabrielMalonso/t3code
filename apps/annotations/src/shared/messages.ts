@@ -123,7 +123,6 @@ function isT3ComposerDeliveryResult(value: unknown): boolean {
   if (value.ok === true) {
     return (
       (value.requestId === undefined || typeof value.requestId === "string") &&
-      (typeof value.tabId === "number" || value.tabId === null) &&
       (typeof value.url === "string" || value.url === null)
     );
   }
@@ -148,7 +147,10 @@ export function isT3ComposerBridgeStatusResult(
 
   return (
     typeof value.connected === "boolean" &&
-    (value.reason === "composer-not-connected" || value.reason === null) &&
+    (value.reason === "bridge-disabled" ||
+      value.reason === "composer-not-connected" ||
+      value.reason === "no-active-composer" ||
+      value.reason === null) &&
     typeof value.checkedAtEpochMs === "number" &&
     (value.target === null || isT3ComposerBridgeStatusTarget(value.target))
   );

@@ -78,16 +78,16 @@ describe("message guards", () => {
     expect(
       isT3StatusRequestMessage({
         type: "ANNOTATIONS_T3_STATUS_REQUEST",
-        requestId: "pns-test",
+        requestId: "annotations-test",
         reason: "overlay-open",
       }),
     ).toBe(true);
   });
 
-  it("normalizes legacy capture requests without debug mode", () => {
-    const legacyRequest = { ...request } as Partial<CaptureRequest>;
-    delete legacyRequest.debugMode;
-    const message = { type: "ANNOTATIONS_CAPTURE_REQUEST", payload: legacyRequest };
+  it("normalizes older capture requests without debug mode", () => {
+    const olderRequest = { ...request } as Partial<CaptureRequest>;
+    delete olderRequest.debugMode;
+    const message = { type: "ANNOTATIONS_CAPTURE_REQUEST", payload: olderRequest };
 
     expect(isCaptureRequestMessage(message)).toBe(true);
     expect(message.payload.debugMode).toBe(false);
@@ -108,8 +108,7 @@ describe("message guards", () => {
         },
         delivery: {
           ok: true,
-          tabId: 11,
-          url: "http://127.0.0.1:3773/thread/demo",
+          url: "http://127.0.0.1:3773/api/annotations/bridge/v1/deliver",
         },
       }),
     ).toBe(true);
@@ -158,7 +157,7 @@ describe("message guards", () => {
           width: 800,
           height: 600,
         },
-        delivery: { ok: true, tabId: "11", url: "http://127.0.0.1:3773" },
+        delivery: { ok: true },
       }),
     ).toBe(false);
     expect(
@@ -196,9 +195,7 @@ describe("message guards", () => {
         target: null,
       }),
     ).toBe(true);
-    expect(isT3ComposerBridgeStatusResult({ ok: false, reason: "t3-status-http-failed" })).toBe(
-      true,
-    );
+    expect(isT3ComposerBridgeStatusResult({ ok: false, reason: "app-unreachable" })).toBe(true);
     expect(
       isT3ComposerBridgeStatusResult({ ok: true, connected: true, reason: null, target: null }),
     ).toBe(false);

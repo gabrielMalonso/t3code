@@ -60,10 +60,10 @@ import {
   ProjectWriteFileResult,
 } from "./project.ts";
 import {
-  PointNShootComposerIntakeDeliveryAck,
-  PointNShootComposerIntakeStreamEvent,
-  PointNShootComposerIntakeSubscription,
-} from "./pointNShoot.ts";
+  ExternalComposerIntakeDeliveryAck,
+  ExternalComposerIntakeStreamEvent,
+  ExternalComposerIntakeSubscription,
+} from "./externalComposerIntake.ts";
 import {
   TerminalClearInput,
   TerminalCloseInput,
@@ -160,9 +160,9 @@ export const WS_METHODS = {
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
   serverSignalProcess: "server.signalProcess",
 
-  // PointNShoot methods
-  pointNShootUpdateComposerIntakeSubscription: "pointNShoot.updateComposerIntakeSubscription",
-  pointNShootAckComposerIntake: "pointNShoot.ackComposerIntake",
+  // External composer intake methods
+  externalComposerIntakeUpdateSubscription: "externalComposerIntake.updateSubscription",
+  externalComposerIntakeAck: "externalComposerIntake.ack",
 
   // Source control methods
   sourceControlLookupRepository: "sourceControl.lookupRepository",
@@ -175,7 +175,7 @@ export const WS_METHODS = {
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
-  subscribePointNShootComposerIntake: "pointNShoot.subscribeComposerIntake",
+  subscribeExternalComposerIntake: "externalComposerIntake.subscribe",
 } as const;
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -497,24 +497,24 @@ export const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess,
   stream: true,
 });
 
-export const WsPointNShootUpdateComposerIntakeSubscriptionRpc = Rpc.make(
-  WS_METHODS.pointNShootUpdateComposerIntakeSubscription,
+export const WsExternalComposerIntakeUpdateSubscriptionRpc = Rpc.make(
+  WS_METHODS.externalComposerIntakeUpdateSubscription,
   {
-    payload: PointNShootComposerIntakeSubscription,
+    payload: ExternalComposerIntakeSubscription,
     success: Schema.Struct({}),
   },
 );
 
-export const WsPointNShootAckComposerIntakeRpc = Rpc.make(WS_METHODS.pointNShootAckComposerIntake, {
-  payload: PointNShootComposerIntakeDeliveryAck,
+export const WsExternalComposerIntakeAckRpc = Rpc.make(WS_METHODS.externalComposerIntakeAck, {
+  payload: ExternalComposerIntakeDeliveryAck,
   success: Schema.Struct({}),
 });
 
-export const WsSubscribePointNShootComposerIntakeRpc = Rpc.make(
-  WS_METHODS.subscribePointNShootComposerIntake,
+export const WsSubscribeExternalComposerIntakeRpc = Rpc.make(
+  WS_METHODS.subscribeExternalComposerIntake,
   {
-    payload: PointNShootComposerIntakeSubscription,
-    success: PointNShootComposerIntakeStreamEvent,
+    payload: ExternalComposerIntakeSubscription,
+    success: ExternalComposerIntakeStreamEvent,
     stream: true,
   },
 );
@@ -562,9 +562,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,
-  WsPointNShootUpdateComposerIntakeSubscriptionRpc,
-  WsPointNShootAckComposerIntakeRpc,
-  WsSubscribePointNShootComposerIntakeRpc,
+  WsExternalComposerIntakeUpdateSubscriptionRpc,
+  WsExternalComposerIntakeAckRpc,
+  WsSubscribeExternalComposerIntakeRpc,
   WsOrchestrationDispatchCommandRpc,
   WsOrchestrationCompactThreadRpc,
   WsOrchestrationGetTurnDiffRpc,

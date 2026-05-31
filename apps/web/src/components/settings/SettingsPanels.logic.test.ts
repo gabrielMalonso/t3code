@@ -110,14 +110,19 @@ describe("settings restore defaults", () => {
   it("detects and resets the Annotations bridge setting", () => {
     const settings = {
       ...DEFAULT_UNIFIED_SETTINGS,
-      pointNShootBridgeEnabled: true,
+      annotationsBridge: {
+        ...DEFAULT_UNIFIED_SETTINGS.annotationsBridge,
+        enabled: true,
+      },
     };
 
-    expect(collectRestoreDefaultSettingLabels({ theme: "system", settings })).toContain(
-      "Annotations bridge",
-    );
+    expect(
+      collectRestoreDefaultSettingLabels({ theme: "system", settings }).filter(
+        (label) => label === "Annotations bridge",
+      ),
+    ).toEqual(["Annotations bridge"]);
     expect(buildRestoreDefaultsSettingsPatch()).toMatchObject({
-      pointNShootBridgeEnabled: false,
+      annotationsBridge: DEFAULT_UNIFIED_SETTINGS.annotationsBridge,
       showPlanSidebar: DEFAULT_UNIFIED_SETTINGS.showPlanSidebar,
     });
   });

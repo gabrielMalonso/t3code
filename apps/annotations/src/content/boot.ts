@@ -566,14 +566,12 @@ class AnnotationsController {
   private markBridgeConnectedFromDelivery(delivery: SuccessfulDelivery): void {
     this.bridgeStatusRefreshSeq += 1;
     this.lastSuccessfulDelivery = { atEpochMs: Date.now(), delivery };
-    setBridgeStatus(this.refs, bridgeConnectedFromDeliveryPresentation(delivery));
+    setBridgeStatus(this.refs, bridgeConnectedFromDeliveryPresentation());
     logAnnotationsPageEvent("bridge:status", {
       requestId: delivery.requestId ?? null,
       reason: "delivery-success",
       ok: true,
       connected: true,
-      mode: delivery.mode ?? null,
-      tabId: delivery.tabId,
       url: delivery.url,
     });
   }
@@ -590,10 +588,7 @@ class AnnotationsController {
       return bridgeStatusPresentation(status);
     }
 
-    return bridgeConnectedFromRecentDeliveryPresentation(
-      this.lastSuccessfulDelivery.delivery,
-      status,
-    );
+    return bridgeConnectedFromRecentDeliveryPresentation(status);
   }
 
   private showCaptureFallback(fallback: CaptureFallback): void {
@@ -684,7 +679,14 @@ function isBridgeConnected(status: T3ComposerBridgeStatusResult): boolean {
 }
 
 function bridgePreflightToast(status: T3ComposerBridgeStatusResult): string {
-  if (!status.ok) return COPY.t3UnreachableWillCopy;
+  if (!status.ok) {
+    if (status.reason === "not-paired" || status.reason === "pairing-pending") {
+      return COPY.t3NotPairedWillCopy;
+    }
+    if (status.reason === "bridge-disabled") return COPY.t3BridgeDisabledWillCopy;
+    return COPY.t3UnreachableWillCopy;
+  }
+  if (status.reason === "bridge-disabled") return COPY.t3BridgeDisabledWillCopy;
   if (!status.connected) return COPY.t3NoComposerWillCopy;
   return COPY.t3FallbackWillCopy;
 }
@@ -692,18 +694,35 @@ function bridgePreflightToast(status: T3ComposerBridgeStatusResult): string {
 function deliveryFailureToast(delivery: T3ComposerDeliveryResult): string {
   if (delivery.ok) return COPY.sentToT3;
 
-  if (delivery.reason === "composer-not-connected") return COPY.t3NoComposerCopied;
-  if (delivery.reason === "t3-http-failed" || delivery.reason === "t3-status-http-failed") {
-    return COPY.t3UnreachableCopied;
+  if (delivery.reason === "not-paired" || delivery.reason === "pairing-pending") {
+    return COPY.t3NotPairedCopied;
   }
-  if (delivery.reason === "t3-response-timeout" || delivery.reason === "t3-no-response") {
-    return COPY.t3AckTimeoutCopied;
+  if (delivery.reason === "bridge-disabled") return COPY.t3BridgeDisabledCopied;
+  if (delivery.reason === "composer-not-connected" || delivery.reason === "no-active-composer") {
+    return COPY.t3NoComposerCopied;
+  }
+  if (delivery.reason === "app-unreachable") {
+    return COPY.t3UnreachableCopied;
   }
   return `T3 indisponível (${delivery.reason}); nota copiada.`;
 }
 
 function bridgeStatusPresentation(status: T3ComposerBridgeStatusResult): BridgeStatusPresentation {
   if (!status.ok) {
+    if (status.reason === "not-paired" || status.reason === "pairing-pending") {
+      return {
+        state: "warning",
+        label: COPY.bridgeNotPaired,
+        title: status.message ?? status.reason,
+      };
+    }
+    if (status.reason === "bridge-disabled") {
+      return {
+        state: "warning",
+        label: COPY.bridgeDisabled,
+        title: status.message ?? status.reason,
+      };
+    }
     return {
       state: "error",
       label: COPY.bridgeUnavailable,
@@ -714,7 +733,7 @@ function bridgeStatusPresentation(status: T3ComposerBridgeStatusResult): BridgeS
   if (!status.connected) {
     return {
       state: "warning",
-      label: COPY.bridgeNoComposer,
+      label: status.reason === "bridge-disabled" ? COPY.bridgeDisabled : COPY.bridgeNoComposer,
       title: status.reason ?? COPY.bridgeNoComposer,
     };
   }
@@ -727,22 +746,18 @@ function bridgeStatusPresentation(status: T3ComposerBridgeStatusResult): BridgeS
   };
 }
 
-function bridgeConnectedFromDeliveryPresentation(
-  delivery: SuccessfulDelivery,
-): BridgeStatusPresentation {
-  const modeLabel = delivery.mode === "http" ? "HTTP bridge" : "browser tab bridge";
+function bridgeConnectedFromDeliveryPresentation(): BridgeStatusPresentation {
   return {
     state: "connected",
     label: `${COPY.bridgeConnected}: Composer`,
-    title: `${COPY.bridgeConnected}: Composer (${modeLabel})`,
+    title: `${COPY.bridgeConnected}: Composer (paired bridge)`,
   };
 }
 
 function bridgeConnectedFromRecentDeliveryPresentation(
-  delivery: SuccessfulDelivery,
   failedStatus: Extract<T3ComposerBridgeStatusResult, { ok: false }>,
 ): BridgeStatusPresentation {
-  const presentation = bridgeConnectedFromDeliveryPresentation(delivery);
+  const presentation = bridgeConnectedFromDeliveryPresentation();
   return {
     ...presentation,
     title: `${presentation.title}; ultimo status falhou: ${failedStatus.reason}`,

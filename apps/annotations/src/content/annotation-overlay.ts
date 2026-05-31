@@ -239,18 +239,18 @@ function escapeHtml(value: string): string {
 function overlayCss(): string {
   return `
     :host {
-      --pns-bg: #0b0e14;
-      --pns-field: #0f141b;
-      --pns-ink: #e6e1cf;
-      --pns-muted: #8a9199;
-      --pns-line: #2d3640;
-      --pns-accent: #ffb454;
-      --pns-accent-soft: rgba(255, 180, 84, 0.18);
-      --pns-shell: #0b0e14;
-      --pns-shell-line: #1f2430;
-      --pns-shell-muted: #59c2ff;
-      --pns-success: #aad94c;
-      --pns-danger: #f07178;
+      --annotations-bg: #0b0e14;
+      --annotations-field: #0f141b;
+      --annotations-ink: #e6e1cf;
+      --annotations-muted: #8a9199;
+      --annotations-line: #2d3640;
+      --annotations-accent: #ffb454;
+      --annotations-accent-soft: rgba(255, 180, 84, 0.18);
+      --annotations-shell: #0b0e14;
+      --annotations-shell-line: #1f2430;
+      --annotations-shell-muted: #59c2ff;
+      --annotations-success: #aad94c;
+      --annotations-danger: #f07178;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     }
 
@@ -275,10 +275,10 @@ function overlayCss(): string {
       min-height: 32px;
       max-width: calc(100vw - 24px);
       transform: translateX(-50%);
-      border: 1px solid var(--pns-shell-line);
+      border: 1px solid var(--annotations-shell-line);
       border-radius: 9px;
       background: rgba(11, 14, 20, 0.94);
-      color: var(--pns-ink);
+      color: var(--annotations-ink);
       padding: 3px;
       pointer-events: auto;
       z-index: 4;
@@ -292,13 +292,13 @@ function overlayCss(): string {
       place-items: center;
       width: 22px;
       height: 26px;
-      color: var(--pns-accent);
+      color: var(--annotations-accent);
       font: 760 18px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
 
     .hud button {
       appearance: none;
-      border: 1px solid var(--pns-shell-line);
+      border: 1px solid var(--annotations-shell-line);
       box-shadow: none;
       cursor: pointer;
       font: 650 12px -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -316,7 +316,7 @@ function overlayCss(): string {
       height: 26px;
       border-radius: 6px;
       background: rgba(89, 194, 255, 0.07);
-      color: var(--pns-ink);
+      color: var(--annotations-ink);
       padding: 0 9px;
     }
 
@@ -328,19 +328,19 @@ function overlayCss(): string {
     .hud-pick.is-active {
       border-color: rgba(255, 180, 84, 0.46);
       background: rgba(255, 180, 84, 0.13);
-      color: var(--pns-accent);
+      color: var(--annotations-accent);
     }
 
     .hud-pick-dot {
       width: 8px;
       height: 8px;
       border-radius: 999px;
-      background: var(--pns-shell-muted);
+      background: var(--annotations-shell-muted);
       box-shadow: 0 0 0 2px rgba(89, 194, 255, 0.16);
     }
 
     .hud-pick.is-active .hud-pick-dot {
-      background: var(--pns-accent);
+      background: var(--annotations-accent);
       box-shadow: 0 0 0 2px rgba(255, 180, 84, 0.18), 0 0 12px rgba(255, 180, 84, 0.34);
     }
 
@@ -375,32 +375,32 @@ function overlayCss(): string {
     }
 
     .bridge-status.is-connected {
-      color: var(--pns-success);
+      color: var(--annotations-success);
     }
 
     .bridge-status.is-connected::before {
-      background: var(--pns-success);
+      background: var(--annotations-success);
       box-shadow: 0 0 9px rgba(170, 217, 76, 0.42);
     }
 
     .bridge-status.is-warning {
-      color: var(--pns-accent);
+      color: var(--annotations-accent);
       border-color: rgba(255, 180, 84, 0.32);
       background: rgba(255, 180, 84, 0.08);
     }
 
     .bridge-status.is-warning::before {
-      background: var(--pns-accent);
+      background: var(--annotations-accent);
     }
 
     .bridge-status.is-error {
-      color: var(--pns-danger);
+      color: var(--annotations-danger);
       border-color: rgba(240, 113, 120, 0.34);
       background: rgba(240, 113, 120, 0.08);
     }
 
     .bridge-status.is-error::before {
-      background: var(--pns-danger);
+      background: var(--annotations-danger);
     }
 
     .hud-close {
@@ -416,7 +416,7 @@ function overlayCss(): string {
 
     .hud-close:hover {
       background: rgba(89, 194, 255, 0.1);
-      color: var(--pns-ink);
+      color: var(--annotations-ink);
     }
 
     .box {
@@ -431,12 +431,12 @@ function overlayCss(): string {
     }
 
     .hover {
-      border: 2px solid var(--pns-accent);
-      box-shadow: 0 0 0 1px rgba(255, 180, 84, 0.24), 0 0 0 6px var(--pns-accent-soft);
+      border: 2px solid var(--annotations-accent);
+      box-shadow: 0 0 0 1px rgba(255, 180, 84, 0.24), 0 0 0 6px var(--annotations-accent-soft);
     }
 
     .locked {
-      border: 2px solid var(--pns-accent);
+      border: 2px solid var(--annotations-accent);
       box-shadow: inset 0 0 0 1px rgba(230, 225, 207, 0.7), 0 0 0 9999px rgba(11, 14, 20, 0.1);
     }
 
@@ -451,8 +451,8 @@ function overlayCss(): string {
       white-space: nowrap;
       pointer-events: none;
       z-index: 3;
-      background: var(--pns-field);
-      color: var(--pns-ink);
+      background: var(--annotations-field);
+      color: var(--annotations-ink);
       border: 1px solid rgba(255, 180, 84, 0.25);
       border-radius: 6px;
       padding: 4px 8px;
@@ -466,9 +466,9 @@ function overlayCss(): string {
       top: 0;
       left: 0;
       display: none;
-      background: var(--pns-bg);
-      color: var(--pns-ink);
-      border: 1px solid var(--pns-line);
+      background: var(--annotations-bg);
+      color: var(--annotations-ink);
+      border: 1px solid var(--annotations-line);
       border-radius: 8px;
       box-shadow: 0 18px 50px rgba(0, 0, 0, 0.44), 0 3px 12px rgba(0, 0, 0, 0.28);
       z-index: 5;
@@ -482,7 +482,7 @@ function overlayCss(): string {
     .label {
       display: block;
       margin-bottom: 7px;
-      color: var(--pns-muted);
+      color: var(--annotations-muted);
       font-size: 12px;
       font-weight: 650;
     }
@@ -492,18 +492,18 @@ function overlayCss(): string {
       min-height: 84px;
       max-height: 160px;
       resize: vertical;
-      border: 1px solid var(--pns-line);
+      border: 1px solid var(--annotations-line);
       border-radius: 7px;
-      background: var(--pns-field);
-      color: var(--pns-ink);
+      background: var(--annotations-field);
+      color: var(--annotations-ink);
       padding: 9px 10px;
       font: 500 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
       outline: none;
     }
 
     textarea:focus {
-      border-color: var(--pns-accent);
-      box-shadow: 0 0 0 3px var(--pns-accent-soft);
+      border-color: var(--annotations-accent);
+      box-shadow: 0 0 0 3px var(--annotations-accent-soft);
     }
 
     .actions {
@@ -523,7 +523,7 @@ function overlayCss(): string {
     .fallback button {
       height: 30px;
       border-radius: 7px;
-      border: 1px solid var(--pns-line);
+      border: 1px solid var(--annotations-line);
       padding: 0 10px;
       font: 650 12px -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
       cursor: pointer;
@@ -536,36 +536,36 @@ function overlayCss(): string {
     }
 
     .primary {
-      background: var(--pns-accent);
-      border-color: var(--pns-accent);
+      background: var(--annotations-accent);
+      border-color: var(--annotations-accent);
       color: #0b0e14;
     }
 
     .secondary {
       background: transparent;
-      color: var(--pns-ink);
+      color: var(--annotations-ink);
     }
 
     .debug-toggle {
       background: rgba(89, 194, 255, 0.08);
-      color: var(--pns-muted);
+      color: var(--annotations-muted);
       min-width: 62px;
     }
 
     .debug-toggle:hover {
       border-color: rgba(255, 180, 84, 0.42);
-      color: var(--pns-ink);
+      color: var(--annotations-ink);
     }
 
     .debug-toggle.is-active {
       border-color: rgba(255, 180, 84, 0.56);
-      background: var(--pns-accent-soft);
-      color: var(--pns-accent);
+      background: var(--annotations-accent-soft);
+      color: var(--annotations-accent);
     }
 
     .keys {
       margin-top: 8px;
-      color: var(--pns-muted);
+      color: var(--annotations-muted);
       font: 500 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
 
@@ -576,9 +576,9 @@ function overlayCss(): string {
       display: none;
       max-width: min(360px, calc(100vw - 28px));
       pointer-events: none;
-      background: var(--pns-field);
-      color: var(--pns-ink);
-      border: 1px solid var(--pns-line);
+      background: var(--annotations-field);
+      color: var(--annotations-ink);
+      border: 1px solid var(--annotations-line);
       border-radius: 8px;
       padding: 9px 11px;
       font-size: 13px;
@@ -613,8 +613,8 @@ function overlayCss(): string {
     .fallback-note {
       margin: 0 0 10px;
       border-radius: 7px;
-      background: var(--pns-accent-soft);
-      color: var(--pns-ink);
+      background: var(--annotations-accent-soft);
+      color: var(--annotations-ink);
       padding: 8px 10px;
       font-size: 12px;
       font-weight: 650;
@@ -632,8 +632,8 @@ function overlayCss(): string {
       width: 100%;
       max-height: 320px;
       object-fit: contain;
-      background: var(--pns-field);
-      border: 1px solid var(--pns-line);
+      background: var(--annotations-field);
+      border: 1px solid var(--annotations-line);
       border-radius: 6px;
     }
 
@@ -641,10 +641,10 @@ function overlayCss(): string {
       display: grid;
       place-items: center;
       height: 120px;
-      border: 1px solid var(--pns-line);
+      border: 1px solid var(--annotations-line);
       border-radius: 6px;
-      color: var(--pns-muted);
-      background: var(--pns-field);
+      color: var(--annotations-muted);
+      background: var(--annotations-field);
       font-size: 13px;
     }
 
@@ -657,17 +657,17 @@ function overlayCss(): string {
 
     .fallback-diagnostics {
       margin-top: 10px;
-      border: 1px solid var(--pns-line);
+      border: 1px solid var(--annotations-line);
       border-radius: 7px;
-      background: var(--pns-field);
-      color: var(--pns-ink);
+      background: var(--annotations-field);
+      color: var(--annotations-ink);
       overflow: hidden;
     }
 
     .fallback-diagnostics summary {
       cursor: pointer;
       padding: 8px 10px;
-      color: var(--pns-muted);
+      color: var(--annotations-muted);
       font-size: 12px;
       font-weight: 650;
     }
@@ -679,7 +679,7 @@ function overlayCss(): string {
       padding: 0 10px 10px;
       white-space: pre-wrap;
       word-break: break-word;
-      color: var(--pns-ink);
+      color: var(--annotations-ink);
       font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
   `;
