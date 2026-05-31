@@ -126,8 +126,10 @@ export function collectRestoreDefaultSettingLabels(input: {
     DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
       ? ["Assistant output"]
       : []),
-    ...(input.settings.pointNShootBridgeEnabled !==
-    DEFAULT_UNIFIED_SETTINGS.pointNShootBridgeEnabled
+    ...(input.settings.annotationsBridge.enabled !==
+      DEFAULT_UNIFIED_SETTINGS.annotationsBridge.enabled ||
+    input.settings.annotationsBridge.allowRemoteClients !==
+      DEFAULT_UNIFIED_SETTINGS.annotationsBridge.allowRemoteClients
       ? ["Annotations bridge"]
       : []),
     ...(Duration.toMillis(input.settings.automaticGitFetchInterval) !==
@@ -159,7 +161,7 @@ export function buildRestoreDefaultsSettingsPatch(): Partial<UnifiedSettings> {
     showPlanSidebar: DEFAULT_UNIFIED_SETTINGS.showPlanSidebar,
     autoOpenPlanSidebar: DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar,
     enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
-    pointNShootBridgeEnabled: DEFAULT_UNIFIED_SETTINGS.pointNShootBridgeEnabled,
+    annotationsBridge: DEFAULT_UNIFIED_SETTINGS.annotationsBridge,
     automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
     defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
     addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,

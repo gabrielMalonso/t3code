@@ -49,15 +49,15 @@ describe("validateExternalComposerIntakeMessage", () => {
   it("rejects unsupported actions", () => {
     const result = validateExternalComposerIntakeMessage({
       type: EXTERNAL_COMPOSER_INTAKE_REQUEST_TYPE,
-      requestId: "pns-1",
-      source: "pointnshoot",
+      requestId: "annotations-1",
+      source: "annotations",
       action: "insert-and-send",
       prompt: "hello",
     });
 
     expect(result).toEqual({
       ok: false,
-      requestId: "pns-1",
+      requestId: "annotations-1",
       reason: "unsupported-action",
     });
   });
@@ -65,14 +65,14 @@ describe("validateExternalComposerIntakeMessage", () => {
   it("rejects empty prompts", () => {
     const result = validateExternalComposerIntakeMessage({
       type: EXTERNAL_COMPOSER_INTAKE_REQUEST_TYPE,
-      requestId: "pns-1",
-      source: "pointnshoot",
+      requestId: "annotations-1",
+      source: "annotations",
       prompt: "   ",
     });
 
     expect(result).toEqual({
       ok: false,
-      requestId: "pns-1",
+      requestId: "annotations-1",
       reason: "empty-prompt",
     });
   });

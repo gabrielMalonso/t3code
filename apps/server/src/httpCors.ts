@@ -4,8 +4,6 @@ export const browserApiCorsAllowedHeaders = [
   "b3",
   "traceparent",
   "content-type",
-  "x-annotations-extension-id",
-  "x-pointnshoot-extension-id",
 ] as const;
 
 export const browserApiCorsHeaders = {

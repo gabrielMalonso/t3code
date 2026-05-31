@@ -15,12 +15,17 @@ export {
 } from "./context";
 
 export {
+  approveAnnotationsBridgePairing,
   createServerPairingCredential,
   fetchSessionState,
+  listAnnotationsBridgeClients,
+  listAnnotationsBridgePendingPairings,
   listServerClientSessions,
   listServerPairingLinks,
   peekPairingTokenFromUrl,
+  rejectAnnotationsBridgePairing,
   resolveInitialServerAuthGateState,
+  revokeAnnotationsBridgeClient,
   revokeOtherServerClientSessions,
   revokeServerClientSession,
   revokeServerPairingLink,

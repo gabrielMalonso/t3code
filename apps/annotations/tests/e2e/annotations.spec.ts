@@ -11,10 +11,10 @@ test.beforeEach(async ({ page }) => {
   await page.addInitScript((imagePath) => {
     const browserWindow = window as any;
     const listeners: unknown[] = [];
-    browserWindow.__lastPnsRequest = null;
-    browserWindow.__pnsRequests = [];
-    browserWindow.__pnsStatusRequests = [];
-    browserWindow.__pnsStatusResponse = {
+    browserWindow.__lastAnnotationsRequest = null;
+    browserWindow.__annotationsRequests = [];
+    browserWindow.__annotationsStatusRequests = [];
+    browserWindow.__annotationsStatusResponse = {
       ok: true,
       connected: true,
       reason: null,
@@ -28,8 +28,8 @@ test.beforeEach(async ({ page }) => {
         lastSeenAtEpochMs: 120,
       },
     };
-    browserWindow.__pnsResponses = [];
-    browserWindow.__emitPnsRuntimeMessage = (message: unknown) => {
+    browserWindow.__annotationsResponses = [];
+    browserWindow.__emitAnnotationsRuntimeMessage = (message: unknown) => {
       listeners.forEach((listener) => {
         if (typeof listener === "function") listener(message);
       });
@@ -66,14 +66,14 @@ test.beforeEach(async ({ page }) => {
         },
         async sendMessage(message: unknown) {
           if ((message as { type?: unknown })?.type === "ANNOTATIONS_T3_STATUS_REQUEST") {
-            browserWindow.__pnsStatusRequests.push(message);
-            return browserWindow.__pnsStatusResponse;
+            browserWindow.__annotationsStatusRequests.push(message);
+            return browserWindow.__annotationsStatusResponse;
           }
 
-          browserWindow.__lastPnsRequest = message;
-          browserWindow.__pnsRequests.push(message);
+          browserWindow.__lastAnnotationsRequest = message;
+          browserWindow.__annotationsRequests.push(message);
           return (
-            browserWindow.__pnsResponses.shift() ?? {
+            browserWindow.__annotationsResponses.shift() ?? {
               ok: true,
               markdownPrompt: defaultUiNote(imagePath, "teste e2e"),
               savedImage: {
@@ -150,7 +150,7 @@ test("toggles the persistent overlay and Pick mode separately", async ({ page })
     "T3 conectado: Integrar extensão ao Composer",
   );
   await expect
-    .poll(() => page.evaluate(() => (window as any).__pnsStatusRequests.length))
+    .poll(() => page.evaluate(() => (window as any).__annotationsStatusRequests.length))
     .toBeGreaterThan(0);
   await expect(page.locator('textarea[aria-label="Comentário"]')).toBeHidden();
 
@@ -185,7 +185,7 @@ test("runtime toggle message opens the overlay, then toggles Pick without closin
   await page.addScriptTag({ path: contentScriptPath });
 
   await page.evaluate(() => {
-    (window as any).__emitPnsRuntimeMessage({ type: "ANNOTATIONS_TOGGLE_OVERLAY" });
+    (window as any).__emitAnnotationsRuntimeMessage({ type: "ANNOTATIONS_TOGGLE_OVERLAY" });
   });
 
   const pickButton = page.getByRole("button", { name: "Pick" });
@@ -194,14 +194,14 @@ test("runtime toggle message opens the overlay, then toggles Pick without closin
   await expect(page.locator('textarea[aria-label="Comentário"]')).toBeHidden();
 
   await page.evaluate(() => {
-    (window as any).__emitPnsRuntimeMessage({ type: "ANNOTATIONS_TOGGLE_OVERLAY" });
+    (window as any).__emitAnnotationsRuntimeMessage({ type: "ANNOTATIONS_TOGGLE_OVERLAY" });
   });
 
   await expect(pickButton).toBeVisible();
   await expect(pickButton).toHaveAttribute("aria-pressed", "true");
 
   await page.evaluate(() => {
-    (window as any).__emitPnsRuntimeMessage({ type: "ANNOTATIONS_TOGGLE_OVERLAY" });
+    (window as any).__emitAnnotationsRuntimeMessage({ type: "ANNOTATIONS_TOGGLE_OVERLAY" });
   });
 
   await expect(pickButton).toBeVisible();
@@ -273,7 +273,9 @@ test("selects an element, saves the PNG result and copies the UI Note text", asy
   await page.getByRole("button", { name: "Enviar ao T3" }).click();
 
   await expect
-    .poll(() => page.evaluate(() => (window as any).__pnsRequests.length), { timeout: 2_000 })
+    .poll(() => page.evaluate(() => (window as any).__annotationsRequests.length), {
+      timeout: 2_000,
+    })
     .toBe(1);
   await expect
     .poll(() => page.evaluate(() => (window as any).__clipboardTextWrites.length), {
@@ -292,7 +294,7 @@ test("selects an element, saves the PNG result and copies the UI Note text", asy
     .poll(() => page.evaluate(() => (window as any).__clipboardImageWrites.length))
     .toBe(0);
 
-  const request = await page.evaluate(() => (window as any).__lastPnsRequest);
+  const request = await page.evaluate(() => (window as any).__lastAnnotationsRequest);
   expect(request.type).toBe("ANNOTATIONS_CAPTURE_REQUEST");
   expect(request.payload.comment).toContain("respiro");
   expect(request.payload.debugMode).toBe(false);
@@ -306,7 +308,7 @@ test("uses a successful T3 Composer delivery without writing the clipboard", asy
   await page.goto(new URL("../fixtures/simple-page.html", import.meta.url).toString());
   await page.addScriptTag({ path: contentScriptPath });
   await page.evaluate((imagePath) => {
-    (window as any).__pnsResponses.push({
+    (window as any).__annotationsResponses.push({
       ok: true,
       markdownPrompt: `# UI Note\n\n## Prompt\n\nenviar ao composer\n\n## Informações\n\nImagem:\n\`${imagePath}\``,
       savedImage: {
@@ -319,8 +321,7 @@ test("uses a successful T3 Composer delivery without writing the clipboard", asy
       },
       delivery: {
         ok: true,
-        tabId: 11,
-        url: "http://127.0.0.1:3773/thread/demo",
+        url: "http://127.0.0.1:3773/api/annotations/bridge/v1/deliver",
       },
     });
     window.__ANNOTATIONS_START__?.();
@@ -336,7 +337,9 @@ test("uses a successful T3 Composer delivery without writing the clipboard", asy
   await page.getByRole("button", { name: "Enviar ao T3" }).click();
 
   await expect
-    .poll(() => page.evaluate(() => (window as any).__pnsRequests.length), { timeout: 2_000 })
+    .poll(() => page.evaluate(() => (window as any).__annotationsRequests.length), {
+      timeout: 2_000,
+    })
     .toBe(1);
   await expect
     .poll(() => page.evaluate(() => (window as any).__clipboardTextWrites.length), {
@@ -370,9 +373,11 @@ test("adds debug metadata to the capture request when Debug is enabled", async (
   await page.getByRole("button", { name: "Enviar ao T3" }).click();
 
   await expect
-    .poll(() => page.evaluate(() => (window as any).__pnsRequests.length), { timeout: 2_000 })
+    .poll(() => page.evaluate(() => (window as any).__annotationsRequests.length), {
+      timeout: 2_000,
+    })
     .toBe(1);
-  const request = await page.evaluate(() => (window as any).__lastPnsRequest);
+  const request = await page.evaluate(() => (window as any).__lastAnnotationsRequest);
   expect(request.payload.debugMode).toBe(true);
   expect(request.payload.element.debug.selectorMatches.cssPath).toBe(1);
   expect(request.payload.element.debug.attributes).toContainEqual({
@@ -390,7 +395,7 @@ test("shows a manual fallback when writeText is blocked after the image is saved
   await page.addScriptTag({ path: contentScriptPath });
   await page.evaluate((imagePath) => {
     (window as any).__blockTextClipboard = true;
-    (window as any).__pnsResponses.push({
+    (window as any).__annotationsResponses.push({
       ok: true,
       markdownPrompt: `# UI Note\n\n## Prompt\n\nteste bloqueado\n\n## Informações\n\nImagem:\n\`${imagePath}\``,
       savedImage: {
@@ -449,7 +454,9 @@ test("empty comments still prevent submission", async ({ page }) => {
   await page.getByRole("button", { name: "Enviar ao T3" }).click();
 
   await expect(page.getByText("Escreva um comentário antes de capturar.")).toBeVisible();
-  await expect.poll(() => page.evaluate(() => (window as any).__pnsRequests.length)).toBe(0);
+  await expect
+    .poll(() => page.evaluate(() => (window as any).__annotationsRequests.length))
+    .toBe(0);
   await expect(page.locator('textarea[aria-label="Comentário"]')).toBeVisible();
 });
 
@@ -457,7 +464,7 @@ test("successful copy can run twice after reinjection", async ({ page }) => {
   await page.goto(new URL("../fixtures/simple-page.html", import.meta.url).toString());
   await page.addScriptTag({ path: contentScriptPath });
   await page.evaluate((imagePath) => {
-    (window as any).__pnsResponses.push(
+    (window as any).__annotationsResponses.push(
       {
         ok: true,
         markdownPrompt: `# UI Note\n\n## Prompt\n\nprimeira copia\n\n## Informações\n\nImagem:\n\`${imagePath}\``,
@@ -495,7 +502,9 @@ test("successful copy can run twice after reinjection", async ({ page }) => {
   await page.locator('textarea[aria-label="Comentário"]').fill("primeira copia");
   await page.getByRole("button", { name: "Enviar ao T3" }).click();
   await expect
-    .poll(() => page.evaluate(() => (window as any).__pnsRequests.length), { timeout: 2_000 })
+    .poll(() => page.evaluate(() => (window as any).__annotationsRequests.length), {
+      timeout: 2_000,
+    })
     .toBe(1);
   await expect(page.getByRole("button", { name: "Pick" })).toHaveAttribute("aria-pressed", "false");
   await expect(page.locator('textarea[aria-label="Comentário"]')).toBeHidden({ timeout: 2_000 });
@@ -508,7 +517,9 @@ test("successful copy can run twice after reinjection", async ({ page }) => {
   await page.locator('textarea[aria-label="Comentário"]').fill("segunda copia");
   await page.getByRole("button", { name: "Enviar ao T3" }).click();
   await expect
-    .poll(() => page.evaluate(() => (window as any).__pnsRequests.length), { timeout: 2_000 })
+    .poll(() => page.evaluate(() => (window as any).__annotationsRequests.length), {
+      timeout: 2_000,
+    })
     .toBe(2);
 
   const writes = await page.evaluate(() => (window as any).__clipboardTextWrites);
@@ -516,7 +527,7 @@ test("successful copy can run twice after reinjection", async ({ page }) => {
   expect(writes[0]).toContain("primeira copia");
   expect(writes[1]).toContain("segunda copia");
 
-  const requests = await page.evaluate(() => (window as any).__pnsRequests);
+  const requests = await page.evaluate(() => (window as any).__annotationsRequests);
   expect(requests).toHaveLength(2);
   expect(requests[0].payload.comment).toBe("primeira copia");
   expect(requests[1].payload.comment).toBe("segunda copia");
@@ -537,9 +548,11 @@ test("copy and cancel buttons receive clicks inside the overlay", async ({ page 
   await page.getByRole("button", { name: "Enviar ao T3" }).click();
 
   await expect
-    .poll(() => page.evaluate(() => (window as any).__pnsRequests.length), { timeout: 2_000 })
+    .poll(() => page.evaluate(() => (window as any).__annotationsRequests.length), {
+      timeout: 2_000,
+    })
     .toBe(1);
-  const request = await page.evaluate(() => (window as any).__lastPnsRequest);
+  const request = await page.evaluate(() => (window as any).__lastAnnotationsRequest);
   expect(request.type).toBe("ANNOTATIONS_CAPTURE_REQUEST");
 
   await page.evaluate(() => window.__ANNOTATIONS_START__?.());

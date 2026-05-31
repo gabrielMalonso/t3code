@@ -25,5 +25,5 @@ export function createCaptureRequest(
 
 export function createCaptureRequestId(): string {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
-  return `pns-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  return `annotations-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }

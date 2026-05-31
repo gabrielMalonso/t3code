@@ -5,7 +5,7 @@ import {
   type EnvironmentId,
   type MessageId,
   type ModelSelection,
-  type PointNShootComposerIntakeSubscription,
+  type ExternalComposerIntakeSubscription,
   type ProjectScript,
   type ProjectId,
   type ProviderApprovalDecision,
@@ -193,7 +193,6 @@ import {
 } from "../versionSkew";
 import {
   appendExternalComposerIntakePrompt,
-  buildExternalComposerIntakeResponse,
   composerFileReferenceFromExternalIntake,
   type ExternalComposerIntakeRequest,
   validateExternalComposerIntakeMessage,
@@ -1689,38 +1688,37 @@ export default function ChatView(props: ChatViewProps) {
     setComposerDraftTerminalContexts,
   });
 
-  const pointNShootBridgeEnabled = settings.pointNShootBridgeEnabled;
-  const pointNShootSubscriberBaseIdRef = useRef(`annotations-composer-${randomUUID()}`);
-  const [pointNShootTargetActivatedAtEpochMs, setPointNShootTargetActivatedAtEpochMs] = useState(
-    () => Date.now(),
-  );
-  const pointNShootSubscriptionRef = useRef<PointNShootComposerIntakeSubscription>({
-    subscriberId: pointNShootSubscriberBaseIdRef.current,
+  const annotationsBridgeEnabled = settings.annotationsBridge.enabled;
+  const externalComposerSubscriberBaseIdRef = useRef(`annotations-composer-${randomUUID()}`);
+  const [externalComposerTargetActivatedAtEpochMs, setExternalComposerTargetActivatedAtEpochMs] =
+    useState(() => Date.now());
+  const externalComposerSubscriptionRef = useRef<ExternalComposerIntakeSubscription>({
+    subscriberId: externalComposerSubscriberBaseIdRef.current,
     threadId: activeThreadId ?? null,
     threadTitle: activeThread?.title?.trim() ? activeThread.title : null,
-    activatedAtEpochMs: pointNShootTargetActivatedAtEpochMs,
+    activatedAtEpochMs: externalComposerTargetActivatedAtEpochMs,
     clientKind: typeof window !== "undefined" && window.desktopBridge ? "desktop" : "browser",
   });
 
   useEffect(() => {
-    setPointNShootTargetActivatedAtEpochMs(Date.now());
+    setExternalComposerTargetActivatedAtEpochMs(Date.now());
   }, [activeThreadId, environmentId]);
 
   useEffect(() => {
-    pointNShootSubscriptionRef.current = {
-      subscriberId: pointNShootSubscriberBaseIdRef.current,
+    externalComposerSubscriptionRef.current = {
+      subscriberId: externalComposerSubscriberBaseIdRef.current,
       threadId: activeThreadId ?? null,
       threadTitle: activeThread?.title?.trim() ? activeThread.title : null,
-      activatedAtEpochMs: pointNShootTargetActivatedAtEpochMs,
+      activatedAtEpochMs: externalComposerTargetActivatedAtEpochMs,
       clientKind: window.desktopBridge ? "desktop" : "browser",
     };
-  }, [activeThread?.title, activeThreadId, pointNShootTargetActivatedAtEpochMs]);
+  }, [activeThread?.title, activeThreadId, externalComposerTargetActivatedAtEpochMs]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const markActiveTarget = () => {
-      setPointNShootTargetActivatedAtEpochMs(Date.now());
+      setExternalComposerTargetActivatedAtEpochMs(Date.now());
     };
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
@@ -1801,108 +1799,61 @@ export default function ChatView(props: ChatViewProps) {
     insertExternalComposerIntakeRequestRef.current = insertExternalComposerIntakeRequest;
   }, [insertExternalComposerIntakeRequest]);
 
-  const handlePointNShootBridgeEnabledChange = useCallback(
+  const handleAnnotationsBridgeEnabledChange = useCallback(
     (enabled: boolean) => {
-      updateSettings({ pointNShootBridgeEnabled: enabled });
+      updateSettings({
+        annotationsBridge: {
+          ...settings.annotationsBridge,
+          enabled,
+        },
+      });
       toastManager.add({
         type: enabled ? "success" : "info",
         title: enabled ? "Annotations bridge enabled" : "Annotations bridge disabled",
       });
     },
-    [updateSettings],
+    [settings.annotationsBridge, updateSettings],
   );
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const postIntakeResponse = (
-      requestId: string,
-      result: { readonly ok: true } | { readonly ok: false; readonly reason: string },
-    ) => {
-      window.postMessage(
-        buildExternalComposerIntakeResponse(requestId, result),
-        window.location.origin,
-      );
-    };
-
-    const handleExternalComposerIntakeMessage = (event: MessageEvent<unknown>) => {
-      if (event.source !== window || event.origin !== window.location.origin) {
-        return;
-      }
-
-      const validation = validateExternalComposerIntakeMessage(event.data);
-      if (!validation.ok) {
-        if (validation.requestId) {
-          postIntakeResponse(validation.requestId, {
-            ok: false,
-            reason: validation.reason,
-          });
-        }
-        return;
-      }
-
-      if (!pointNShootBridgeEnabled) {
-        postIntakeResponse(validation.request.requestId, {
-          ok: false,
-          reason: "annotations-bridge-disabled",
-        });
-        return;
-      }
-
-      void insertExternalComposerIntakeRequest(validation.request)
-        .then(() => {
-          postIntakeResponse(validation.request.requestId, { ok: true });
-        })
-        .catch((error: unknown) => {
-          console.warn("[Annotations] failed to insert composer intake", error);
-          postIntakeResponse(validation.request.requestId, {
-            ok: false,
-            reason: "composer-insert-failed",
-          });
-        });
-    };
-
-    window.addEventListener("message", handleExternalComposerIntakeMessage);
-    return () => {
-      window.removeEventListener("message", handleExternalComposerIntakeMessage);
-    };
-  }, [insertExternalComposerIntakeRequest, pointNShootBridgeEnabled]);
-
-  const updatePointNShootSubscription = useCallback(() => {
-    if (!pointNShootBridgeEnabled) return;
+  const updateExternalComposerSubscription = useCallback(() => {
+    if (!annotationsBridgeEnabled) return;
     const api = readEnvironmentApi(environmentId);
     if (!api) return;
 
     void api.server
-      .updatePointNShootComposerIntakeSubscription(pointNShootSubscriptionRef.current)
+      .updateExternalComposerIntakeSubscription(externalComposerSubscriptionRef.current)
       .catch((error: unknown) => {
         console.warn("[Annotations] failed to refresh composer target", error);
       });
-  }, [environmentId, pointNShootBridgeEnabled]);
+  }, [environmentId, annotationsBridgeEnabled]);
 
   useEffect(() => {
-    updatePointNShootSubscription();
-  }, [activeThreadId, pointNShootTargetActivatedAtEpochMs, updatePointNShootSubscription]);
+    updateExternalComposerSubscription();
+  }, [
+    activeThreadId,
+    externalComposerTargetActivatedAtEpochMs,
+    updateExternalComposerSubscription,
+  ]);
 
   useEffect(() => {
-    if (!pointNShootBridgeEnabled) return;
-    const intervalId = window.setInterval(updatePointNShootSubscription, 5_000);
+    if (!annotationsBridgeEnabled) return;
+    const intervalId = window.setInterval(updateExternalComposerSubscription, 5_000);
     return () => window.clearInterval(intervalId);
-  }, [pointNShootBridgeEnabled, updatePointNShootSubscription]);
+  }, [annotationsBridgeEnabled, updateExternalComposerSubscription]);
 
   useEffect(() => {
-    if (!pointNShootBridgeEnabled) return;
+    if (!annotationsBridgeEnabled) return;
     const api = readEnvironmentApi(environmentId);
     if (!api) return;
 
-    return api.server.subscribePointNShootComposerIntake(
-      pointNShootSubscriptionRef.current,
+    return api.server.subscribeExternalComposerIntake(
+      externalComposerSubscriptionRef.current,
       (event) => {
-        if (event.type !== "composerIntakeReceived") return;
+        if (event.type !== "externalComposerIntakeReceived") return;
         const validation = validateExternalComposerIntakeMessage(event.payload);
         if (!validation.ok) {
           console.warn("[Annotations] ignored invalid composer intake", validation.reason);
-          void api.server.ackPointNShootComposerIntake({
+          void api.server.ackExternalComposerIntake({
             subscriberId: event.subscriberId,
             deliveryId: event.deliveryId,
             ok: false,
@@ -1912,7 +1863,7 @@ export default function ChatView(props: ChatViewProps) {
         void insertExternalComposerIntakeRequestRef
           .current(validation.request)
           .then(() =>
-            api.server.ackPointNShootComposerIntake({
+            api.server.ackExternalComposerIntake({
               subscriberId: event.subscriberId,
               deliveryId: event.deliveryId,
               ok: true,
@@ -1920,16 +1871,16 @@ export default function ChatView(props: ChatViewProps) {
           )
           .catch((error: unknown) => {
             console.warn("[Annotations] failed to insert composer intake", error);
-            return api.server.ackPointNShootComposerIntake({
+            return api.server.ackExternalComposerIntake({
               subscriberId: event.subscriberId,
               deliveryId: event.deliveryId,
               ok: false,
             });
           });
       },
-      { onResubscribe: updatePointNShootSubscription },
+      { onResubscribe: updateExternalComposerSubscription },
     );
-  }, [environmentId, pointNShootBridgeEnabled, updatePointNShootSubscription]);
+  }, [environmentId, annotationsBridgeEnabled, updateExternalComposerSubscription]);
   const activeTerminalLaunchContext =
     terminalLaunchContext?.threadId === activeThreadId
       ? terminalLaunchContext
@@ -3989,8 +3940,8 @@ export default function ChatView(props: ChatViewProps) {
                   toggleInteractionMode={toggleInteractionMode}
                   handleRuntimeModeChange={handleRuntimeModeChange}
                   handleInteractionModeChange={handleInteractionModeChange}
-                  pointNShootBridgeEnabled={pointNShootBridgeEnabled}
-                  onPointNShootBridgeEnabledChange={handlePointNShootBridgeEnabledChange}
+                  annotationsBridgeEnabled={annotationsBridgeEnabled}
+                  onAnnotationsBridgeEnabledChange={handleAnnotationsBridgeEnabledChange}
                   togglePlanSidebar={togglePlanSidebar}
                   focusComposer={focusComposer}
                   scheduleComposerFocus={scheduleComposerFocus}

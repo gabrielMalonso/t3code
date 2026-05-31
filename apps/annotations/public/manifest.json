@@ -11,7 +11,7 @@
     "type": "module"
   },
   "permissions": ["activeTab", "scripting", "offscreen", "downloads", "storage", "clipboardWrite"],
-  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
+  "host_permissions": ["<all_urls>"],
   "commands": {
     "toggle-annotations": {
       "suggested_key": {

@@ -6,48 +6,25 @@ import type {
   T3ComposerDeliveryResult,
 } from "../shared/types";
 
-const T3_COMPOSER_INTAKE_REQUEST_TYPE = "t3code.composer-intake.request.v1";
-const T3_COMPOSER_INTAKE_RESPONSE_TYPE = "t3code.composer-intake.response.v1";
+const T3_COMPOSER_INTAKE_REQUEST_TYPE = "t3code.external-composer-intake.request.v1";
+const T3_BRIDGE_DELIVER_REQUEST_TYPE = "t3code.annotations.bridge.deliver.v1";
+const T3_BRIDGE_PROTOCOL_VERSION = 1;
 const DEFAULT_T3_ORIGIN = "http://127.0.0.1:3773";
-const DEFAULT_T3_COMPOSER_INTAKE_ENDPOINT = `${DEFAULT_T3_ORIGIN}/api/annotations/composer-intake`;
-const DEFAULT_T3_COMPOSER_STATUS_ENDPOINT = `${DEFAULT_T3_COMPOSER_INTAKE_ENDPOINT}/status`;
-const LEGACY_T3_COMPOSER_INTAKE_ENDPOINT = `${DEFAULT_T3_ORIGIN}/api/pointnshoot/composer-intake`;
-const LEGACY_T3_COMPOSER_STATUS_ENDPOINT = `${LEGACY_T3_COMPOSER_INTAKE_ENDPOINT}/status`;
-const T3_TAB_URL_PATTERNS = ["http://127.0.0.1/*", "http://localhost/*"];
-const T3_COMPOSER_DELIVERY_TIMEOUT_MS = 1_500;
-const T3_COMPOSER_HTTP_TIMEOUT_MS = 1_500;
-const T3_COMPOSER_STATUS_TIMEOUT_MS = 1_500;
-const T3_COMPOSER_OPEN_TIMEOUT_MS = 5_000;
-
-type T3ComposerEndpoint = {
-  kind: "annotations" | "legacy-pointnshoot";
-  intakeEndpoint: string;
-  statusEndpoint: string;
-  extensionIdHeader: "x-annotations-extension-id" | "x-pointnshoot-extension-id";
-  source: T3ComposerIntakePayload["source"];
-};
-
-const T3_COMPOSER_ENDPOINTS: readonly T3ComposerEndpoint[] = [
-  {
-    kind: "annotations",
-    intakeEndpoint: DEFAULT_T3_COMPOSER_INTAKE_ENDPOINT,
-    statusEndpoint: DEFAULT_T3_COMPOSER_STATUS_ENDPOINT,
-    extensionIdHeader: "x-annotations-extension-id",
-    source: "annotations",
-  },
-  {
-    kind: "legacy-pointnshoot",
-    intakeEndpoint: LEGACY_T3_COMPOSER_INTAKE_ENDPOINT,
-    statusEndpoint: LEGACY_T3_COMPOSER_STATUS_ENDPOINT,
-    extensionIdHeader: "x-pointnshoot-extension-id",
-    source: "pointnshoot",
-  },
-] as const;
+const T3_BRIDGE_MANIFEST_ENDPOINT = `${DEFAULT_T3_ORIGIN}/api/annotations/bridge/manifest`;
+const T3_BRIDGE_PAIRING_REQUEST_ENDPOINT = `${DEFAULT_T3_ORIGIN}/api/annotations/bridge/v1/pairing/request`;
+const T3_BRIDGE_PAIRING_STATUS_ENDPOINT = `${DEFAULT_T3_ORIGIN}/api/annotations/bridge/v1/pairing/status`;
+const T3_BRIDGE_DELIVER_ENDPOINT = `${DEFAULT_T3_ORIGIN}/api/annotations/bridge/v1/deliver`;
+const T3_BRIDGE_STATUS_ENDPOINT = `${DEFAULT_T3_ORIGIN}/api/annotations/bridge/v1/status`;
+const T3_BRIDGE_DELIVER_TIMEOUT_MS = 1_500;
+const T3_BRIDGE_STATUS_TIMEOUT_MS = 1_500;
+const T3_BRIDGE_CLIENT_INSTALL_ID_STORAGE_KEY = "t3BridgeClientInstallId";
+const T3_BRIDGE_TOKEN_STORAGE_KEY = "t3BridgeToken";
+const T3_BRIDGE_PENDING_PAIRING_STORAGE_KEY = "t3BridgePendingPairing";
 
 export type T3ComposerIntakePayload = {
   type: typeof T3_COMPOSER_INTAKE_REQUEST_TYPE;
   requestId: string;
-  source: "annotations" | "pointnshoot";
+  source: "annotations";
   action: "insert";
   append: true;
   focus: true;
@@ -62,57 +39,21 @@ export type T3ComposerIntakePayload = {
   };
 };
 
-type T3ComposerBridgeResponse =
-  | {
-      type: typeof T3_COMPOSER_INTAKE_RESPONSE_TYPE;
-      requestId: string;
-      ok: true;
-      status: "inserted";
-    }
-  | {
-      type: typeof T3_COMPOSER_INTAKE_RESPONSE_TYPE;
-      requestId: string;
-      ok: false;
-      reason: string;
-    };
-
-export type T3ComposerDeliveryTab = Pick<
-  chrome.tabs.Tab,
-  "active" | "id" | "pendingUrl" | "status" | "title" | "url" | "windowId"
->;
-
-type T3ComposerExecuteScriptDetails = {
-  target: { tabId: number };
-  func: typeof postT3ComposerIntakeRequest;
-  args: [T3ComposerIntakePayload, typeof T3_COMPOSER_INTAKE_RESPONSE_TYPE, number];
-};
-
-type T3ComposerExecuteScriptResult = {
-  result?: unknown;
-};
-
-export type T3ComposerDeliveryChrome = {
-  tabs: {
-    query(queryInfo: chrome.tabs.QueryInfo): Promise<T3ComposerDeliveryTab[]>;
-    create(createProperties: chrome.tabs.CreateProperties): Promise<T3ComposerDeliveryTab>;
-    get(tabId: number): Promise<T3ComposerDeliveryTab>;
-    update(
-      tabId: number,
-      updateProperties: chrome.tabs.UpdateProperties,
-    ): Promise<T3ComposerDeliveryTab>;
-    onUpdated: {
-      addListener(listener: Parameters<typeof chrome.tabs.onUpdated.addListener>[0]): void;
-      removeListener(listener: Parameters<typeof chrome.tabs.onUpdated.removeListener>[0]): void;
-    };
-  };
-  scripting: {
-    executeScript(
-      details: T3ComposerExecuteScriptDetails,
-    ): Promise<T3ComposerExecuteScriptResult[]>;
-  };
-};
-
 type T3ComposerFetch = typeof fetch;
+type T3BridgePendingPairing = {
+  requestId: string;
+  pollSecret: string;
+  expiresAtEpochMs: number;
+};
+type T3BridgeManifest = {
+  protocolVersion: number;
+  appVersion: string;
+  pairingRequired: boolean;
+  bridgeEnabled: boolean;
+  status: "ready" | "disabled" | "remote-blocked";
+};
+type T3BridgeFailureResult = { ok: false; reason: string; message?: string };
+type T3BridgeTokenResult = { ok: true; token: string } | T3BridgeFailureResult;
 type T3ComposerDiagnosticSink = (diagnostic: {
   level: "info" | "warn";
   step: string;
@@ -125,7 +66,7 @@ export type T3ComposerStatusOptions = {
   reason?: string;
 };
 
-type T3ComposerHttpBridgeResponse =
+type T3BridgeDeliverResponse =
   | {
       ok: true;
       requestId: string;
@@ -142,7 +83,6 @@ export async function deliverToT3Composer(
     savedImage: SavedImage;
     requestId?: string;
   },
-  chromeApi: T3ComposerDeliveryChrome = readChromeApi(),
   fetchApi: T3ComposerFetch = globalThis.fetch.bind(globalThis),
   onDiagnostic?: T3ComposerDiagnosticSink,
 ): Promise<T3ComposerDeliveryResult> {
@@ -152,108 +92,24 @@ export async function deliverToT3Composer(
     "delivery:start",
     {
       requestId: payload.requestId,
-      endpoint: DEFAULT_T3_COMPOSER_INTAKE_ENDPOINT,
+      endpoint: T3_BRIDGE_DELIVER_ENDPOINT,
       imagePath: payload.image.path,
       imageBytes: payload.image.sizeBytes,
     },
     onDiagnostic,
   );
 
-  const httpDelivery = await deliverPayloadToHttpBridge(fetchApi, payload, onDiagnostic);
+  const bridgeDelivery = await deliverPayloadToBridge(fetchApi, payload, onDiagnostic);
   logT3Delivery(
-    httpDelivery.ok ? "info" : "warn",
-    "delivery:http-result",
+    bridgeDelivery.ok ? "info" : "warn",
+    "delivery:bridge-result",
     {
       requestId: payload.requestId,
-      ...deliveryLogDetails(httpDelivery),
+      ...deliveryLogDetails(bridgeDelivery),
     },
     onDiagnostic,
   );
-  if (httpDelivery.ok) return httpDelivery;
-  if (!shouldUseTabFallbackAfterHttp(httpDelivery)) return httpDelivery;
-
-  const candidateTabs = sortCandidateTabs(
-    await chromeApi.tabs.query({
-      url: T3_TAB_URL_PATTERNS,
-      windowType: "normal",
-    }),
-  );
-  logT3Delivery(
-    "info",
-    "delivery:tab-candidates",
-    {
-      requestId: payload.requestId,
-      count: candidateTabs.length,
-      tabs: candidateTabs.map(tabLogDetails),
-    },
-    onDiagnostic,
-  );
-
-  for (const tab of candidateTabs) {
-    logT3Delivery(
-      "info",
-      "delivery:tab-attempt",
-      {
-        requestId: payload.requestId,
-        tab: tabLogDetails(tab),
-      },
-      onDiagnostic,
-    );
-    const result = await deliverPayloadToTab(chromeApi, tab, payload);
-    logT3Delivery(
-      result.ok ? "info" : "warn",
-      "delivery:tab-result",
-      {
-        requestId: payload.requestId,
-        tab: tabLogDetails(tab),
-        ...deliveryLogDetails(result),
-      },
-      onDiagnostic,
-    );
-    if (result.ok) return result;
-  }
-
-  try {
-    const created = await chromeApi.tabs.create({ url: DEFAULT_T3_ORIGIN, active: false });
-    logT3Delivery(
-      "info",
-      "delivery:open-t3-tab",
-      {
-        requestId: payload.requestId,
-        tab: tabLogDetails(created),
-      },
-      onDiagnostic,
-    );
-    await waitForTabReady(chromeApi, created.id, T3_COMPOSER_OPEN_TIMEOUT_MS);
-    const result = await deliverPayloadToTab(chromeApi, created, payload, { focusOnSuccess: true });
-    logT3Delivery(
-      result.ok ? "info" : "warn",
-      "delivery:opened-tab-result",
-      {
-        requestId: payload.requestId,
-        tab: tabLogDetails(created),
-        ...deliveryLogDetails(result),
-      },
-      onDiagnostic,
-    );
-    return result;
-  } catch (error) {
-    logT3Delivery(
-      "warn",
-      "delivery:open-t3-failed",
-      {
-        requestId: payload.requestId,
-        message: errorMessage(error),
-      },
-      onDiagnostic,
-    );
-    return {
-      ok: false,
-      requestId: payload.requestId,
-      reason: "t3-open-failed",
-      message: errorMessage(error),
-    };
-  }
+  return bridgeDelivery;
 }
 
 export async function readT3ComposerStatus(
@@ -267,12 +123,12 @@ export async function readT3ComposerStatus(
     {
       requestId: options.requestId ?? null,
       reason: options.reason ?? null,
-      endpoint: DEFAULT_T3_COMPOSER_STATUS_ENDPOINT,
+      endpoint: T3_BRIDGE_STATUS_ENDPOINT,
     },
     onDiagnostic,
   );
 
-  const status = await fetchT3ComposerStatus(fetchApi, onDiagnostic);
+  const status = await fetchT3BridgeStatus(fetchApi, onDiagnostic);
   logT3Delivery(
     status.ok ? "info" : "warn",
     "status:result",
@@ -301,10 +157,7 @@ export function buildT3ComposerIntakePayload(input: {
     prompt: input.markdownPrompt,
     image: {
       path: input.savedImage.filename,
-      name:
-        basenameFromPath(input.savedImage.filename) ||
-        basenameFromPath(input.savedImage.requestedFilename) ||
-        "annotations.png",
+      name: imageNameFromSavedImage(input.savedImage),
       mimeType: "image/png",
       sizeBytes: input.savedImage.imageBytes,
       width: input.savedImage.width,
@@ -313,128 +166,47 @@ export function buildT3ComposerIntakePayload(input: {
   };
 }
 
-async function deliverPayloadToTab(
-  chromeApi: T3ComposerDeliveryChrome,
-  tab: T3ComposerDeliveryTab,
-  payload: T3ComposerIntakePayload,
-  options: { focusOnSuccess?: boolean } = {},
-): Promise<T3ComposerDeliveryResult> {
-  if (typeof tab.id !== "number") {
-    return {
-      ok: false,
-      requestId: payload.requestId,
-      reason: "tab-id-missing",
-      message: "Chrome returned a tab without an id.",
-    };
-  }
-
-  try {
-    const injectionResults = await chromeApi.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: postT3ComposerIntakeRequest,
-      args: [payload, T3_COMPOSER_INTAKE_RESPONSE_TYPE, T3_COMPOSER_DELIVERY_TIMEOUT_MS],
-    });
-    const response = injectionResults[0]?.result;
-    if (!isT3ComposerBridgeResponse(response, payload.requestId)) {
-      return {
-        ok: false,
-        requestId: payload.requestId,
-        reason: "t3-no-response",
-        message: responseToMessage(response),
-      };
-    }
-
-    if (!response.ok) {
-      return { ok: false, requestId: payload.requestId, reason: response.reason };
-    }
-
-    if (options.focusOnSuccess) {
-      await chromeApi.tabs.update(tab.id, { active: true }).catch(() => tab);
-    }
-
-    return {
-      ok: true,
-      requestId: payload.requestId,
-      tabId: tab.id,
-      url: tab.url ?? tab.pendingUrl ?? null,
-      mode: "tab",
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      requestId: payload.requestId,
-      reason: "t3-injection-failed",
-      message: errorMessage(error),
-    };
-  }
-}
-
-async function deliverPayloadToHttpBridge(
+async function deliverPayloadToBridge(
   fetchApi: T3ComposerFetch,
   payload: T3ComposerIntakePayload,
   onDiagnostic?: T3ComposerDiagnosticSink,
 ): Promise<T3ComposerDeliveryResult> {
-  let lastResult: T3ComposerDeliveryResult | null = null;
-
-  for (const endpoint of T3_COMPOSER_ENDPOINTS) {
-    const result = await deliverPayloadToHttpBridgeEndpoint(fetchApi, payload, endpoint);
-    lastResult = result;
-    logT3Delivery(
-      result.ok ? "info" : "warn",
-      "delivery:http-endpoint-result",
-      {
-        requestId: payload.requestId,
-        endpointKind: endpoint.kind,
-        endpoint: endpoint.intakeEndpoint,
-        ...deliveryLogDetails(result),
-      },
-      onDiagnostic,
-    );
-    if (result.ok) return result;
-    if (!shouldTryNextHttpEndpoint(result)) return result;
-  }
-
-  return (
-    lastResult ?? {
+  const tokenResult = await ensureT3BridgeToken(fetchApi, onDiagnostic);
+  if (!tokenResult.ok) {
+    return {
       ok: false,
       requestId: payload.requestId,
-      reason: "t3-http-failed",
-      message: "No T3 Composer HTTP endpoints were attempted.",
-    }
-  );
-}
+      reason: tokenResult.reason,
+      message: tokenResult.message,
+    };
+  }
 
-async function deliverPayloadToHttpBridgeEndpoint(
-  fetchApi: T3ComposerFetch,
-  payload: T3ComposerIntakePayload,
-  endpoint: T3ComposerEndpoint,
-): Promise<T3ComposerDeliveryResult> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), T3_COMPOSER_HTTP_TIMEOUT_MS);
-  const endpointPayload = payloadForEndpoint(payload, endpoint);
-
+  const timeout = setTimeout(() => controller.abort(), T3_BRIDGE_DELIVER_TIMEOUT_MS);
   try {
-    const response = await fetchApi(endpoint.intakeEndpoint, {
+    const response = await fetchApi(T3_BRIDGE_DELIVER_ENDPOINT, {
       method: "POST",
       headers: {
+        authorization: `Bearer ${tokenResult.token}`,
         "content-type": "application/json",
-        [endpoint.extensionIdHeader]: readExtensionId(),
       },
-      body: JSON.stringify(endpointPayload),
+      body: JSON.stringify(toT3BridgeDeliverPayload(payload)),
       signal: controller.signal,
     });
-    const body = (await response.json().catch(() => null)) as T3ComposerHttpBridgeResponse | null;
+    const body = (await response.json().catch(() => null)) as T3BridgeDeliverResponse | null;
     if (response.ok && body?.ok) {
       return {
         ok: true,
         requestId: payload.requestId,
-        tabId: null,
-        url: endpoint.intakeEndpoint,
-        mode: "http",
+        url: T3_BRIDGE_DELIVER_ENDPOINT,
       };
     }
 
-    const reason = body?.ok === false ? body.reason : `t3-http-${response.status}`;
+    if (response.status === 401) {
+      await clearT3BridgeToken();
+    }
+
+    const reason = body?.ok === false ? body.reason : "delivery-failed";
     return {
       ok: false,
       requestId: payload.requestId,
@@ -449,7 +221,7 @@ async function deliverPayloadToHttpBridgeEndpoint(
     return {
       ok: false,
       requestId: payload.requestId,
-      reason: "t3-http-failed",
+      reason: "app-unreachable",
       message: errorMessage(error),
     };
   } finally {
@@ -457,59 +229,39 @@ async function deliverPayloadToHttpBridgeEndpoint(
   }
 }
 
-async function fetchT3ComposerStatus(
+async function fetchT3BridgeStatus(
   fetchApi: T3ComposerFetch,
   onDiagnostic?: T3ComposerDiagnosticSink,
 ): Promise<T3ComposerBridgeStatusResult> {
-  let lastStatus: T3ComposerBridgeStatusResult | null = null;
-
-  for (const endpoint of T3_COMPOSER_ENDPOINTS) {
-    const status = await fetchT3ComposerStatusEndpoint(fetchApi, endpoint);
-    lastStatus = status;
-    logT3Delivery(
-      status.ok ? "info" : "warn",
-      "status:endpoint-result",
-      {
-        endpointKind: endpoint.kind,
-        endpoint: endpoint.statusEndpoint,
-        ...statusLogDetails(status),
-      },
-      onDiagnostic,
-    );
-    if (status.ok) return status;
-    if (!shouldTryNextStatusEndpoint(status)) return status;
+  const tokenResult = await ensureT3BridgeToken(fetchApi, onDiagnostic);
+  if (!tokenResult.ok) {
+    return {
+      ok: false,
+      reason: tokenResult.reason,
+      message: tokenResult.message,
+    };
   }
 
-  return (
-    lastStatus ?? {
-      ok: false,
-      reason: "t3-status-http-failed",
-      message: "No T3 Composer status endpoints were attempted.",
-    }
-  );
-}
-
-async function fetchT3ComposerStatusEndpoint(
-  fetchApi: T3ComposerFetch,
-  endpoint: T3ComposerEndpoint,
-): Promise<T3ComposerBridgeStatusResult> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), T3_COMPOSER_STATUS_TIMEOUT_MS);
-
+  const timeout = setTimeout(() => controller.abort(), T3_BRIDGE_STATUS_TIMEOUT_MS);
   try {
-    const response = await fetchApi(endpoint.statusEndpoint, {
+    const response = await fetchApi(T3_BRIDGE_STATUS_ENDPOINT, {
       method: "GET",
       headers: {
-        [endpoint.extensionIdHeader]: readExtensionId(),
+        authorization: `Bearer ${tokenResult.token}`,
       },
       signal: controller.signal,
     });
     const body = (await response.json().catch(() => null)) as unknown;
     if (isT3ComposerBridgeStatusResult(body)) return body;
 
+    if (response.status === 401) {
+      await clearT3BridgeToken();
+    }
+
     return {
       ok: false,
-      reason: `t3-status-http-${response.status}`,
+      reason: response.status === 401 ? "unauthorized" : "app-unreachable",
       message: response.ok
         ? "T3 status bridge returned a malformed response."
         : `HTTP ${response.status} ${response.statusText || "response"}`,
@@ -517,7 +269,7 @@ async function fetchT3ComposerStatusEndpoint(
   } catch (error) {
     return {
       ok: false,
-      reason: "t3-status-http-failed",
+      reason: "app-unreachable",
       message: errorMessage(error),
     };
   } finally {
@@ -525,44 +277,238 @@ async function fetchT3ComposerStatusEndpoint(
   }
 }
 
-function shouldUseTabFallbackAfterHttp(result: T3ComposerDeliveryResult): boolean {
-  return !result.ok && isHttpEndpointCompatibilityFailure(result.reason);
+async function ensureT3BridgeToken(
+  fetchApi: T3ComposerFetch,
+  onDiagnostic?: T3ComposerDiagnosticSink,
+): Promise<T3BridgeTokenResult> {
+  const manifest = await fetchT3BridgeManifest(fetchApi);
+  if (!manifest.ok) return manifest;
+  if (manifest.manifest.protocolVersion !== T3_BRIDGE_PROTOCOL_VERSION) {
+    return {
+      ok: false,
+      reason: "protocol-version-mismatch",
+      message: `T3 bridge protocol ${manifest.manifest.protocolVersion} is not supported.`,
+    };
+  }
+  if (!manifest.manifest.bridgeEnabled) {
+    return {
+      ok: false,
+      reason: "bridge-disabled",
+      message: "Annotations bridge is disabled in T3 Code.",
+    };
+  }
+  if (manifest.manifest.status === "remote-blocked") {
+    return {
+      ok: false,
+      reason: "remote-bridge-disabled",
+      message: "Annotations bridge is blocked while T3 Code is network-reachable.",
+    };
+  }
+
+  const token = await readT3BridgeToken();
+  if (token) return { ok: true, token };
+
+  const pendingToken = await resumeT3BridgePairing(fetchApi, onDiagnostic);
+  if (pendingToken.ok) return pendingToken;
+  if (pendingToken.reason === "pairing-pending") return pendingToken;
+
+  return requestT3BridgePairing(fetchApi, onDiagnostic);
 }
 
-function shouldTryNextHttpEndpoint(result: T3ComposerDeliveryResult): boolean {
-  if (result.ok) return false;
-  return isHttpEndpointCompatibilityFailure(result.reason);
+async function fetchT3BridgeManifest(
+  fetchApi: T3ComposerFetch,
+): Promise<{ ok: true; manifest: T3BridgeManifest } | T3BridgeFailureResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), T3_BRIDGE_STATUS_TIMEOUT_MS);
+  try {
+    const response = await fetchApi(T3_BRIDGE_MANIFEST_ENDPOINT, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    const body = (await response.json().catch(() => null)) as unknown;
+    if (!response.ok || !isT3BridgeManifest(body)) {
+      return {
+        ok: false,
+        reason: "app-unreachable",
+        message: response.ok
+          ? "T3 bridge manifest returned a malformed response."
+          : `HTTP ${response.status} ${response.statusText || "response"}`,
+      };
+    }
+    return { ok: true, manifest: body };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "app-unreachable",
+      message: errorMessage(error),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
-function shouldTryNextStatusEndpoint(result: T3ComposerBridgeStatusResult): boolean {
-  if (result.ok) return false;
-  return (
-    result.reason === "t3-status-http-failed" ||
-    result.reason === "t3-status-http-200" ||
-    result.reason === "t3-status-http-404" ||
-    result.reason === "t3-status-http-405"
+async function resumeT3BridgePairing(
+  fetchApi: T3ComposerFetch,
+  onDiagnostic?: T3ComposerDiagnosticSink,
+): Promise<T3BridgeTokenResult> {
+  const pending = await readT3BridgePendingPairing();
+  if (!pending) {
+    return { ok: false, reason: "not-paired" };
+  }
+  if (pending.expiresAtEpochMs <= Date.now()) {
+    await clearT3BridgePendingPairing();
+    return { ok: false, reason: "pairing-expired" };
+  }
+
+  const result = await pollT3BridgePairing(fetchApi, pending);
+  logT3Delivery(
+    result.ok ? "info" : "warn",
+    "pairing:poll",
+    {
+      requestId: pending.requestId,
+      reason: result.ok ? null : result.reason,
+    },
+    onDiagnostic,
   );
+  return result;
 }
 
-function isHttpEndpointCompatibilityFailure(reason: string): boolean {
-  return (
-    reason === "annotations-extension-not-allowed" ||
-    reason === "t3-http-failed" ||
-    reason === "t3-http-200" ||
-    reason === "t3-http-403" ||
-    reason === "t3-http-404" ||
-    reason === "t3-http-405"
-  );
+async function requestT3BridgePairing(
+  fetchApi: T3ComposerFetch,
+  onDiagnostic?: T3ComposerDiagnosticSink,
+): Promise<T3BridgeTokenResult> {
+  const clientInstallId = await readOrCreateT3BridgeClientInstallId();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), T3_BRIDGE_STATUS_TIMEOUT_MS);
+  try {
+    const response = await fetchApi(T3_BRIDGE_PAIRING_REQUEST_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        protocolVersion: T3_BRIDGE_PROTOCOL_VERSION,
+        clientInstallId,
+        clientName: "Annotations",
+        extensionId: readExtensionId(),
+        browser: navigator.userAgent,
+      }),
+      signal: controller.signal,
+    });
+    const body = (await response.json().catch(() => null)) as {
+      ok?: boolean;
+      requestId?: unknown;
+      pollSecret?: unknown;
+      expiresAtEpochMs?: unknown;
+      reason?: unknown;
+      message?: unknown;
+    } | null;
+
+    if (response.ok && body?.ok === true && isPendingPairingBody(body)) {
+      const pending = {
+        requestId: body.requestId,
+        pollSecret: body.pollSecret,
+        expiresAtEpochMs: body.expiresAtEpochMs,
+      };
+      await writeT3BridgePendingPairing(pending);
+      logT3Delivery(
+        "info",
+        "pairing:requested",
+        { requestId: pending.requestId, expiresAtEpochMs: pending.expiresAtEpochMs },
+        onDiagnostic,
+      );
+      return {
+        ok: false,
+        reason: "pairing-pending",
+        message: "Approve Annotations in T3 Code Settings > Connections.",
+      };
+    }
+
+    return {
+      ok: false,
+      reason: typeof body?.reason === "string" ? body.reason : "app-unreachable",
+      message:
+        typeof body?.message === "string"
+          ? body.message
+          : `HTTP ${response.status} ${response.statusText || "response"}`,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "app-unreachable",
+      message: errorMessage(error),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
-function payloadForEndpoint(
-  payload: T3ComposerIntakePayload,
-  endpoint: T3ComposerEndpoint,
-): T3ComposerIntakePayload {
-  if (payload.source === endpoint.source) return payload;
+async function pollT3BridgePairing(
+  fetchApi: T3ComposerFetch,
+  pending: T3BridgePendingPairing,
+): Promise<T3BridgeTokenResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), T3_BRIDGE_STATUS_TIMEOUT_MS);
+  try {
+    const response = await fetchApi(T3_BRIDGE_PAIRING_STATUS_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        requestId: pending.requestId,
+        pollSecret: pending.pollSecret,
+      }),
+      signal: controller.signal,
+    });
+    const body = (await response.json().catch(() => null)) as {
+      ok?: boolean;
+      token?: unknown;
+      reason?: unknown;
+      message?: unknown;
+      status?: unknown;
+    } | null;
+
+    if (response.ok && body?.ok === true && typeof body.token === "string") {
+      await writeT3BridgeToken(body.token);
+      await clearT3BridgePendingPairing();
+      return { ok: true, token: body.token };
+    }
+
+    const reason = typeof body?.reason === "string" ? body.reason : "pairing-pending";
+    if (reason === "pairing-rejected" || reason === "pairing-expired") {
+      await clearT3BridgePendingPairing();
+    }
+    return {
+      ok: false,
+      reason,
+      message:
+        typeof body?.message === "string"
+          ? body.message
+          : reason === "pairing-pending"
+            ? "Approve Annotations in T3 Code Settings > Connections."
+            : undefined,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "app-unreachable",
+      message: errorMessage(error),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function toT3BridgeDeliverPayload(payload: T3ComposerIntakePayload) {
   return {
-    ...payload,
-    source: endpoint.source,
+    type: T3_BRIDGE_DELIVER_REQUEST_TYPE,
+    requestId: payload.requestId,
+    action: payload.action,
+    append: payload.append,
+    focus: payload.focus,
+    prompt: payload.prompt,
+    image: payload.image,
   };
 }
 
@@ -570,115 +516,125 @@ function readExtensionId(): string {
   return globalThis.chrome?.runtime?.id ?? "";
 }
 
-function postT3ComposerIntakeRequest(
-  payload: T3ComposerIntakePayload,
-  responseType: typeof T3_COMPOSER_INTAKE_RESPONSE_TYPE,
-  timeoutMs: number,
-): Promise<unknown> {
-  return new Promise((resolve) => {
-    const timeout = window.setTimeout(() => {
-      cleanup();
-      resolve({
-        type: responseType,
-        requestId: payload.requestId,
-        ok: false,
-        reason: "t3-response-timeout",
-      });
-    }, timeoutMs);
+let memoryBridgeStorage: Record<string, unknown> = {};
 
-    const cleanup = () => {
-      window.clearTimeout(timeout);
-      window.removeEventListener("message", handleMessage);
-    };
-
-    const handleMessage = (event: MessageEvent<unknown>) => {
-      const data = event.data;
-      if (
-        event.source !== window ||
-        !data ||
-        typeof data !== "object" ||
-        (data as { type?: unknown }).type !== responseType ||
-        (data as { requestId?: unknown }).requestId !== payload.requestId
-      ) {
-        return;
-      }
-      cleanup();
-      resolve(data);
-    };
-
-    window.addEventListener("message", handleMessage);
-    window.postMessage(payload, window.location.origin);
-  });
+export function __resetT3BridgeStorageForTests(): void {
+  memoryBridgeStorage = {};
 }
 
-function sortCandidateTabs(tabs: T3ComposerDeliveryTab[]): T3ComposerDeliveryTab[] {
-  return tabs
-    .filter((tab) => typeof tab.id === "number")
-    .toSorted((left, right) => tabScore(left) - tabScore(right));
+export function __setT3BridgeTokenForTests(token: string): void {
+  memoryBridgeStorage = { ...memoryBridgeStorage, [T3_BRIDGE_TOKEN_STORAGE_KEY]: token };
 }
 
-function tabScore(tab: T3ComposerDeliveryTab): number {
-  const url = tab.url ?? tab.pendingUrl ?? "";
-  const title = tab.title ?? "";
-  if (url.startsWith(DEFAULT_T3_ORIGIN)) return 0;
-  if (/t3\s*code/i.test(title) || /t3code/i.test(url)) return 1;
-  if (tab.active) return 8;
-  return 10;
+function readStorageArea(): chrome.storage.StorageArea | null {
+  return globalThis.chrome?.storage?.local ?? null;
 }
 
-function waitForTabReady(
-  chromeApi: T3ComposerDeliveryChrome,
-  tabId: number | undefined,
-  timeoutMs: number,
-): Promise<void> {
-  if (typeof tabId !== "number") return Promise.resolve();
-
-  return chromeApi.tabs.get(tabId).then((tab) => {
-    if (tab.status === "complete") return;
-
-    return new Promise<void>((resolve) => {
-      const timeout = setTimeout(() => {
-        cleanup();
-        resolve();
-      }, timeoutMs);
-
-      const cleanup = () => {
-        clearTimeout(timeout);
-        chromeApi.tabs.onUpdated.removeListener(handleUpdated);
-      };
-
-      const handleUpdated: Parameters<typeof chrome.tabs.onUpdated.addListener>[0] = (
-        updatedTabId,
-        changeInfo,
-      ) => {
-        if (updatedTabId !== tabId || changeInfo.status !== "complete") return;
-        cleanup();
-        resolve();
-      };
-
-      chromeApi.tabs.onUpdated.addListener(handleUpdated);
-    });
-  });
+async function storageGet(keys: string[]): Promise<Record<string, unknown>> {
+  const storage = readStorageArea();
+  if (!storage) {
+    return Object.fromEntries(keys.map((key) => [key, memoryBridgeStorage[key]]));
+  }
+  return (await storage.get(keys)) as Record<string, unknown>;
 }
 
-function isT3ComposerBridgeResponse(
-  value: unknown,
-  requestId: string,
-): value is T3ComposerBridgeResponse {
+async function storageSet(items: Record<string, unknown>): Promise<void> {
+  const storage = readStorageArea();
+  if (!storage) {
+    memoryBridgeStorage = { ...memoryBridgeStorage, ...items };
+    return;
+  }
+  await storage.set(items);
+}
+
+async function storageRemove(keys: string | string[]): Promise<void> {
+  const storage = readStorageArea();
+  const keyList = Array.isArray(keys) ? keys : [keys];
+  if (!storage) {
+    memoryBridgeStorage = Object.fromEntries(
+      Object.entries(memoryBridgeStorage).filter(([key]) => !keyList.includes(key)),
+    );
+    return;
+  }
+  await storage.remove(keys);
+}
+
+async function readOrCreateT3BridgeClientInstallId(): Promise<string> {
+  const values = await storageGet([T3_BRIDGE_CLIENT_INSTALL_ID_STORAGE_KEY]);
+  const existing = values[T3_BRIDGE_CLIENT_INSTALL_ID_STORAGE_KEY];
+  if (typeof existing === "string" && existing.trim().length > 0) return existing;
+
+  const next = createBridgeRandomId();
+  await storageSet({ [T3_BRIDGE_CLIENT_INSTALL_ID_STORAGE_KEY]: next });
+  return next;
+}
+
+async function readT3BridgeToken(): Promise<string | null> {
+  const values = await storageGet([T3_BRIDGE_TOKEN_STORAGE_KEY]);
+  const token = values[T3_BRIDGE_TOKEN_STORAGE_KEY];
+  return typeof token === "string" && token.trim().length > 0 ? token : null;
+}
+
+async function writeT3BridgeToken(token: string): Promise<void> {
+  await storageSet({ [T3_BRIDGE_TOKEN_STORAGE_KEY]: token });
+}
+
+async function clearT3BridgeToken(): Promise<void> {
+  await storageRemove(T3_BRIDGE_TOKEN_STORAGE_KEY);
+}
+
+async function readT3BridgePendingPairing(): Promise<T3BridgePendingPairing | null> {
+  const values = await storageGet([T3_BRIDGE_PENDING_PAIRING_STORAGE_KEY]);
+  const pending = values[T3_BRIDGE_PENDING_PAIRING_STORAGE_KEY];
+  return isT3BridgePendingPairing(pending) ? pending : null;
+}
+
+async function writeT3BridgePendingPairing(pending: T3BridgePendingPairing): Promise<void> {
+  await storageSet({ [T3_BRIDGE_PENDING_PAIRING_STORAGE_KEY]: pending });
+}
+
+async function clearT3BridgePendingPairing(): Promise<void> {
+  await storageRemove(T3_BRIDGE_PENDING_PAIRING_STORAGE_KEY);
+}
+
+function createBridgeRandomId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `annotations-${Date.now()}-${Math.random()}`;
+}
+
+function isT3BridgeManifest(value: unknown): value is T3BridgeManifest {
   return (
-    !!value &&
-    typeof value === "object" &&
-    (value as { type?: unknown }).type === T3_COMPOSER_INTAKE_RESPONSE_TYPE &&
-    (value as { requestId?: unknown }).requestId === requestId &&
-    typeof (value as { ok?: unknown }).ok === "boolean"
+    isRecord(value) &&
+    typeof value.protocolVersion === "number" &&
+    typeof value.appVersion === "string" &&
+    typeof value.pairingRequired === "boolean" &&
+    typeof value.bridgeEnabled === "boolean" &&
+    (value.status === "ready" || value.status === "disabled" || value.status === "remote-blocked")
   );
 }
 
-function responseToMessage(value: unknown): string {
-  if (value && typeof value === "object" && "reason" in value && typeof value.reason === "string") {
-    return value.reason;
-  }
-  return "No T3 Composer bridge response was received.";
+function isPendingPairingBody(value: {
+  requestId?: unknown;
+  pollSecret?: unknown;
+  expiresAtEpochMs?: unknown;
+}): value is { requestId: string; pollSecret: string; expiresAtEpochMs: number } {
+  return (
+    typeof value.requestId === "string" &&
+    typeof value.pollSecret === "string" &&
+    typeof value.expiresAtEpochMs === "number"
+  );
+}
+
+function isT3BridgePendingPairing(value: unknown): value is T3BridgePendingPairing {
+  return (
+    isRecord(value) &&
+    typeof value.requestId === "string" &&
+    typeof value.pollSecret === "string" &&
+    typeof value.expiresAtEpochMs === "number"
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function basenameFromPath(path: string): string {
@@ -687,15 +643,23 @@ function basenameFromPath(path: string): string {
   return slashIndex === -1 ? normalized : normalized.slice(slashIndex + 1);
 }
 
+function imageNameFromSavedImage(savedImage: SavedImage): string {
+  const actualName = basenameFromPath(savedImage.filename);
+  const requestedName = basenameFromPath(savedImage.requestedFilename);
+  if (isPngName(actualName)) return actualName;
+  if (isPngName(requestedName)) return requestedName;
+  return actualName || requestedName || "annotations.png";
+}
+
+function isPngName(name: string): boolean {
+  return name.toLowerCase().endsWith(".png");
+}
+
 function createRequestId(savedImage: SavedImage): string {
   const randomSuffix = crypto.randomUUID
     ? crypto.randomUUID()
     : Math.random().toString(16).slice(2);
   return `annotations-${savedImage.downloadId}-${randomSuffix}`;
-}
-
-function readChromeApi(): T3ComposerDeliveryChrome {
-  return chrome as unknown as T3ComposerDeliveryChrome;
 }
 
 function logT3Delivery(
@@ -713,23 +677,10 @@ function logT3Delivery(
   });
 }
 
-function tabLogDetails(tab: T3ComposerDeliveryTab): Record<string, unknown> {
-  return {
-    id: tab.id ?? null,
-    active: tab.active ?? null,
-    status: tab.status ?? null,
-    title: tab.title ?? null,
-    url: tab.url ?? tab.pendingUrl ?? null,
-    windowId: tab.windowId ?? null,
-  };
-}
-
 function deliveryLogDetails(result: T3ComposerDeliveryResult): Record<string, unknown> {
   if (result.ok) {
     return {
       ok: true,
-      mode: result.mode ?? null,
-      tabId: result.tabId,
       url: result.url,
     };
   }

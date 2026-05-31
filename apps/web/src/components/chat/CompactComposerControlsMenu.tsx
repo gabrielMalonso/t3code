@@ -23,9 +23,9 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   showInteractionModeToggle: boolean;
   traitsMenuContent?: ReactNode;
   compactContextDisabled?: boolean;
-  pointNShootBridgeEnabled?: boolean;
+  annotationsBridgeEnabled?: boolean;
   onCompactContext?: () => void;
-  onPointNShootBridgeEnabledChange?: (enabled: boolean) => void;
+  onAnnotationsBridgeEnabledChange?: (enabled: boolean) => void;
   onToggleInteractionMode: () => void;
   onTogglePlanSidebar: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -79,7 +79,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
           <MenuRadioItem value="auto-accept-edits">Auto-accept edits</MenuRadioItem>
           <MenuRadioItem value="full-access">Full access</MenuRadioItem>
         </MenuRadioGroup>
-        {props.onCompactContext || props.onPointNShootBridgeEnabledChange ? (
+        {props.onCompactContext || props.onAnnotationsBridgeEnabledChange ? (
           <>
             <MenuDivider />
             {props.onCompactContext ? (
@@ -91,12 +91,12 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
                 Compact context
               </MenuItem>
             ) : null}
-            {props.onPointNShootBridgeEnabledChange ? (
+            {props.onAnnotationsBridgeEnabledChange ? (
               <MenuCheckboxItem
-                checked={props.pointNShootBridgeEnabled ?? false}
+                checked={props.annotationsBridgeEnabled ?? false}
                 variant="switch"
                 onCheckedChange={(checked) =>
-                  props.onPointNShootBridgeEnabledChange?.(checked === true)
+                  props.onAnnotationsBridgeEnabledChange?.(checked === true)
                 }
               >
                 Annotations bridge

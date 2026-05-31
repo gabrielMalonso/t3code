@@ -1,10 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  __resetT3BridgeStorageForTests,
+  __setT3BridgeTokenForTests,
   buildT3ComposerIntakePayload,
   deliverToT3Composer,
   readT3ComposerStatus,
-  type T3ComposerDeliveryChrome,
-  type T3ComposerDeliveryTab,
 } from "../../src/background/t3-composer";
 import type { SavedImage } from "../../src/shared/types";
 
@@ -17,18 +17,17 @@ const savedImage: SavedImage = {
   height: 720,
 };
 
-const successfulExecuteScript: T3ComposerDeliveryChrome["scripting"]["executeScript"] = async (
-  details,
-) => [
-  {
-    result: {
-      type: "t3code.composer-intake.response.v1",
-      requestId: details.args[0].requestId,
-      ok: true,
-      status: "inserted",
-    },
-  },
-];
+const bridgeManifest = {
+  protocolVersion: 1,
+  appVersion: "0.0.24",
+  pairingRequired: true,
+  bridgeEnabled: true,
+  status: "ready",
+};
+
+beforeEach(() => {
+  __resetT3BridgeStorageForTests();
+});
 
 describe("buildT3ComposerIntakePayload", () => {
   it("builds the T3 Composer bridge payload from a saved Annotations image", () => {
@@ -36,11 +35,11 @@ describe("buildT3ComposerIntakePayload", () => {
       buildT3ComposerIntakePayload({
         markdownPrompt: "# UI Note",
         savedImage,
-        requestId: "pns-test",
+        requestId: "annotations-test",
       }),
     ).toEqual({
-      type: "t3code.composer-intake.request.v1",
-      requestId: "pns-test",
+      type: "t3code.external-composer-intake.request.v1",
+      requestId: "annotations-test",
       source: "annotations",
       action: "insert",
       append: true,
@@ -56,312 +55,118 @@ describe("buildT3ComposerIntakePayload", () => {
       },
     });
   });
+
+  it("uses the requested PNG name when Chrome returns an extensionless download path", () => {
+    expect(
+      buildT3ComposerIntakePayload({
+        markdownPrompt: "# UI Note",
+        savedImage: {
+          ...savedImage,
+          filename: "/var/folders/test/temporary-download-artifact",
+          requestedFilename: "Annotations-PNG/button.png",
+        },
+        requestId: "annotations-test",
+      }).image.name,
+    ).toBe("button.png");
+  });
 });
 
 describe("deliverToT3Composer", () => {
-  it("uses the direct T3 HTTP bridge before tab injection", async () => {
-    const fetchApi = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({ ok: true, requestId: "pns-test" }),
-    })) as unknown as typeof fetch;
-    const api = createChromeApi({
-      tabs: [
-        tab({
-          id: 11,
-          url: "http://127.0.0.1:3773/thread/demo",
-          title: "T3 Code",
-        }),
-      ],
-      executeScript: async () => [],
-    });
-
-    await expect(
-      deliverToT3Composer(
-        {
-          markdownPrompt: "# UI Note",
-          savedImage,
-          requestId: "pns-test",
-        },
-        api,
-        fetchApi,
-      ),
-    ).resolves.toEqual({
-      ok: true,
-      requestId: "pns-test",
-      tabId: null,
-      url: "http://127.0.0.1:3773/api/annotations/composer-intake",
-      mode: "http",
-    });
-    expect(fetchApi).toHaveBeenCalledWith(
-      "http://127.0.0.1:3773/api/annotations/composer-intake",
-      expect.objectContaining({
-        method: "POST",
-      }),
-    );
-    expect(api.tabs.query).not.toHaveBeenCalled();
-  });
-
-  it("falls back to the legacy PointNShoot HTTP bridge when the Annotations route is unavailable", async () => {
-    const fetchApi = vi.fn(async (url: string) => {
-      if (url === "http://127.0.0.1:3773/api/annotations/composer-intake") {
+  it("uses the paired Annotations bridge token for delivery", async () => {
+    __setT3BridgeTokenForTests("paired-token");
+    const fetchApi = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "http://127.0.0.1:3773/api/annotations/bridge/manifest") {
         return {
           ok: true,
           status: 200,
-          statusText: "OK",
-          json: async () => null,
+          json: async () => bridgeManifest,
         };
       }
-
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ ok: true, requestId: "pns-test" }),
-      };
-    }) as unknown as typeof fetch;
-    const api = createChromeApi({
-      tabs: [],
-      executeScript: async () => [],
-    });
-
-    await expect(
-      deliverToT3Composer(
-        {
-          markdownPrompt: "# UI Note",
-          savedImage,
-          requestId: "pns-test",
-        },
-        api,
-        fetchApi,
-      ),
-    ).resolves.toEqual({
-      ok: true,
-      requestId: "pns-test",
-      tabId: null,
-      url: "http://127.0.0.1:3773/api/pointnshoot/composer-intake",
-      mode: "http",
-    });
-
-    expect(fetchApi).toHaveBeenNthCalledWith(
-      2,
-      "http://127.0.0.1:3773/api/pointnshoot/composer-intake",
-      expect.objectContaining({
-        method: "POST",
-        headers: expect.objectContaining({
-          "x-pointnshoot-extension-id": "",
-        }),
-      }),
-    );
-    const legacyInit = vi.mocked(fetchApi).mock.calls[1]?.[1] as RequestInit;
-    expect(JSON.parse(String(legacyInit.body))).toMatchObject({
-      requestId: "pns-test",
-      source: "pointnshoot",
-    });
-    expect(api.tabs.query).not.toHaveBeenCalled();
-  });
-
-  it("falls back to a T3 tab when the HTTP bridge rejects the extension id", async () => {
-    const fetchApi = vi.fn(async () => ({
-      ok: false,
-      status: 403,
-      statusText: "Forbidden",
-      json: async () => ({ ok: false, reason: "annotations-extension-not-allowed" }),
-    })) as unknown as typeof fetch;
-    const api = createChromeApi({
-      tabs: [
-        tab({
-          id: 11,
-          url: "http://127.0.0.1:3773/thread/demo",
-          title: "T3 Code",
-        }),
-      ],
-      executeScript: successfulExecuteScript,
-    });
-
-    await expect(
-      deliverToT3Composer(
-        {
-          markdownPrompt: "# UI Note",
-          savedImage,
-          requestId: "pns-test",
-        },
-        api,
-        fetchApi,
-      ),
-    ).resolves.toEqual({
-      ok: true,
-      requestId: "pns-test",
-      tabId: 11,
-      url: "http://127.0.0.1:3773/thread/demo",
-      mode: "tab",
-    });
-
-    expect(fetchApi).toHaveBeenCalledTimes(2);
-    expect(api.tabs.query).toHaveBeenCalledWith({
-      url: ["http://127.0.0.1/*", "http://localhost/*"],
-      windowType: "normal",
-    });
-  });
-
-  it("injects the payload into an existing T3 tab", async () => {
-    const executeScriptCalls: unknown[] = [];
-    const executeScript: T3ComposerDeliveryChrome["scripting"]["executeScript"] = async (
-      details,
-    ) => {
-      executeScriptCalls.push(details);
-      return [
-        {
-          result: {
-            type: "t3code.composer-intake.response.v1",
-            requestId: details.args[0].requestId,
-            ok: true,
-            status: "inserted",
+      if (url === "http://127.0.0.1:3773/api/annotations/bridge/v1/deliver") {
+        expect(init?.headers).toMatchObject({
+          authorization: "Bearer paired-token",
+          "content-type": "application/json",
+        });
+        expect(JSON.parse(String(init?.body))).toMatchObject({
+          type: "t3code.annotations.bridge.deliver.v1",
+          requestId: "annotations-test",
+          prompt: "# UI Note",
+          image: {
+            path: "/Users/test/Downloads/Annotations-PNG/button.png",
           },
-        },
-      ];
-    };
-    const api = createChromeApi({
-      tabs: [
-        tab({
-          id: 11,
-          url: "http://127.0.0.1:3773/thread/demo",
-          title: "T3 Code",
-        }),
-      ],
-      executeScript,
-    });
+        });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true, requestId: "annotations-test" }),
+        };
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    }) as unknown as typeof fetch;
 
     await expect(
       deliverToT3Composer(
         {
           markdownPrompt: "# UI Note",
           savedImage,
-          requestId: "pns-test",
+          requestId: "annotations-test",
         },
-        api,
-        createUnavailableFetch(),
+        fetchApi,
       ),
     ).resolves.toEqual({
       ok: true,
-      requestId: "pns-test",
-      tabId: 11,
-      url: "http://127.0.0.1:3773/thread/demo",
-      mode: "tab",
+      requestId: "annotations-test",
+      url: "http://127.0.0.1:3773/api/annotations/bridge/v1/deliver",
     });
-    expect(executeScriptCalls).toContainEqual(
-      expect.objectContaining({
-        target: { tabId: 11 },
-      }),
-    );
-    expect(api.tabs.create).not.toHaveBeenCalled();
+    expect(fetchApi).toHaveBeenCalledTimes(2);
   });
 
-  it("opens the default T3 origin when no existing tab responds", async () => {
-    const api = createChromeApi({
-      tabs: [],
-      createdTab: tab({
-        id: 22,
-        url: "http://127.0.0.1:3773/",
-        title: "T3 Code",
-        status: "complete",
-      }),
-      executeScript: successfulExecuteScript,
-    });
+  it("requests pairing instead of falling back to tab injection when no token exists", async () => {
+    const fetchApi = vi.fn(async (url: string) => {
+      if (url === "http://127.0.0.1:3773/api/annotations/bridge/manifest") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => bridgeManifest,
+        };
+      }
+      if (url === "http://127.0.0.1:3773/api/annotations/bridge/v1/pairing/request") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            requestId: "pairing-request",
+            pollSecret: "poll-secret",
+            status: "pending",
+            expiresAtEpochMs: Date.now() + 60_000,
+          }),
+        };
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    }) as unknown as typeof fetch;
 
     await expect(
       deliverToT3Composer(
         {
           markdownPrompt: "# UI Note",
           savedImage,
-          requestId: "pns-test",
+          requestId: "annotations-test",
         },
-        api,
-        createUnavailableFetch(),
-      ),
-    ).resolves.toEqual({
-      ok: true,
-      requestId: "pns-test",
-      tabId: 22,
-      url: "http://127.0.0.1:3773/",
-      mode: "tab",
-    });
-    expect(api.tabs.create).toHaveBeenCalledWith({
-      url: "http://127.0.0.1:3773",
-      active: false,
-    });
-    expect(api.tabs.update).toHaveBeenCalledWith(22, { active: true });
-  });
-
-  it("returns a non-fatal failure when the T3 bridge does not respond", async () => {
-    const api = createChromeApi({
-      tabs: [
-        tab({
-          id: 11,
-          url: "http://127.0.0.1:3773/thread/demo",
-          title: "T3 Code",
-        }),
-      ],
-      executeScript: async () => [{ result: { ok: false, reason: "t3-response-timeout" } }],
-      createRejects: true,
-    });
-
-    await expect(
-      deliverToT3Composer(
-        {
-          markdownPrompt: "# UI Note",
-          savedImage,
-          requestId: "pns-test",
-        },
-        api,
-        createUnavailableFetch(),
-      ),
-    ).resolves.toMatchObject({
-      ok: false,
-      reason: "t3-open-failed",
-      requestId: "pns-test",
-    });
-  });
-
-  it("does not fall back to tabs when the HTTP bridge reports no Composer target", async () => {
-    const fetchApi = vi.fn(async () => ({
-      ok: false,
-      status: 409,
-      statusText: "Conflict",
-      json: async () => ({ ok: false, reason: "composer-not-connected" }),
-    })) as unknown as typeof fetch;
-    const api = createChromeApi({
-      tabs: [
-        tab({
-          id: 11,
-          url: "http://127.0.0.1:3773/thread/demo",
-          title: "T3 Code",
-        }),
-      ],
-      executeScript: async () => [],
-    });
-
-    await expect(
-      deliverToT3Composer(
-        {
-          markdownPrompt: "# UI Note",
-          savedImage,
-          requestId: "pns-test",
-        },
-        api,
         fetchApi,
       ),
     ).resolves.toMatchObject({
       ok: false,
-      requestId: "pns-test",
-      reason: "composer-not-connected",
+      requestId: "annotations-test",
+      reason: "pairing-pending",
     });
-    expect(fetchApi).toHaveBeenCalledTimes(1);
-    expect(api.tabs.query).not.toHaveBeenCalled();
+    expect(fetchApi).toHaveBeenCalledTimes(2);
   });
 });
 
 describe("readT3ComposerStatus", () => {
-  it("reads the active T3 Composer target from the HTTP status bridge", async () => {
+  it("reads the active T3 Composer target from the paired bridge status endpoint", async () => {
+    __setT3BridgeTokenForTests("paired-token");
     const status = {
       ok: true,
       connected: true,
@@ -376,120 +181,103 @@ describe("readT3ComposerStatus", () => {
         lastSeenAtEpochMs: 120,
       },
     };
-    const fetchApi = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => status,
-    })) as unknown as typeof fetch;
-
-    await expect(readT3ComposerStatus({ requestId: "pns-test" }, fetchApi)).resolves.toEqual(
-      status,
-    );
-    expect(fetchApi).toHaveBeenCalledWith(
-      "http://127.0.0.1:3773/api/annotations/composer-intake/status",
-      expect.objectContaining({
-        method: "GET",
-      }),
-    );
-  });
-
-  it("falls back to the legacy PointNShoot status bridge when the Annotations route is unavailable", async () => {
-    const status = {
-      ok: true,
-      connected: true,
-      reason: null,
-      checkedAtEpochMs: 123,
-      target: {
-        subscriberId: "pointnshoot-composer-test",
-        threadId: "thread-test",
-        threadTitle: "Integrar extensão ao Composer",
-        clientKind: "desktop",
-        activatedAtEpochMs: 100,
-        lastSeenAtEpochMs: 120,
-      },
-    };
-    const fetchApi = vi.fn(async (url: string) => {
-      if (url === "http://127.0.0.1:3773/api/annotations/composer-intake/status") {
+    const fetchApi = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "http://127.0.0.1:3773/api/annotations/bridge/manifest") {
         return {
           ok: true,
           status: 200,
-          statusText: "OK",
-          json: async () => null,
+          json: async () => bridgeManifest,
         };
       }
-
-      return {
-        ok: true,
-        status: 200,
-        json: async () => status,
-      };
+      if (url === "http://127.0.0.1:3773/api/annotations/bridge/v1/status") {
+        expect(init?.headers).toMatchObject({
+          authorization: "Bearer paired-token",
+        });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => status,
+        };
+      }
+      throw new Error(`Unexpected URL ${url}`);
     }) as unknown as typeof fetch;
 
-    await expect(readT3ComposerStatus({ requestId: "pns-test" }, fetchApi)).resolves.toEqual(
-      status,
-    );
-    expect(fetchApi).toHaveBeenNthCalledWith(
-      2,
-      "http://127.0.0.1:3773/api/pointnshoot/composer-intake/status",
-      expect.objectContaining({
-        method: "GET",
-        headers: expect.objectContaining({
-          "x-pointnshoot-extension-id": "",
-        }),
-      }),
-    );
+    await expect(
+      readT3ComposerStatus({ requestId: "annotations-test" }, fetchApi),
+    ).resolves.toEqual(status);
+    expect(fetchApi).toHaveBeenCalledTimes(2);
+  });
+
+  it("creates a pairing request when the bridge is enabled but not paired", async () => {
+    const fetchApi = vi.fn(async (url: string) => {
+      if (url === "http://127.0.0.1:3773/api/annotations/bridge/manifest") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => bridgeManifest,
+        };
+      }
+      if (url === "http://127.0.0.1:3773/api/annotations/bridge/v1/pairing/request") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            requestId: "pairing-request",
+            pollSecret: "poll-secret",
+            status: "pending",
+            expiresAtEpochMs: Date.now() + 60_000,
+          }),
+        };
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    }) as unknown as typeof fetch;
+
+    await expect(
+      readT3ComposerStatus({ requestId: "annotations-test" }, fetchApi),
+    ).resolves.toMatchObject({
+      ok: false,
+      reason: "pairing-pending",
+    });
+    expect(fetchApi).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports a protocol mismatch when T3 exposes an unsupported bridge version", async () => {
+    const fetchApi = vi.fn(async (url: string) => {
+      if (url === "http://127.0.0.1:3773/api/annotations/bridge/manifest") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ...bridgeManifest,
+            protocolVersion: 99,
+          }),
+        };
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    }) as unknown as typeof fetch;
+
+    await expect(
+      readT3ComposerStatus({ requestId: "annotations-test" }, fetchApi),
+    ).resolves.toMatchObject({
+      ok: false,
+      reason: "protocol-version-mismatch",
+    });
+    expect(fetchApi).toHaveBeenCalledTimes(1);
   });
 
   it("returns an actionable status failure when T3 is unreachable", async () => {
     await expect(
-      readT3ComposerStatus({ requestId: "pns-test" }, createUnavailableFetch()),
+      readT3ComposerStatus({ requestId: "annotations-test" }, createUnavailableFetch()),
     ).resolves.toMatchObject({
       ok: false,
-      reason: "t3-status-http-failed",
+      reason: "app-unreachable",
     });
   });
 });
-
-function createChromeApi(input: {
-  tabs: T3ComposerDeliveryTab[];
-  createdTab?: T3ComposerDeliveryTab;
-  executeScript: T3ComposerDeliveryChrome["scripting"]["executeScript"];
-  createRejects?: boolean;
-}): T3ComposerDeliveryChrome {
-  const createdTab = input.createdTab ?? tab({ id: 99, url: "http://127.0.0.1:3773/" });
-  return {
-    tabs: {
-      query: vi.fn(async () => input.tabs),
-      create: input.createRejects
-        ? vi.fn(async () => {
-            throw new Error("create failed");
-          })
-        : vi.fn(async () => createdTab),
-      get: vi.fn(async () => createdTab),
-      update: vi.fn(async () => createdTab),
-      onUpdated: {
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-      },
-    },
-    scripting: {
-      executeScript: input.executeScript,
-    },
-  };
-}
 
 function createUnavailableFetch(): typeof fetch {
   return vi.fn(async () => {
     throw new Error("offline");
   }) as unknown as typeof fetch;
-}
-
-function tab(input: Partial<T3ComposerDeliveryTab>): T3ComposerDeliveryTab {
-  return {
-    active: false,
-    id: 1,
-    status: "complete",
-    windowId: 1,
-    ...input,
-  };
 }

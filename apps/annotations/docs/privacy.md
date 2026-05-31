@@ -4,9 +4,9 @@ Annotations processa tudo localmente no navegador.
 
 - Nenhum upload.
 - Nenhuma telemetria.
-- Nenhum servidor local.
-- Nenhuma permissão ampla de host por padrão.
-- A permissão `activeTab` limita o acesso à aba que o usuário ativou.
+- Nenhum servidor remoto.
+- A permissão ampla de host é usada para que `chrome.tabs.captureVisibleTab` funcione de forma previsível no fluxo completo do overlay.
+- A extensão só inicia captura após ação explícita do usuário na página/overlay.
 - A permissão `downloads` é usada para salvar o PNG localmente em `Downloads/Annotations-PNG/`.
 - A permissão `storage` guarda apenas a subpasta configurada de Downloads, quando existir.
 - O PNG salvo usa crop ao redor do elemento selecionado, não a página inteira, e não desenha comentário ou metadados.

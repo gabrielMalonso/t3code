@@ -1,9 +1,9 @@
 import type {
-  PointNShootComposerIntakeDeliveryAck,
-  PointNShootComposerIntakeRequest,
-  PointNShootComposerIntakeStatus,
-  PointNShootComposerIntakeStreamEvent,
-  PointNShootComposerIntakeSubscription,
+  ExternalComposerIntakeDeliveryAck,
+  ExternalComposerIntakeRequest,
+  ExternalComposerIntakeStatus,
+  ExternalComposerIntakeStreamEvent,
+  ExternalComposerIntakeSubscription,
 } from "@t3tools/contracts";
 import { randomUUID } from "node:crypto";
 import * as Clock from "effect/Clock";
@@ -16,31 +16,33 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 
-export interface PointNShootComposerIntakeShape {
+export interface ExternalComposerIntakeShape {
   readonly hasActiveSubscribers: Effect.Effect<boolean>;
-  readonly getStatus: Effect.Effect<PointNShootComposerIntakeStatus>;
-  readonly publish: (request: PointNShootComposerIntakeRequest) => Effect.Effect<boolean>;
+  readonly getStatus: Effect.Effect<ExternalComposerIntakeStatus>;
+  readonly publish: (
+    request: ExternalComposerIntakeRequest,
+  ) => Effect.Effect<ExternalComposerIntakePublishResult>;
   readonly updateSubscription: (
-    subscription: PointNShootComposerIntakeSubscription,
+    subscription: ExternalComposerIntakeSubscription,
   ) => Effect.Effect<void>;
-  readonly ack: (ack: PointNShootComposerIntakeDeliveryAck) => Effect.Effect<void>;
+  readonly ack: (ack: ExternalComposerIntakeDeliveryAck) => Effect.Effect<void>;
   readonly stream: (
-    subscription: PointNShootComposerIntakeSubscription,
-  ) => Stream.Stream<PointNShootComposerIntakeStreamEvent>;
+    subscription: ExternalComposerIntakeSubscription,
+  ) => Stream.Stream<ExternalComposerIntakeStreamEvent>;
 }
 
-export class PointNShootComposerIntake extends Context.Service<
-  PointNShootComposerIntake,
-  PointNShootComposerIntakeShape
->()("t3/pointNShoot/PointNShootComposerIntake") {}
+export class ExternalComposerIntake extends Context.Service<
+  ExternalComposerIntake,
+  ExternalComposerIntakeShape
+>()("t3/externalComposerIntake/ExternalComposerIntake") {}
 
-type SubscriberRecord = PointNShootComposerIntakeSubscription & {
-  readonly queue: Queue.Queue<PointNShootComposerIntakeStreamEvent>;
+type SubscriberRecord = ExternalComposerIntakeSubscription & {
+  readonly queue: Queue.Queue<ExternalComposerIntakeStreamEvent>;
   readonly registeredAtEpochMs: number;
   readonly lastSeenAtEpochMs: number;
 };
 
-export type PointNShootSubscriberPriority = {
+export type ExternalComposerSubscriberPriority = {
   readonly subscriberId: string;
   readonly activatedAtEpochMs: number;
   readonly registeredAtEpochMs: number;
@@ -52,31 +54,44 @@ type PendingDelivery = {
   readonly deferred: Deferred.Deferred<boolean>;
 };
 
-const POINTNSHOOT_SUBSCRIBER_STALE_AFTER_MS = 15_000;
-const POINTNSHOOT_DELIVERY_ACK_TIMEOUT = "2 seconds";
+type ExternalComposerIntakePublishFailureReason =
+  | "no-active-composer"
+  | "delivery-timeout"
+  | "delivery-failed";
 
-export const PointNShootComposerIntakeLive = Layer.effect(
-  PointNShootComposerIntake,
+export type ExternalComposerIntakePublishResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: ExternalComposerIntakePublishFailureReason };
+
+const EXTERNAL_COMPOSER_SUBSCRIBER_STALE_AFTER_MS = 15_000;
+const EXTERNAL_COMPOSER_DELIVERY_ACK_TIMEOUT = "2 seconds";
+
+export const ExternalComposerIntakeLive = Layer.effect(
+  ExternalComposerIntake,
   Effect.gen(function* () {
     const subscribersRef = yield* Ref.make(new Map<string, SubscriberRecord>());
     const pendingDeliveriesRef = yield* Ref.make(new Map<string, PendingDelivery>());
     const registrationSequenceRef = yield* Ref.make(0);
 
-    const publish: PointNShootComposerIntakeShape["publish"] = (request) => {
+    const publish: ExternalComposerIntakeShape["publish"] = (request) => {
       return Effect.gen(function* () {
+        let lastFailureReason: ExternalComposerIntakePublishFailureReason = "no-active-composer";
+
         for (;;) {
           const now = yield* Clock.currentTimeMillis;
           const subscribers = yield* Ref.get(subscribersRef);
-          const subscriber = selectActivePointNShootSubscriber(
+          const subscriber = selectActiveExternalComposerSubscriber(
             [...subscribers.values()].filter((entry) => isDeliverableSubscriber(entry, now)),
           );
-          if (!subscriber) return false;
+          if (!subscriber) {
+            return { ok: false, reason: lastFailureReason };
+          }
 
           const deliveryId = randomUUID();
           const deferred = yield* Deferred.make<boolean>();
-          const event: PointNShootComposerIntakeStreamEvent = {
+          const event: ExternalComposerIntakeStreamEvent = {
             version: 1,
-            type: "composerIntakeReceived",
+            type: "externalComposerIntakeReceived",
             deliveryId,
             subscriberId: subscriber.subscriberId,
             payload: request,
@@ -93,6 +108,7 @@ export const PointNShootComposerIntakeLive = Layer.effect(
 
           const offered = yield* Queue.offer(subscriber.queue, event);
           if (!offered) {
+            lastFailureReason = "delivery-failed";
             yield* removePendingDelivery(pendingDeliveriesRef, deliveryId);
             yield* removeSubscriberIfQueueMatches(
               subscribersRef,
@@ -102,34 +118,43 @@ export const PointNShootComposerIntakeLive = Layer.effect(
             continue;
           }
 
-          const acked = yield* Deferred.await(deferred).pipe(
-            Effect.timeoutOption(POINTNSHOOT_DELIVERY_ACK_TIMEOUT),
-            Effect.map((ack) => Option.getOrElse(ack, () => false)),
+          const ack = yield* Deferred.await(deferred).pipe(
+            Effect.timeoutOption(EXTERNAL_COMPOSER_DELIVERY_ACK_TIMEOUT),
           );
           yield* removePendingDelivery(pendingDeliveriesRef, deliveryId);
-          if (acked) {
-            yield* Effect.logInfo("Annotations composer intake acknowledged", {
-              requestId: request.requestId,
-              deliveryId,
-              subscriberId: subscriber.subscriberId,
-              threadId: subscriber.threadId,
-              clientKind: subscriber.clientKind ?? "browser",
-            });
-            return true;
+          if (Option.isNone(ack)) {
+            lastFailureReason = "delivery-timeout";
+            yield* removeSubscriberIfQueueMatches(
+              subscribersRef,
+              subscriber.subscriberId,
+              subscriber.queue,
+            );
+            continue;
           }
 
-          yield* removeSubscriberIfQueueMatches(
-            subscribersRef,
-            subscriber.subscriberId,
-            subscriber.queue,
-          );
+          if (!ack.value) {
+            lastFailureReason = "delivery-failed";
+            yield* removeSubscriberIfQueueMatches(
+              subscribersRef,
+              subscriber.subscriberId,
+              subscriber.queue,
+            );
+            continue;
+          }
+
+          yield* Effect.logInfo("Annotations composer intake acknowledged", {
+            requestId: request.requestId,
+            deliveryId,
+            subscriberId: subscriber.subscriberId,
+            threadId: subscriber.threadId,
+            clientKind: subscriber.clientKind ?? "browser",
+          });
+          return { ok: true };
         }
       });
     };
 
-    const updateSubscription: PointNShootComposerIntakeShape["updateSubscription"] = (
-      subscription,
-    ) =>
+    const updateSubscription: ExternalComposerIntakeShape["updateSubscription"] = (subscription) =>
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
         yield* Ref.update(subscribersRef, (subscribers) => {
@@ -148,7 +173,7 @@ export const PointNShootComposerIntakeLive = Layer.effect(
         });
       });
 
-    const ack: PointNShootComposerIntakeShape["ack"] = (deliveryAck) =>
+    const ack: ExternalComposerIntakeShape["ack"] = (deliveryAck) =>
       Effect.gen(function* () {
         const pendingDelivery = yield* Ref.get(pendingDeliveriesRef).pipe(
           Effect.map((pendingDeliveries) => pendingDeliveries.get(deliveryAck.deliveryId)),
@@ -160,10 +185,10 @@ export const PointNShootComposerIntakeLive = Layer.effect(
         yield* Deferred.succeed(pendingDelivery.deferred, deliveryAck.ok).pipe(Effect.asVoid);
       });
 
-    const stream: PointNShootComposerIntakeShape["stream"] = (subscription) =>
+    const stream: ExternalComposerIntakeShape["stream"] = (subscription) =>
       Stream.unwrap(
         Effect.gen(function* () {
-          const queue = yield* Queue.unbounded<PointNShootComposerIntakeStreamEvent>();
+          const queue = yield* Queue.unbounded<ExternalComposerIntakeStreamEvent>();
           const registeredAtEpochMs = yield* Ref.updateAndGet(
             registrationSequenceRef,
             (sequence) => sequence + 1,
@@ -201,7 +226,7 @@ export const PointNShootComposerIntakeLive = Layer.effect(
         }),
       );
 
-    return PointNShootComposerIntake.of({
+    return ExternalComposerIntake.of({
       hasActiveSubscribers: Clock.currentTimeMillis.pipe(
         Effect.flatMap((now) =>
           Ref.get(subscribersRef).pipe(
@@ -216,7 +241,7 @@ export const PointNShootComposerIntakeLive = Layer.effect(
       getStatus: Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
         const subscribers = yield* Ref.get(subscribersRef);
-        const subscriber = selectActivePointNShootSubscriber(
+        const subscriber = selectActiveExternalComposerSubscriber(
           [...subscribers.values()].filter((entry) => isDeliverableSubscriber(entry, now)),
         );
 
@@ -227,7 +252,7 @@ export const PointNShootComposerIntakeLive = Layer.effect(
             reason: "composer-not-connected",
             checkedAtEpochMs: now,
             target: null,
-          } satisfies PointNShootComposerIntakeStatus;
+          } satisfies ExternalComposerIntakeStatus;
         }
         const threadId = subscriber.threadId;
         if (threadId === null) {
@@ -237,7 +262,7 @@ export const PointNShootComposerIntakeLive = Layer.effect(
             reason: "composer-not-connected",
             checkedAtEpochMs: now,
             target: null,
-          } satisfies PointNShootComposerIntakeStatus;
+          } satisfies ExternalComposerIntakeStatus;
         }
 
         return {
@@ -253,7 +278,7 @@ export const PointNShootComposerIntakeLive = Layer.effect(
             activatedAtEpochMs: subscriber.activatedAtEpochMs,
             lastSeenAtEpochMs: subscriber.lastSeenAtEpochMs,
           },
-        } satisfies PointNShootComposerIntakeStatus;
+        } satisfies ExternalComposerIntakeStatus;
       }),
       updateSubscription,
       ack,
@@ -263,8 +288,8 @@ export const PointNShootComposerIntakeLive = Layer.effect(
   }),
 );
 
-export function selectActivePointNShootSubscriber<
-  TSubscriber extends PointNShootSubscriberPriority,
+export function selectActiveExternalComposerSubscriber<
+  TSubscriber extends ExternalComposerSubscriberPriority,
 >(subscribers: Iterable<TSubscriber>): TSubscriber | null {
   let selected: TSubscriber | null = null;
 
@@ -280,7 +305,7 @@ export function selectActivePointNShootSubscriber<
 function isDeliverableSubscriber(subscriber: SubscriberRecord, now: number): boolean {
   return (
     subscriber.threadId !== null &&
-    now - subscriber.lastSeenAtEpochMs <= POINTNSHOOT_SUBSCRIBER_STALE_AFTER_MS
+    now - subscriber.lastSeenAtEpochMs <= EXTERNAL_COMPOSER_SUBSCRIBER_STALE_AFTER_MS
   );
 }
 
@@ -299,7 +324,7 @@ function removePendingDelivery(
 function removeSubscriberIfQueueMatches(
   subscribersRef: Ref.Ref<Map<string, SubscriberRecord>>,
   subscriberId: string,
-  queue: Queue.Queue<PointNShootComposerIntakeStreamEvent>,
+  queue: Queue.Queue<ExternalComposerIntakeStreamEvent>,
 ): Effect.Effect<void> {
   return Ref.update(subscribersRef, (subscribers) => {
     const currentSubscriber = subscribers.get(subscriberId);
@@ -314,8 +339,8 @@ function removeSubscriberIfQueueMatches(
 }
 
 function compareSubscriberPriority(
-  left: PointNShootSubscriberPriority,
-  right: PointNShootSubscriberPriority,
+  left: ExternalComposerSubscriberPriority,
+  right: ExternalComposerSubscriberPriority,
 ): number {
   const clientKindDelta =
     clientKindPriority(left.clientKind) - clientKindPriority(right.clientKind);
@@ -330,6 +355,6 @@ function compareSubscriberPriority(
   return left.subscriberId.localeCompare(right.subscriberId);
 }
 
-function clientKindPriority(clientKind: PointNShootSubscriberPriority["clientKind"]): number {
+function clientKindPriority(clientKind: ExternalComposerSubscriberPriority["clientKind"]): number {
   return clientKind === "desktop" ? 1 : 0;
 }

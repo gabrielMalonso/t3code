@@ -236,7 +236,6 @@ async function handleCapture(
     const delivery = await deliverToT3Composer(
       { markdownPrompt, savedImage, requestId: request.id },
       undefined,
-      undefined,
       (diagnostic) => {
         diagnostics = appendT3Diagnostic(diagnostics, diagnostic);
       },
@@ -251,7 +250,7 @@ async function handleCapture(
           ? "UI Note delivered to T3 Composer."
           : "Could not deliver UI Note to T3 Composer.",
         delivery.ok
-          ? { requestId: request.id, tabId: delivery.tabId, url: delivery.url }
+          ? { requestId: request.id, url: delivery.url }
           : { requestId: request.id, reason: delivery.reason, message: delivery.message ?? null },
       ),
     );
