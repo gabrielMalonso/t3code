@@ -594,7 +594,7 @@ describe("CheckpointReactor", () => {
 
   it("ignores auxiliary thread turn completion while primary turn is active", async () => {
     const harness = await createHarness({ seedFilesystemCheckpoints: false });
-    const createdAt = "2026-01-01T00:00:00.000Z";
+    const createdAt = "2099-01-01T00:00:00.000Z";
 
     await Effect.runPromise(
       harness.engine.dispatch({
@@ -619,7 +619,7 @@ describe("CheckpointReactor", () => {
       eventId: EventId.make("evt-turn-started-main"),
       provider: ProviderDriverKind.make("codex"),
 
-      createdAt: "2026-01-01T00:00:00.000Z",
+      createdAt,
       threadId: ThreadId.make("thread-1"),
       turnId: asTurnId("turn-main"),
     });
@@ -635,7 +635,7 @@ describe("CheckpointReactor", () => {
       eventId: EventId.make("evt-turn-completed-aux"),
       provider: ProviderDriverKind.make("codex"),
 
-      createdAt: "2026-01-01T00:00:00.000Z",
+      createdAt,
       threadId: ThreadId.make("thread-1"),
       turnId: asTurnId("turn-aux"),
       payload: { state: "completed" },
@@ -651,7 +651,7 @@ describe("CheckpointReactor", () => {
       eventId: EventId.make("evt-turn-completed-main"),
       provider: ProviderDriverKind.make("codex"),
 
-      createdAt: "2026-01-01T00:00:00.000Z",
+      createdAt,
       threadId: ThreadId.make("thread-1"),
       turnId: asTurnId("turn-main"),
       payload: { state: "completed" },

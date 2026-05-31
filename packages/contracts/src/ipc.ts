@@ -25,6 +25,11 @@ import type {
   ProjectWriteFileInput,
   ProjectWriteFileResult,
 } from "./project.ts";
+import type {
+  ExternalComposerIntakeDeliveryAck,
+  ExternalComposerIntakeStreamEvent,
+  ExternalComposerIntakeSubscription,
+} from "./externalComposerIntake.ts";
 import type { ProviderInstanceId } from "./providerInstance.ts";
 import type {
   ServerConfig,
@@ -420,6 +425,7 @@ export interface DesktopBridge {
     position?: { x: number; y: number },
   ) => Promise<T | null>;
   openExternal: (url: string) => Promise<boolean>;
+  activateWindow: () => Promise<void>;
   onMenuAction: (listener: (action: string) => void) => () => void;
   getUpdateState: () => Promise<DesktopUpdateState>;
   setUpdateChannel: (channel: DesktopUpdateChannel) => Promise<DesktopUpdateState>;
@@ -509,6 +515,17 @@ export interface EnvironmentApi {
     listProviderSkills: (
       input: ServerListProviderSkillsInput,
     ) => Promise<ServerListProviderSkillsResult>;
+    updateExternalComposerIntakeSubscription: (
+      subscription: ExternalComposerIntakeSubscription,
+    ) => Promise<void>;
+    ackExternalComposerIntake: (ack: ExternalComposerIntakeDeliveryAck) => Promise<void>;
+    subscribeExternalComposerIntake: (
+      subscription: ExternalComposerIntakeSubscription,
+      callback: (event: ExternalComposerIntakeStreamEvent) => void,
+      options?: {
+        onResubscribe?: () => void;
+      },
+    ) => () => void;
   };
   terminal: {
     open: (input: typeof TerminalOpenInput.Encoded) => Promise<TerminalSessionSnapshot>;

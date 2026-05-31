@@ -5,6 +5,7 @@ import {
   type EnvironmentId,
   type MessageId,
   type ModelSelection,
+  type ExternalComposerIntakeSubscription,
   type ProjectScript,
   type ProjectId,
   type ProviderApprovalDecision,
@@ -113,7 +114,7 @@ import {
 } from "~/projectScripts";
 import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
-import { useSettings } from "../hooks/useSettings";
+import { useSettings, useUpdateSettings } from "../hooks/useSettings";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import {
@@ -190,6 +191,12 @@ import {
   isVersionMismatchDismissed,
   resolveServerConfigVersionMismatch,
 } from "../versionSkew";
+import {
+  appendExternalComposerIntakePrompt,
+  composerFileReferenceFromExternalIntake,
+  type ExternalComposerIntakeRequest,
+  validateExternalComposerIntakeMessage,
+} from "../externalComposerIntake";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
@@ -350,6 +357,18 @@ type ChatViewProps =
       routeKind: "draft";
       draftId: DraftId;
     };
+
+async function prepareExternalComposerFocus(): Promise<void> {
+  if (typeof window === "undefined") return;
+
+  await window.desktopBridge?.activateWindow().catch((error: unknown) => {
+    console.warn("[Annotations] failed to activate desktop window", error);
+  });
+
+  await new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+}
 
 interface TerminalLaunchContext {
   threadId: ThreadId;
@@ -630,6 +649,7 @@ export default function ChatView(props: ChatViewProps) {
     routeKind === "server" ? store.threadLastVisitedAtById[routeThreadKey] : undefined,
   );
   const settings = useSettings();
+  const { updateSettings } = useUpdateSettings();
   const showPlanSidebar = settings.showPlanSidebar;
   const setStickyComposerModelSelection = useComposerDraftStore(
     (store) => store.setStickyModelSelection,
@@ -1667,6 +1687,200 @@ export default function ChatView(props: ChatViewProps) {
     setComposerDraftFileReferences,
     setComposerDraftTerminalContexts,
   });
+
+  const annotationsBridgeEnabled = settings.annotationsBridge.enabled;
+  const externalComposerSubscriberBaseIdRef = useRef(`annotations-composer-${randomUUID()}`);
+  const [externalComposerTargetActivatedAtEpochMs, setExternalComposerTargetActivatedAtEpochMs] =
+    useState(() => Date.now());
+  const externalComposerSubscriptionRef = useRef<ExternalComposerIntakeSubscription>({
+    subscriberId: externalComposerSubscriberBaseIdRef.current,
+    threadId: activeThreadId ?? null,
+    threadTitle: activeThread?.title?.trim() ? activeThread.title : null,
+    activatedAtEpochMs: externalComposerTargetActivatedAtEpochMs,
+    clientKind: typeof window !== "undefined" && window.desktopBridge ? "desktop" : "browser",
+  });
+
+  useEffect(() => {
+    setExternalComposerTargetActivatedAtEpochMs(Date.now());
+  }, [activeThreadId, environmentId]);
+
+  useEffect(() => {
+    externalComposerSubscriptionRef.current = {
+      subscriberId: externalComposerSubscriberBaseIdRef.current,
+      threadId: activeThreadId ?? null,
+      threadTitle: activeThread?.title?.trim() ? activeThread.title : null,
+      activatedAtEpochMs: externalComposerTargetActivatedAtEpochMs,
+      clientKind: window.desktopBridge ? "desktop" : "browser",
+    };
+  }, [activeThread?.title, activeThreadId, externalComposerTargetActivatedAtEpochMs]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const markActiveTarget = () => {
+      setExternalComposerTargetActivatedAtEpochMs(Date.now());
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        markActiveTarget();
+      }
+    };
+
+    window.addEventListener("focus", markActiveTarget);
+    window.addEventListener("pageshow", markActiveTarget);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", markActiveTarget);
+      window.removeEventListener("pageshow", markActiveTarget);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
+  const insertExternalComposerIntakeRequest = useCallback(
+    async (request: ExternalComposerIntakeRequest) => {
+      if (request.focus) {
+        await prepareExternalComposerFocus();
+      }
+
+      const nextPrompt = appendExternalComposerIntakePrompt({
+        currentPrompt: promptRef.current,
+        incomingPrompt: request.prompt,
+        append: request.append,
+      });
+      promptRef.current = nextPrompt;
+      setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+
+      const fileReference = composerFileReferenceFromExternalIntake({
+        image: request.image,
+        id: randomUUID(),
+      });
+      if (
+        fileReference &&
+        !composerFileReferencesRef.current.some(
+          (reference) => reference.path === fileReference.path,
+        )
+      ) {
+        const nextFileReferences = [...composerFileReferencesRef.current, fileReference];
+        composerFileReferencesRef.current = nextFileReferences;
+        setComposerDraftFileReferences(composerDraftTarget, nextFileReferences);
+      }
+
+      if (request.focus) {
+        await new Promise<void>((resolve) => {
+          window.requestAnimationFrame(() => {
+            resolve();
+          });
+        });
+        composerRef.current?.resetCursorState({
+          cursor: nextPrompt.length,
+          prompt: nextPrompt,
+          detectTrigger: false,
+        });
+        composerRef.current?.focusAtEnd();
+      }
+
+      toastManager.add({
+        type: "success",
+        title: "Annotations sent to Composer",
+      });
+    },
+    [
+      composerDraftTarget,
+      composerFileReferencesRef,
+      composerRef,
+      promptRef,
+      setComposerDraftFileReferences,
+      setComposerDraftPrompt,
+    ],
+  );
+  const insertExternalComposerIntakeRequestRef = useRef(insertExternalComposerIntakeRequest);
+
+  useEffect(() => {
+    insertExternalComposerIntakeRequestRef.current = insertExternalComposerIntakeRequest;
+  }, [insertExternalComposerIntakeRequest]);
+
+  const handleAnnotationsBridgeEnabledChange = useCallback(
+    (enabled: boolean) => {
+      updateSettings({
+        annotationsBridge: {
+          ...settings.annotationsBridge,
+          enabled,
+        },
+      });
+      toastManager.add({
+        type: enabled ? "success" : "info",
+        title: enabled ? "Annotations bridge enabled" : "Annotations bridge disabled",
+      });
+    },
+    [settings.annotationsBridge, updateSettings],
+  );
+
+  const updateExternalComposerSubscription = useCallback(() => {
+    if (!annotationsBridgeEnabled) return;
+    const api = readEnvironmentApi(environmentId);
+    if (!api) return;
+
+    void api.server
+      .updateExternalComposerIntakeSubscription(externalComposerSubscriptionRef.current)
+      .catch((error: unknown) => {
+        console.warn("[Annotations] failed to refresh composer target", error);
+      });
+  }, [environmentId, annotationsBridgeEnabled]);
+
+  useEffect(() => {
+    updateExternalComposerSubscription();
+  }, [
+    activeThreadId,
+    externalComposerTargetActivatedAtEpochMs,
+    updateExternalComposerSubscription,
+  ]);
+
+  useEffect(() => {
+    if (!annotationsBridgeEnabled) return;
+    const intervalId = window.setInterval(updateExternalComposerSubscription, 5_000);
+    return () => window.clearInterval(intervalId);
+  }, [annotationsBridgeEnabled, updateExternalComposerSubscription]);
+
+  useEffect(() => {
+    if (!annotationsBridgeEnabled) return;
+    const api = readEnvironmentApi(environmentId);
+    if (!api) return;
+
+    return api.server.subscribeExternalComposerIntake(
+      externalComposerSubscriptionRef.current,
+      (event) => {
+        if (event.type !== "externalComposerIntakeReceived") return;
+        const validation = validateExternalComposerIntakeMessage(event.payload);
+        if (!validation.ok) {
+          console.warn("[Annotations] ignored invalid composer intake", validation.reason);
+          void api.server.ackExternalComposerIntake({
+            subscriberId: event.subscriberId,
+            deliveryId: event.deliveryId,
+            ok: false,
+          });
+          return;
+        }
+        void insertExternalComposerIntakeRequestRef
+          .current(validation.request)
+          .then(() =>
+            api.server.ackExternalComposerIntake({
+              subscriberId: event.subscriberId,
+              deliveryId: event.deliveryId,
+              ok: true,
+            }),
+          )
+          .catch((error: unknown) => {
+            console.warn("[Annotations] failed to insert composer intake", error);
+            return api.server.ackExternalComposerIntake({
+              subscriberId: event.subscriberId,
+              deliveryId: event.deliveryId,
+              ok: false,
+            });
+          });
+      },
+      { onResubscribe: updateExternalComposerSubscription },
+    );
+  }, [environmentId, annotationsBridgeEnabled, updateExternalComposerSubscription]);
   const activeTerminalLaunchContext =
     terminalLaunchContext?.threadId === activeThreadId
       ? terminalLaunchContext
@@ -3726,6 +3940,8 @@ export default function ChatView(props: ChatViewProps) {
                   toggleInteractionMode={toggleInteractionMode}
                   handleRuntimeModeChange={handleRuntimeModeChange}
                   handleInteractionModeChange={handleInteractionModeChange}
+                  annotationsBridgeEnabled={annotationsBridgeEnabled}
+                  onAnnotationsBridgeEnabledChange={handleAnnotationsBridgeEnabledChange}
                   togglePlanSidebar={togglePlanSidebar}
                   focusComposer={focusComposer}
                   scheduleComposerFocus={scheduleComposerFocus}

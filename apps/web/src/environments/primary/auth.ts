@@ -8,6 +8,10 @@ import type {
   AuthRevokePairingLinkInput,
   AuthSessionId,
   AuthSessionState,
+  AnnotationsBridgeClient,
+  AnnotationsBridgePairingDecision,
+  AnnotationsBridgePendingPairingRequest,
+  AnnotationsBridgeRevokeClientRequest,
 } from "@t3tools/contracts";
 
 import {
@@ -375,6 +379,122 @@ export async function revokeOtherServerClientSessions(): Promise<number> {
 
   const result = (await response.json()) as { revokedCount?: number };
   return result.revokedCount ?? 0;
+}
+
+export async function listAnnotationsBridgePendingPairings(): Promise<
+  ReadonlyArray<AnnotationsBridgePendingPairingRequest>
+> {
+  const response = await fetch(
+    resolvePrimaryEnvironmentHttpUrl("/api/annotations/bridge/v1/pairing/requests"),
+    {
+      credentials: "include",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(
+        response,
+        `Failed to load Annotations bridge pairings (${response.status}).`,
+      ),
+    );
+  }
+
+  return (await response.json()) as ReadonlyArray<AnnotationsBridgePendingPairingRequest>;
+}
+
+export async function approveAnnotationsBridgePairing(requestId: string): Promise<void> {
+  const payload: AnnotationsBridgePairingDecision = { requestId };
+  const response = await fetch(
+    resolvePrimaryEnvironmentHttpUrl("/api/annotations/bridge/v1/pairing/approve"),
+    {
+      body: JSON.stringify(payload),
+      credentials: "include",
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(
+        response,
+        `Failed to approve Annotations bridge pairing (${response.status}).`,
+      ),
+    );
+  }
+}
+
+export async function rejectAnnotationsBridgePairing(requestId: string): Promise<void> {
+  const payload: AnnotationsBridgePairingDecision = { requestId };
+  const response = await fetch(
+    resolvePrimaryEnvironmentHttpUrl("/api/annotations/bridge/v1/pairing/reject"),
+    {
+      body: JSON.stringify(payload),
+      credentials: "include",
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(
+        response,
+        `Failed to reject Annotations bridge pairing (${response.status}).`,
+      ),
+    );
+  }
+}
+
+export async function listAnnotationsBridgeClients(): Promise<
+  ReadonlyArray<AnnotationsBridgeClient>
+> {
+  const response = await fetch(
+    resolvePrimaryEnvironmentHttpUrl("/api/annotations/bridge/v1/clients"),
+    {
+      credentials: "include",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(
+        response,
+        `Failed to load Annotations bridge clients (${response.status}).`,
+      ),
+    );
+  }
+
+  return (await response.json()) as ReadonlyArray<AnnotationsBridgeClient>;
+}
+
+export async function revokeAnnotationsBridgeClient(clientId: string): Promise<void> {
+  const payload: AnnotationsBridgeRevokeClientRequest = { clientId };
+  const response = await fetch(
+    resolvePrimaryEnvironmentHttpUrl("/api/annotations/bridge/v1/clients/revoke"),
+    {
+      body: JSON.stringify(payload),
+      credentials: "include",
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await readErrorMessage(
+        response,
+        `Failed to revoke Annotations bridge client (${response.status}).`,
+      ),
+    );
+  }
 }
 
 export async function resolveInitialServerAuthGateState(): Promise<ServerAuthGateState> {

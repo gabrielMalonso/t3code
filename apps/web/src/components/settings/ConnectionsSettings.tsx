@@ -12,6 +12,8 @@ import {
   type AuthClientSession,
   type AuthPairingLink,
   type AdvertisedEndpoint,
+  type AnnotationsBridgeClient,
+  type AnnotationsBridgePendingPairingRequest,
   type DesktopDiscoveredSshHost,
   type DesktopSshEnvironmentTarget,
   type DesktopServerExposureState,
@@ -73,9 +75,14 @@ import { Textarea } from "../ui/textarea";
 import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "../../pairingUrl";
 import { readHostedPairingRequest } from "../../hostedPairing";
 import {
+  approveAnnotationsBridgePairing,
   createServerPairingCredential,
   fetchSessionState,
+  listAnnotationsBridgeClients,
+  listAnnotationsBridgePendingPairings,
   revokeOtherServerClientSessions,
+  rejectAnnotationsBridgePairing,
+  revokeAnnotationsBridgeClient,
   revokeServerClientSession,
   revokeServerPairingLink,
   isLoopbackHostname,
@@ -356,6 +363,25 @@ function sortDesktopClientSessions(sessions: ReadonlyArray<ServerClientSessionRe
     }
     return new Date(right.issuedAt).getTime() - new Date(left.issuedAt).getTime();
   });
+}
+
+function sortAnnotationsBridgePendingPairings(
+  pairings: ReadonlyArray<AnnotationsBridgePendingPairingRequest>,
+) {
+  return [...pairings].toSorted((left, right) => right.createdAtEpochMs - left.createdAtEpochMs);
+}
+
+function sortAnnotationsBridgeClients(clients: ReadonlyArray<AnnotationsBridgeClient>) {
+  return [...clients].toSorted((left, right) => {
+    const leftSeen = left.lastSeenAtEpochMs ?? left.createdAtEpochMs;
+    const rightSeen = right.lastSeenAtEpochMs ?? right.createdAtEpochMs;
+    return rightSeen - leftSeen;
+  });
+}
+
+function formatAnnotationsBridgeEpoch(epochMs: number | null): string {
+  if (epochMs === null) return "Never";
+  return accessTimestampFormatter.format(new Date(epochMs));
 }
 
 function toDesktopPairingLinkRecord(pairingLink: AuthPairingLink): ServerPairingLinkRecord {
@@ -1494,6 +1520,23 @@ export function ConnectionsSettings() {
     null,
   );
   const [isLoadingDesktopAccessManagement, setIsLoadingDesktopAccessManagement] = useState(false);
+  const [annotationsBridgePendingPairings, setAnnotationsBridgePendingPairings] = useState<
+    ReadonlyArray<AnnotationsBridgePendingPairingRequest>
+  >([]);
+  const [annotationsBridgeClients, setAnnotationsBridgeClients] = useState<
+    ReadonlyArray<AnnotationsBridgeClient>
+  >([]);
+  const [annotationsBridgeError, setAnnotationsBridgeError] = useState<string | null>(null);
+  const [isLoadingAnnotationsBridge, setIsLoadingAnnotationsBridge] = useState(false);
+  const [approvingAnnotationsBridgeRequestId, setApprovingAnnotationsBridgeRequestId] = useState<
+    string | null
+  >(null);
+  const [rejectingAnnotationsBridgeRequestId, setRejectingAnnotationsBridgeRequestId] = useState<
+    string | null
+  >(null);
+  const [revokingAnnotationsBridgeClientId, setRevokingAnnotationsBridgeClientId] = useState<
+    string | null
+  >(null);
   const [revokingDesktopPairingLinkId, setRevokingDesktopPairingLinkId] = useState<string | null>(
     null,
   );
@@ -1746,6 +1789,102 @@ export function ConnectionsSettings() {
       setIsRevokingOtherDesktopClients(false);
     }
   }, []);
+
+  const loadAnnotationsBridgeAccess = useCallback(async () => {
+    if (!canManageLocalBackend) return;
+    setIsLoadingAnnotationsBridge(true);
+    try {
+      const [pendingPairings, clients] = await Promise.all([
+        listAnnotationsBridgePendingPairings(),
+        listAnnotationsBridgeClients(),
+      ]);
+      setAnnotationsBridgePendingPairings(sortAnnotationsBridgePendingPairings(pendingPairings));
+      setAnnotationsBridgeClients(sortAnnotationsBridgeClients(clients));
+      setAnnotationsBridgeError(null);
+    } catch (error) {
+      setAnnotationsBridgeError(
+        error instanceof Error ? error.message : "Failed to load Annotations bridge access.",
+      );
+    } finally {
+      setIsLoadingAnnotationsBridge(false);
+    }
+  }, [canManageLocalBackend]);
+
+  const handleApproveAnnotationsBridgePairing = useCallback(
+    async (requestId: string) => {
+      setApprovingAnnotationsBridgeRequestId(requestId);
+      setAnnotationsBridgeError(null);
+      try {
+        await approveAnnotationsBridgePairing(requestId);
+        await loadAnnotationsBridgeAccess();
+        toastManager.add({
+          type: "success",
+          title: "Annotations extension approved",
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to approve Annotations extension.";
+        setAnnotationsBridgeError(message);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not approve extension",
+            description: message,
+          }),
+        );
+      } finally {
+        setApprovingAnnotationsBridgeRequestId(null);
+      }
+    },
+    [loadAnnotationsBridgeAccess],
+  );
+
+  const handleRejectAnnotationsBridgePairing = useCallback(
+    async (requestId: string) => {
+      setRejectingAnnotationsBridgeRequestId(requestId);
+      setAnnotationsBridgeError(null);
+      try {
+        await rejectAnnotationsBridgePairing(requestId);
+        await loadAnnotationsBridgeAccess();
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to reject Annotations extension.";
+        setAnnotationsBridgeError(message);
+      } finally {
+        setRejectingAnnotationsBridgeRequestId(null);
+      }
+    },
+    [loadAnnotationsBridgeAccess],
+  );
+
+  const handleRevokeAnnotationsBridgeClient = useCallback(
+    async (clientId: string) => {
+      setRevokingAnnotationsBridgeClientId(clientId);
+      setAnnotationsBridgeError(null);
+      try {
+        await revokeAnnotationsBridgeClient(clientId);
+        await loadAnnotationsBridgeAccess();
+        toastManager.add({
+          type: "success",
+          title: "Annotations extension revoked",
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to revoke Annotations extension.";
+        setAnnotationsBridgeError(message);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not revoke extension",
+            description: message,
+          }),
+        );
+      } finally {
+        setRevokingAnnotationsBridgeClientId(null);
+      }
+    },
+    [loadAnnotationsBridgeAccess],
+  );
 
   const handleAddSavedBackend = useCallback(async () => {
     if (savedBackendMode === "ssh") {
@@ -2088,6 +2227,22 @@ export function ConnectionsSettings() {
   }, [canManageLocalBackend, desktopBridge]);
 
   useEffect(() => {
+    if (!canManageLocalBackend) {
+      setAnnotationsBridgePendingPairings([]);
+      setAnnotationsBridgeClients([]);
+      setAnnotationsBridgeError(null);
+      setIsLoadingAnnotationsBridge(false);
+      return;
+    }
+
+    void loadAnnotationsBridgeAccess();
+    const intervalId = window.setInterval(() => {
+      void loadAnnotationsBridgeAccess();
+    }, 3_000);
+    return () => window.clearInterval(intervalId);
+  }, [canManageLocalBackend, loadAnnotationsBridgeAccess]);
+
+  useEffect(() => {
     if (canManageLocalBackend) return;
     setIsLoadingDesktopAccessManagement(false);
     setDesktopPairingLinks([]);
@@ -2416,6 +2571,124 @@ export function ConnectionsSettings() {
       />
     </>
   );
+  const renderAnnotationsBridgeRows = () => (
+    <>
+      <SettingsRow
+        title="Extension access"
+        description={
+          isLoadingAnnotationsBridge
+            ? "Checking Annotations bridge clients."
+            : annotationsBridgePendingPairings.length > 0
+              ? `${annotationsBridgePendingPairings.length} extension request waiting for approval.`
+              : annotationsBridgeClients.length > 0
+                ? `${annotationsBridgeClients.length} extension client paired.`
+                : "No Annotations extension clients are paired yet."
+        }
+        control={
+          <Button
+            size="xs"
+            variant="ghost"
+            disabled={isLoadingAnnotationsBridge}
+            onClick={() => void loadAnnotationsBridgeAccess()}
+          >
+            {isLoadingAnnotationsBridge ? (
+              <RefreshCwIcon className="size-3 animate-spin" />
+            ) : (
+              <RefreshCwIcon className="size-3" />
+            )}
+            Refresh
+          </Button>
+        }
+      />
+      {annotationsBridgeError ? (
+        <div className={ITEM_ROW_CLASSNAME}>
+          <p className="text-xs text-destructive">{annotationsBridgeError}</p>
+        </div>
+      ) : null}
+      {annotationsBridgePendingPairings.map((request) => (
+        <div key={request.requestId} className={ITEM_ROW_CLASSNAME}>
+          <div className={ITEM_ROW_INNER_CLASSNAME}>
+            <div className="min-w-0 space-y-1">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="truncate text-sm font-medium text-foreground">
+                  {request.clientName ?? "Annotations"}
+                </span>
+                <span className="rounded-sm border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-[11px] text-warning">
+                  Pending
+                </span>
+              </div>
+              <p className="truncate text-xs text-muted-foreground">
+                {request.origin ?? "Unknown extension origin"}
+              </p>
+              <p className="text-[11px] text-muted-foreground/80">
+                Expires {formatAnnotationsBridgeEpoch(request.expiresAtEpochMs)}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={rejectingAnnotationsBridgeRequestId === request.requestId}
+                onClick={() => void handleRejectAnnotationsBridgePairing(request.requestId)}
+              >
+                {rejectingAnnotationsBridgeRequestId === request.requestId
+                  ? "Rejecting…"
+                  : "Reject"}
+              </Button>
+              <Button
+                size="xs"
+                disabled={approvingAnnotationsBridgeRequestId === request.requestId}
+                onClick={() => void handleApproveAnnotationsBridgePairing(request.requestId)}
+              >
+                {approvingAnnotationsBridgeRequestId === request.requestId
+                  ? "Approving…"
+                  : "Approve"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ))}
+      {annotationsBridgeClients.map((client) => (
+        <div key={client.clientId} className={ITEM_ROW_CLASSNAME}>
+          <div className={ITEM_ROW_INNER_CLASSNAME}>
+            <div className="min-w-0 space-y-1">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="truncate text-sm font-medium text-foreground">
+                  {client.clientName ?? "Annotations"}
+                </span>
+                {client.revokedAtEpochMs ? (
+                  <span className="rounded-sm border border-destructive/30 bg-destructive/5 px-1.5 py-0.5 text-[11px] text-destructive">
+                    Revoked
+                  </span>
+                ) : (
+                  <span className="rounded-sm border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-600 dark:text-emerald-400">
+                    Paired
+                  </span>
+                )}
+              </div>
+              <p className="truncate text-xs text-muted-foreground">
+                {client.origin ?? client.extensionId ?? "Unknown extension"}
+              </p>
+              <p className="text-[11px] text-muted-foreground/80">
+                Last seen {formatAnnotationsBridgeEpoch(client.lastSeenAtEpochMs)}
+              </p>
+            </div>
+            <Button
+              size="xs"
+              variant="destructive-outline"
+              disabled={
+                client.revokedAtEpochMs !== null ||
+                revokingAnnotationsBridgeClientId === client.clientId
+              }
+              onClick={() => void handleRevokeAnnotationsBridgeClient(client.clientId)}
+            >
+              {revokingAnnotationsBridgeClientId === client.clientId ? "Revoking…" : "Revoke"}
+            </Button>
+          </div>
+        </div>
+      ))}
+    </>
+  );
   const renderNetworkAccessRow = () => (
     <SettingsRow
       title="Network access"
@@ -2520,6 +2793,9 @@ export function ConnectionsSettings() {
               {renderAuthorizedClients("current")}
             </SettingsSection>
           ) : null}
+          <SettingsSection title="Annotations bridge">
+            {renderAnnotationsBridgeRows()}
+          </SettingsSection>
           <AlertDialog
             open={isDesktopServerExposureDialogOpen}
             onOpenChange={(open) => {
