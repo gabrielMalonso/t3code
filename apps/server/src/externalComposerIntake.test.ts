@@ -108,6 +108,91 @@ describe("ExternalComposerIntake.publish", () => {
     });
   });
 
+  it("keeps the subscriber usable after a rejected delivery", async () => {
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const intake = yield* ExternalComposerIntake;
+          return yield* Effect.scoped(
+            Effect.gen(function* () {
+              let deliveryCount = 0;
+              yield* intake.stream(testSubscription).pipe(
+                Stream.runForEach((event) =>
+                  Effect.gen(function* () {
+                    deliveryCount += 1;
+                    yield* intake.ack({
+                      subscriberId: event.subscriberId,
+                      deliveryId: event.deliveryId,
+                      ok: deliveryCount > 1,
+                    });
+                  }),
+                ),
+                Effect.forkScoped,
+              );
+
+              yield* Effect.sleep("10 millis");
+              const first = yield* intake.publish(testRequest);
+              const second = yield* intake.publish(testRequest);
+              return { deliveryCount, first, second };
+            }),
+          );
+        }).pipe(Effect.provide(ExternalComposerIntakeLive)),
+      ),
+    ).resolves.toEqual({
+      deliveryCount: 2,
+      first: {
+        ok: false,
+        reason: "delivery-failed",
+      },
+      second: {
+        ok: true,
+      },
+    });
+  });
+
+  it("keeps the subscriber usable after a timed out delivery", async () => {
+    await expect(
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const intake = yield* ExternalComposerIntake;
+          return yield* Effect.scoped(
+            Effect.gen(function* () {
+              let deliveryCount = 0;
+              yield* intake.stream(testSubscription).pipe(
+                Stream.runForEach((event) =>
+                  Effect.gen(function* () {
+                    deliveryCount += 1;
+                    if (deliveryCount === 1) return;
+                    yield* intake.ack({
+                      subscriberId: event.subscriberId,
+                      deliveryId: event.deliveryId,
+                      ok: true,
+                    });
+                  }),
+                ),
+                Effect.forkScoped,
+              );
+
+              yield* Effect.sleep("10 millis");
+              const first = yield* intake.publish(testRequest);
+              const second = yield* intake.publish(testRequest);
+              return { deliveryCount, first, second };
+            }),
+          );
+        }).pipe(Effect.provide(ExternalComposerIntakeLive)),
+      ),
+    ).resolves.toEqual({
+      deliveryCount: 2,
+      first: {
+        ok: false,
+        reason: "delivery-timeout",
+      },
+      second: {
+        ok: true,
+      },
+    });
+  });
+
   it("succeeds when the subscriber acknowledges the event", async () => {
     await expect(
       Effect.runPromise(

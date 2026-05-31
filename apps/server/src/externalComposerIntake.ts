@@ -123,23 +123,11 @@ export const ExternalComposerIntakeLive = Layer.effect(
           );
           yield* removePendingDelivery(pendingDeliveriesRef, deliveryId);
           if (Option.isNone(ack)) {
-            lastFailureReason = "delivery-timeout";
-            yield* removeSubscriberIfQueueMatches(
-              subscribersRef,
-              subscriber.subscriberId,
-              subscriber.queue,
-            );
-            continue;
+            return { ok: false, reason: "delivery-timeout" };
           }
 
           if (!ack.value) {
-            lastFailureReason = "delivery-failed";
-            yield* removeSubscriberIfQueueMatches(
-              subscribersRef,
-              subscriber.subscriberId,
-              subscriber.queue,
-            );
-            continue;
+            return { ok: false, reason: "delivery-failed" };
           }
 
           yield* Effect.logInfo("Annotations composer intake acknowledged", {

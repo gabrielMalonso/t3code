@@ -595,7 +595,7 @@ function toExternalComposerIntakeRequest(
   };
 }
 
-function validateBridgeImage(
+export function validateBridgeImage(
   fileSystem: FileSystem.FileSystem,
   request: AnnotationsBridgeDeliverRequest,
 ): Effect.Effect<{ readonly ok: true } | { readonly ok: false; readonly message: string }> {
@@ -624,7 +624,7 @@ function validateBridgeImage(
         requestId: request.requestId,
         imageName: image.name ?? null,
       });
-      return { ok: true };
+      return { ok: false, message: "Annotations bridge image file was not found." };
     }
     if (stat.value.type !== "File") {
       return { ok: false, message: "Annotations bridge image file was not found." };
