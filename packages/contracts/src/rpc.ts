@@ -60,6 +60,11 @@ import {
   ProjectWriteFileResult,
 } from "./project.ts";
 import {
+  ExternalComposerIntakeDeliveryAck,
+  ExternalComposerIntakeStreamEvent,
+  ExternalComposerIntakeSubscription,
+} from "./externalComposerIntake.ts";
+import {
   TerminalClearInput,
   TerminalCloseInput,
   TerminalError,
@@ -155,6 +160,10 @@ export const WS_METHODS = {
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
   serverSignalProcess: "server.signalProcess",
 
+  // External composer intake methods
+  externalComposerIntakeUpdateSubscription: "externalComposerIntake.updateSubscription",
+  externalComposerIntakeAck: "externalComposerIntake.ack",
+
   // Source control methods
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
@@ -166,6 +175,7 @@ export const WS_METHODS = {
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
+  subscribeExternalComposerIntake: "externalComposerIntake.subscribe",
 } as const;
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -487,6 +497,28 @@ export const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess,
   stream: true,
 });
 
+export const WsExternalComposerIntakeUpdateSubscriptionRpc = Rpc.make(
+  WS_METHODS.externalComposerIntakeUpdateSubscription,
+  {
+    payload: ExternalComposerIntakeSubscription,
+    success: Schema.Struct({}),
+  },
+);
+
+export const WsExternalComposerIntakeAckRpc = Rpc.make(WS_METHODS.externalComposerIntakeAck, {
+  payload: ExternalComposerIntakeDeliveryAck,
+  success: Schema.Struct({}),
+});
+
+export const WsSubscribeExternalComposerIntakeRpc = Rpc.make(
+  WS_METHODS.subscribeExternalComposerIntake,
+  {
+    payload: ExternalComposerIntakeSubscription,
+    success: ExternalComposerIntakeStreamEvent,
+    stream: true,
+  },
+);
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerGetConfigRpc,
   WsServerListProviderSkillsRpc,
@@ -530,6 +562,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,
+  WsExternalComposerIntakeUpdateSubscriptionRpc,
+  WsExternalComposerIntakeAckRpc,
+  WsSubscribeExternalComposerIntakeRpc,
   WsOrchestrationDispatchCommandRpc,
   WsOrchestrationCompactThreadRpc,
   WsOrchestrationGetTurnDiffRpc,

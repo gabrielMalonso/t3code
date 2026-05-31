@@ -1,12 +1,15 @@
 import {
   DEFAULT_SERVER_SETTINGS,
+  DEFAULT_UNIFIED_SETTINGS,
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderInstanceConfig,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  buildRestoreDefaultsSettingsPatch,
   buildProviderInstanceUpdatePatch,
+  collectRestoreDefaultSettingLabels,
   formatDiagnosticsDescription,
 } from "./SettingsPanels.logic";
 
@@ -100,5 +103,27 @@ describe("buildProviderInstanceUpdatePatch", () => {
 
     expect(patch.providerInstances?.[instanceId]).toEqual(nextInstance);
     expect(patch.providers).toBeUndefined();
+  });
+});
+
+describe("settings restore defaults", () => {
+  it("detects and resets the Annotations bridge setting", () => {
+    const settings = {
+      ...DEFAULT_UNIFIED_SETTINGS,
+      annotationsBridge: {
+        ...DEFAULT_UNIFIED_SETTINGS.annotationsBridge,
+        enabled: true,
+      },
+    };
+
+    expect(
+      collectRestoreDefaultSettingLabels({ theme: "system", settings }).filter(
+        (label) => label === "Annotations bridge",
+      ),
+    ).toEqual(["Annotations bridge"]);
+    expect(buildRestoreDefaultsSettingsPatch()).toMatchObject({
+      annotationsBridge: DEFAULT_UNIFIED_SETTINGS.annotationsBridge,
+      showPlanSidebar: DEFAULT_UNIFIED_SETTINGS.showPlanSidebar,
+    });
   });
 });

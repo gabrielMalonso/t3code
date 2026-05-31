@@ -4,6 +4,7 @@ import { EllipsisIcon, ListTodoIcon, Minimize2Icon } from "lucide-react";
 import { Button } from "../ui/button";
 import {
   Menu,
+  MenuCheckboxItem,
   MenuItem,
   MenuPopup,
   MenuRadioGroup,
@@ -22,7 +23,9 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   showInteractionModeToggle: boolean;
   traitsMenuContent?: ReactNode;
   compactContextDisabled?: boolean;
+  annotationsBridgeEnabled?: boolean;
   onCompactContext?: () => void;
+  onAnnotationsBridgeEnabledChange?: (enabled: boolean) => void;
   onToggleInteractionMode: () => void;
   onTogglePlanSidebar: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -76,16 +79,29 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
           <MenuRadioItem value="auto-accept-edits">Auto-accept edits</MenuRadioItem>
           <MenuRadioItem value="full-access">Full access</MenuRadioItem>
         </MenuRadioGroup>
-        {props.onCompactContext ? (
+        {props.onCompactContext || props.onAnnotationsBridgeEnabledChange ? (
           <>
             <MenuDivider />
-            <MenuItem
-              disabled={props.compactContextDisabled}
-              onClick={() => props.onCompactContext?.()}
-            >
-              <Minimize2Icon className="size-4 shrink-0" />
-              Compact context
-            </MenuItem>
+            {props.onCompactContext ? (
+              <MenuItem
+                disabled={props.compactContextDisabled}
+                onClick={() => props.onCompactContext?.()}
+              >
+                <Minimize2Icon className="size-4 shrink-0" />
+                Compact context
+              </MenuItem>
+            ) : null}
+            {props.onAnnotationsBridgeEnabledChange ? (
+              <MenuCheckboxItem
+                checked={props.annotationsBridgeEnabled ?? false}
+                variant="switch"
+                onCheckedChange={(checked) =>
+                  props.onAnnotationsBridgeEnabledChange?.(checked === true)
+                }
+              >
+                Annotations bridge
+              </MenuCheckboxItem>
+            ) : null}
           </>
         ) : null}
         {props.loopMenuContent ? (

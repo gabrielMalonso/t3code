@@ -143,6 +143,13 @@ export interface WsRpcClient {
     readonly subscribeConfig: RpcStreamMethod<typeof WS_METHODS.subscribeServerConfig>;
     readonly subscribeLifecycle: RpcStreamMethod<typeof WS_METHODS.subscribeServerLifecycle>;
     readonly subscribeAuthAccess: RpcStreamMethod<typeof WS_METHODS.subscribeAuthAccess>;
+    readonly updateExternalComposerIntakeSubscription: RpcUnaryMethod<
+      typeof WS_METHODS.externalComposerIntakeUpdateSubscription
+    >;
+    readonly ackExternalComposerIntake: RpcUnaryMethod<typeof WS_METHODS.externalComposerIntakeAck>;
+    readonly subscribeExternalComposerIntake: RpcInputStreamMethod<
+      typeof WS_METHODS.subscribeExternalComposerIntake
+    >;
   };
   readonly orchestration: {
     readonly dispatchCommand: RpcUnaryMethod<typeof ORCHESTRATION_WS_METHODS.dispatchCommand>;
@@ -298,6 +305,21 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
           ...options,
           tag: WS_METHODS.subscribeAuthAccess,
         }),
+      updateExternalComposerIntakeSubscription: (input) =>
+        transport.request((client) =>
+          client[WS_METHODS.externalComposerIntakeUpdateSubscription](input),
+        ),
+      ackExternalComposerIntake: (input) =>
+        transport.request((client) => client[WS_METHODS.externalComposerIntakeAck](input)),
+      subscribeExternalComposerIntake: (input, listener, options) =>
+        transport.subscribe(
+          (client) => client[WS_METHODS.subscribeExternalComposerIntake](input),
+          listener,
+          {
+            ...options,
+            tag: WS_METHODS.subscribeExternalComposerIntake,
+          },
+        ),
     },
     orchestration: {
       dispatchCommand: (input) =>

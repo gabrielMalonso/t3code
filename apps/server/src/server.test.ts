@@ -25,6 +25,8 @@ import {
   WS_METHODS,
   WsRpcGroup,
   EditorId,
+  ANNOTATIONS_BRIDGE_PROTOCOL_VERSION,
+  ANNOTATIONS_BRIDGE_DELIVER_REQUEST_TYPE,
 } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import { assertFailure, assertInclude, assertTrue } from "@effect/vitest/utils";
@@ -100,6 +102,11 @@ import {
   RepositoryIdentityResolver,
   type RepositoryIdentityResolverShape,
 } from "./project/Services/RepositoryIdentityResolver.ts";
+import {
+  ExternalComposerIntake,
+  type ExternalComposerIntakeShape,
+} from "./externalComposerIntake.ts";
+import { AnnotationsBridge, type AnnotationsBridgeShape } from "./annotationsBridge.ts";
 import {
   ServerEnvironment,
   type ServerEnvironmentShape,
@@ -342,6 +349,8 @@ const buildAppUnderTest = (options?: {
     serverRuntimeStartup?: Partial<ServerRuntimeStartupShape>;
     serverEnvironment?: Partial<ServerEnvironmentShape>;
     repositoryIdentityResolver?: Partial<RepositoryIdentityResolverShape>;
+    externalComposerIntake?: Partial<ExternalComposerIntakeShape>;
+    annotationsBridge?: Partial<AnnotationsBridgeShape>;
   };
 }) =>
   Effect.gen(function* () {
@@ -697,6 +706,68 @@ const buildAppUnderTest = (options?: {
             }),
           ...options?.layers?.checkpointDiffQuery,
         }),
+      ),
+      Layer.provide(
+        Layer.mergeAll(
+          Layer.mock(ExternalComposerIntake)({
+            hasActiveSubscribers: Effect.succeed(false),
+            getStatus: Effect.succeed({
+              ok: true,
+              connected: false,
+              reason: "composer-not-connected",
+              checkedAtEpochMs: 0,
+              target: null,
+            }),
+            publish: () => Effect.succeed({ ok: false, reason: "no-active-composer" }),
+            updateSubscription: () => Effect.void,
+            ack: () => Effect.void,
+            stream: () => Stream.empty,
+            ...options?.layers?.externalComposerIntake,
+          }),
+          Layer.mock(AnnotationsBridge)({
+            getManifest: Effect.succeed({
+              protocolVersion: ANNOTATIONS_BRIDGE_PROTOCOL_VERSION,
+              appVersion: "0.0.24",
+              pairingRequired: true,
+              bridgeEnabled: false,
+              status: "disabled",
+            }),
+            createPairingRequest: () =>
+              Effect.succeed({
+                ok: false,
+                reason: "pairing-pending",
+              }),
+            readPairingStatus: () =>
+              Effect.succeed({
+                ok: false,
+                status: "pending",
+                reason: "pairing-pending",
+              }),
+            listPendingPairingRequests: Effect.succeed([]),
+            approvePairingRequest: () =>
+              Effect.succeed({
+                ok: false,
+                status: "expired",
+                reason: "pairing-expired",
+              }),
+            rejectPairingRequest: () => Effect.succeed({ rejected: false }),
+            listClients: Effect.succeed([]),
+            revokeClient: () => Effect.succeed({ revoked: false }),
+            authenticateToken: () => Effect.succeed(null),
+            getStatus: () =>
+              Effect.succeed({
+                ok: false,
+                reason: "not-paired",
+              }),
+            deliver: (client, request) =>
+              Effect.succeed({
+                ok: false,
+                requestId: request.requestId,
+                reason: client ? "no-active-composer" : "not-paired",
+              }),
+            ...options?.layers?.annotationsBridge,
+          }),
+        ),
       ),
     );
 
@@ -1078,6 +1149,118 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(response.status, 200);
       assertBrowserApiCorsHeaders(response.headers);
       assert.deepEqual(body, testEnvironmentDescriptor);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("serves the Annotations bridge v2 manifest", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({
+        layers: {
+          annotationsBridge: {
+            getManifest: Effect.succeed({
+              protocolVersion: ANNOTATIONS_BRIDGE_PROTOCOL_VERSION,
+              appVersion: "0.0.24",
+              pairingRequired: true,
+              bridgeEnabled: true,
+              status: "ready",
+            }),
+          },
+        },
+      });
+
+      const response = yield* HttpClient.get("/api/annotations/bridge/manifest");
+      const body = (yield* response.json) as {
+        readonly protocolVersion: number;
+        readonly appVersion: string;
+        readonly pairingRequired: boolean;
+        readonly bridgeEnabled: boolean;
+        readonly status: string;
+      };
+
+      assert.equal(response.status, 200);
+      assert.deepEqual(body, {
+        protocolVersion: ANNOTATIONS_BRIDGE_PROTOCOL_VERSION,
+        appVersion: "0.0.24",
+        pairingRequired: true,
+        bridgeEnabled: true,
+        status: "ready",
+      });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("requires a paired bearer token for Annotations bridge v2 status", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+
+      const response = yield* HttpClient.get("/api/annotations/bridge/v1/status");
+      const body = (yield* response.json) as { readonly ok: boolean; readonly reason?: string };
+
+      assert.equal(response.status, 401);
+      assert.deepEqual(body, {
+        ok: false,
+        reason: "not-paired",
+      });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("delivers Annotations bridge v2 payloads through a paired bearer token", () =>
+    Effect.gen(function* () {
+      const delivered: string[] = [];
+      const pairedClient = {
+        token: "paired-token",
+        client: {
+          clientId: "client-test",
+          clientInstallId: "install-test",
+          clientName: "Annotations",
+          extensionId: "abcabcabcabcabcabcabcabcabcabcab",
+          origin: "chrome-extension://abcabcabcabcabcabcabcabcabcabcab",
+          browser: "Chrome",
+          createdAtEpochMs: 1,
+          lastSeenAtEpochMs: null,
+          revokedAtEpochMs: null,
+        },
+      };
+      yield* buildAppUnderTest({
+        layers: {
+          annotationsBridge: {
+            authenticateToken: (token) =>
+              Effect.succeed(token === "paired-token" ? pairedClient : null),
+            deliver: (_client, request) =>
+              Effect.sync(() => {
+                delivered.push(request.requestId);
+                return {
+                  ok: true,
+                  requestId: request.requestId,
+                };
+              }),
+          },
+        },
+      });
+
+      const response = yield* HttpClient.post("/api/annotations/bridge/v1/deliver", {
+        headers: {
+          authorization: "Bearer paired-token",
+          "content-type": "application/json",
+        },
+        body: HttpBody.text(
+          // @effect-diagnostics-next-line preferSchemaOverJson:off
+          JSON.stringify({
+            type: ANNOTATIONS_BRIDGE_DELIVER_REQUEST_TYPE,
+            requestId: "bridge-delivery-test",
+            action: "insert",
+            prompt: "# UI Note",
+            append: true,
+            focus: true,
+            image: null,
+          }),
+          "application/json",
+        ),
+      });
+      const body = (yield* response.json) as { readonly ok: boolean; readonly requestId?: string };
+
+      assert.equal(response.status, 200);
+      assert.deepEqual(body, { ok: true, requestId: "bridge-delivery-test" });
+      assert.deepEqual(delivered, ["bridge-delivery-test"]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
