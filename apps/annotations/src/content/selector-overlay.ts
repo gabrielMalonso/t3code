@@ -51,18 +51,38 @@ export function elementLabel(element: Element): string {
   return getShortSelector(element);
 }
 
-export function placeFixedBox(box: HTMLElement, rect: Rect, visible: boolean): void {
+export function placeFixedBox(
+  box: HTMLElement,
+  rect: Rect,
+  visible: boolean,
+  options: { animateOpacity?: boolean } = {},
+): void {
   if (!visible) {
+    box.dataset.visible = "false";
     box.style.opacity = "0";
     box.style.display = "none";
     return;
   }
 
+  const wasHidden = box.style.display === "" || box.style.display === "none";
+  box.dataset.visible = "true";
+
   Object.assign(box.style, {
     display: "block",
-    opacity: "1",
     transform: `translate(${Math.round(rect.x)}px, ${Math.round(rect.y)}px)`,
     width: `${Math.round(rect.width)}px`,
     height: `${Math.round(rect.height)}px`,
+  });
+
+  if (!options.animateOpacity || !wasHidden) {
+    box.style.opacity = "1";
+    return;
+  }
+
+  box.style.opacity = "0";
+  window.requestAnimationFrame(() => {
+    if (box.dataset.visible === "true") {
+      box.style.opacity = "1";
+    }
   });
 }

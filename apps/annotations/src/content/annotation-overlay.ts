@@ -340,6 +340,7 @@ function overlayCss(): string {
       --annotations-line: #242424;
       --annotations-accent: #f2c04b;
       --annotations-accent-soft: rgba(242, 192, 75, 0.18);
+      --annotations-focus-ring: rgba(242, 192, 75, 0.45);
       --annotations-shell: #000000;
       --annotations-shell-line: #242424;
       --annotations-shell-muted: #59c2ff;
@@ -523,7 +524,9 @@ function overlayCss(): string {
       pointer-events: none;
       z-index: 2;
       border-radius: 4px;
-      transition: transform 150ms cubic-bezier(0.22, 1, 0.36, 1), opacity 120ms ease;
+      transition:
+        transform 150ms cubic-bezier(0.22, 1, 0.36, 1),
+        opacity ${PANEL_FADE_MS}ms cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     .hover {
@@ -587,43 +590,74 @@ function overlayCss(): string {
 
     .composer-field {
       position: relative;
+      display: flex;
+      flex-direction: column;
       overflow: hidden;
       border: 1px solid var(--annotations-line);
       border-radius: var(--annotations-composer-surface-radius);
       background: var(--annotations-field);
+      color-scheme: dark;
       transition:
-        border-color 120ms ease,
-        box-shadow 120ms ease;
+        border-color 200ms ease,
+        box-shadow 200ms ease;
     }
 
     .composer-field:focus-within {
-      border-color: var(--annotations-accent);
-      box-shadow: 0 0 0 3px var(--annotations-accent-soft);
+      border-color: var(--annotations-focus-ring);
+      box-shadow: none;
     }
 
     .composer-field textarea {
       display: block;
       width: 100%;
-      min-height: 96px;
-      max-height: 180px;
+      min-height: 80px;
+      max-height: 154px;
       resize: none;
       border: 0;
       border-radius: var(--annotations-composer-surface-radius);
       background: transparent;
       color: var(--annotations-ink);
-      padding: 9px 10px 48px;
+      padding: 10px 12px 8px;
       font: 500 13px/1.45 var(--annotations-font-family);
       outline: none;
+      overflow-y: auto;
+      scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+      scrollbar-width: thin;
+    }
+
+    .composer-field textarea::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .composer-field textarea::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .composer-field textarea::-webkit-scrollbar-thumb {
+      border: 2px solid transparent;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.22);
+      background-clip: content-box;
+    }
+
+    .composer-field textarea::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.32);
+      background-clip: content-box;
+    }
+
+    .composer-field textarea::-webkit-scrollbar-corner {
+      background: transparent;
     }
 
     .composer-actions {
-      position: absolute;
-      right: 8px;
-      bottom: 8px;
+      position: static;
       display: flex;
       align-items: center;
       justify-content: flex-end;
       gap: 7px;
+      min-height: 44px;
+      padding: 4px 8px 8px;
+      background: var(--annotations-field);
     }
 
     .panel button,

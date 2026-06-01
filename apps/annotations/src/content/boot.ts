@@ -369,7 +369,6 @@ class AnnotationsController {
     this.refs.textarea.value = "";
     placeFixedBox(this.refs.hoverBox, { x: 0, y: 0, width: 0, height: 0 }, false);
     this.reposition();
-    showPanel(this.refs, elementRect(element));
     this.refs.textarea.focus();
   }
 
@@ -392,7 +391,7 @@ class AnnotationsController {
     showBadge(this.refs, elementLabel(element), rect);
 
     if (this.selectedElement) {
-      placeFixedBox(this.refs.lockedBox, rect, true);
+      placeFixedBox(this.refs.lockedBox, rect, true, { animateOpacity: true });
       showPanel(this.refs, rect);
     } else {
       placeFixedBox(this.refs.hoverBox, rect, true);
