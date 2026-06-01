@@ -126,6 +126,39 @@ describe("buildUiNote", () => {
     expect(note).not.toContain("abcdefghijklmnopqrstuvwxyz123456");
   });
 
+  it("keeps manually entered prompt text untruncated", () => {
+    const longComment = Array.from({ length: 90 }, (_, index) => `detalhe-${index}`).join(" ");
+    const longVisibleText = Array.from({ length: 140 }, (_, index) => `texto-${index}`).join(" ");
+    const note = buildUiNote({
+      ...request,
+      comment: longComment,
+      element: {
+        ...request.element,
+        visibleText: longVisibleText,
+        visibleTextPreview: "",
+      },
+    });
+
+    const promptSection = note.split("## Informações")[0];
+    const metadataText = note.match(/Texto:\n`([^`]*)`/)?.[1] ?? "";
+
+    expect(promptSection).toContain(longComment);
+    expect(promptSection).not.toContain("...");
+    expect(metadataText).toContain("...");
+    expect(metadataText.length).toBeLessThan(longVisibleText.length);
+  });
+
+  it("keeps minimal fallback prompt text untruncated while redacting sensitive values", () => {
+    const longDetails = Array.from({ length: 90 }, (_, index) => `fallback-${index}`).join(" ");
+    const note = buildMinimalUiNote(`Revisar conta ana@example.com ${longDetails}`);
+    const promptSection = note.split("## Informações")[0];
+
+    expect(promptSection).toContain("[email]");
+    expect(promptSection).toContain(longDetails);
+    expect(promptSection).not.toContain("...");
+    expect(promptSection).not.toContain("ana@example.com");
+  });
+
   it("adds expanded debug metadata only when debug mode is enabled", () => {
     const note = buildUiNote({
       ...request,
