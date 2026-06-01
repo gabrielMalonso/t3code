@@ -10,9 +10,15 @@ const manifestPath = fileURLToPath(new URL("../../dist/manifest.json", import.me
 test("loads the unpacked extension service worker", async () => {
   test.skip(!existsSync(manifestPath), "Run bun run build before bun run e2e.");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+    action?: {
+      default_icon?: Record<string, string>;
+    };
     host_permissions?: string[];
+    icons?: Record<string, string>;
   };
   expect(manifest.host_permissions).toContain("<all_urls>");
+  expect(manifest.icons?.["128"]).toBe("icons/favicon.png");
+  expect(manifest.action?.default_icon?.["32"]).toBe("icons/favicon.png");
 
   const userDataDir = mkdtempSync(join(tmpdir(), "annotations-"));
   const context = await chromium.launchPersistentContext(userDataDir, {

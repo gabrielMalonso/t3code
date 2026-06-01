@@ -9,7 +9,7 @@ export const COPY = {
   pick: "Pick",
   closeOverlay: "Fechar overlay",
   commentLabel: "Comentário",
-  commentPlaceholder: "O que você quer mudar aqui?",
+  commentPlaceholder: "Ask anything.",
   emptyComment: "Escreva um comentário antes de capturar.",
   copying: "Enviando...",
   bridgeChecking: "T3 verificando...",
