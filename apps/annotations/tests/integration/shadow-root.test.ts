@@ -30,7 +30,16 @@ describe("Annotations shadow root", () => {
     expect(shadow.querySelector("style")?.textContent).toContain(
       "--annotations-composer-surface-radius: 20px",
     );
-    expect(shadow.querySelector("style")?.textContent).toContain("transition: opacity 160ms ease");
+    expect(shadow.querySelector("style")?.textContent).toContain(
+      "opacity 220ms cubic-bezier(0.16, 1, 0.3, 1)",
+    );
+    expect(shadow.querySelector("style")?.textContent).toContain(
+      "transform 220ms cubic-bezier(0.16, 1, 0.3, 1)",
+    );
+    expect(shadow.querySelector("style")?.textContent).toContain("background: transparent;");
+    expect(shadow.querySelector("style")?.textContent).toContain(
+      "border-color: rgba(255, 255, 255, 0.18)",
+    );
     expect(shadow.querySelector(".label")).toBeNull();
     expect(shadow.querySelector(".secondary")).toBeNull();
     expect(shadow.querySelector(".keys")).toBeNull();
@@ -50,15 +59,17 @@ describe("Annotations shadow root", () => {
 
     expect(refs.panel.style.display).toBe("block");
     expect(refs.panel.style.opacity).toBe("1");
+    expect(refs.panel.style.getPropertyValue("--annotations-panel-scale")).toBe("1");
     expect(refs.panel.dataset.visible).toBe("true");
 
     hidePanel(refs);
 
     expect(refs.panel.style.display).toBe("block");
     expect(refs.panel.style.opacity).toBe("0");
+    expect(refs.panel.style.getPropertyValue("--annotations-panel-scale")).toBe("0.985");
     expect(refs.panel.dataset.visible).toBe("false");
 
-    vi.advanceTimersByTime(159);
+    vi.advanceTimersByTime(219);
     expect(refs.panel.style.display).toBe("block");
 
     vi.advanceTimersByTime(1);

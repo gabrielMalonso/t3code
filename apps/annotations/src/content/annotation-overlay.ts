@@ -30,7 +30,7 @@ export type BridgeStatusPresentation = {
   title?: string;
 };
 
-const PANEL_FADE_MS = 160;
+const PANEL_FADE_MS = 220;
 
 export function renderOverlayChrome(shadow: ShadowRoot): OverlayRefs {
   shadow.innerHTML = `
@@ -166,23 +166,30 @@ export function showPanel(refs: OverlayRefs, rect: Rect): void {
   const wasHidden = refs.panel.style.display === "" || refs.panel.style.display === "none";
 
   refs.panel.dataset.visible = "true";
-  if (wasHidden) refs.panel.style.opacity = "0";
+  refs.panel.style.setProperty("--annotations-panel-x", `${Math.round(left)}px`);
+  refs.panel.style.setProperty("--annotations-panel-y", `${Math.round(top)}px`);
+
+  if (wasHidden) {
+    refs.panel.style.opacity = "0";
+    refs.panel.style.setProperty("--annotations-panel-scale", "0.985");
+  }
 
   Object.assign(refs.panel.style, {
     display: "block",
     pointerEvents: "auto",
     width: `${panelWidth}px`,
-    transform: `translate(${Math.round(left)}px, ${Math.round(top)}px)`,
   });
 
   if (!wasHidden) {
     refs.panel.style.opacity = "1";
+    refs.panel.style.setProperty("--annotations-panel-scale", "1");
     return;
   }
 
   window.requestAnimationFrame(() => {
     if (refs.panel.dataset.visible === "true") {
       refs.panel.style.opacity = "1";
+      refs.panel.style.setProperty("--annotations-panel-scale", "1");
     }
   });
 }
@@ -190,6 +197,7 @@ export function showPanel(refs: OverlayRefs, rect: Rect): void {
 export function hidePanel(refs: OverlayRefs): void {
   refs.panel.dataset.visible = "false";
   refs.panel.style.opacity = "0";
+  refs.panel.style.setProperty("--annotations-panel-scale", "0.985");
   refs.panel.style.pointerEvents = "none";
 
   window.setTimeout(() => {
@@ -403,14 +411,14 @@ function overlayCss(): string {
       gap: 6px;
       height: 26px;
       border-radius: 6px;
-      background: rgba(89, 194, 255, 0.07);
+      background: transparent;
       color: var(--annotations-ink);
       padding: 0 9px;
     }
 
     .hud-pick:hover {
-      border-color: rgba(89, 194, 255, 0.42);
-      background: rgba(89, 194, 255, 0.12);
+      border-color: rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.04);
     }
 
     .hud-pick.is-active {
@@ -564,8 +572,13 @@ function overlayCss(): string {
     .panel {
       border-radius: var(--annotations-composer-frame-radius);
       padding: 12px;
-      transition: opacity ${PANEL_FADE_MS}ms ease;
-      will-change: opacity;
+      transform: translate(var(--annotations-panel-x, 0), var(--annotations-panel-y, 0))
+        scale(var(--annotations-panel-scale, 0.985));
+      transform-origin: top left;
+      transition:
+        opacity ${PANEL_FADE_MS}ms cubic-bezier(0.16, 1, 0.3, 1),
+        transform ${PANEL_FADE_MS}ms cubic-bezier(0.16, 1, 0.3, 1);
+      will-change: opacity, transform;
     }
 
     .fallback {
