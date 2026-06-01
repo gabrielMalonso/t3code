@@ -1,4 +1,4 @@
-import { COPY, SHORTCUTS } from "../shared/copy";
+import { COPY } from "../shared/copy";
 import { formatDiagnostics, formatFallbackText } from "../shared/diagnostics";
 import type { CaptureFallback, Rect } from "../shared/types";
 
@@ -16,7 +16,6 @@ export type OverlayRefs = {
   textarea: HTMLTextAreaElement;
   debugButton: HTMLButtonElement;
   primaryButton: HTMLButtonElement;
-  secondaryButton: HTMLButtonElement;
   toast: HTMLDivElement;
   fallback: HTMLDivElement;
 };
@@ -49,14 +48,56 @@ export function renderOverlayChrome(shadow: ShadowRoot): OverlayRefs {
     <div class="badge" part="badge"></div>
     <section class="panel" part="panel" aria-label="Annotations">
       <label class="label" for="annotations-comment">${COPY.commentLabel}</label>
-      <textarea id="annotations-comment" aria-label="${COPY.commentLabel}" placeholder="${COPY.commentPlaceholder}" spellcheck="true"></textarea>
-      <div class="actions">
-        <button class="debug-toggle" type="button" aria-pressed="false" title="${COPY.debugMode}" data-testid="annotations-debug">${COPY.debug}</button>
-        <span class="actions-fill" aria-hidden="true"></span>
-        <button class="secondary" type="button">${COPY.cancel}</button>
-        <button class="primary" type="button">${COPY.capture}</button>
+      <div class="composer-field">
+        <textarea id="annotations-comment" aria-label="${COPY.commentLabel}" placeholder="${COPY.commentPlaceholder}" spellcheck="true"></textarea>
+        <div class="composer-actions">
+          <button class="icon-button debug-toggle" type="button" aria-label="${COPY.debug}" aria-pressed="false" title="${COPY.debugMode}" data-testid="annotations-debug">
+            <svg class="bug-icon" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M5.5 5.75V4.8a2.5 2.5 0 0 1 5 0v.95M4.8 1.8l1.35 1.35M11.2 1.8 9.85 3.15"
+                stroke="currentColor"
+                stroke-width="1.45"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M4.75 6.05h6.5A2.75 2.75 0 0 1 14 8.8v1.45A3.75 3.75 0 0 1 10.25 14h-4.5A3.75 3.75 0 0 1 2 10.25V8.8a2.75 2.75 0 0 1 2.75-2.75Z"
+                stroke="currentColor"
+                stroke-width="1.45"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M8 8.4v5.1M2 8.8H.8M15.2 8.8H14M2 11.3H.8M15.2 11.3H14"
+                stroke="currentColor"
+                stroke-width="1.45"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+          <button class="icon-button primary" type="button" aria-label="${COPY.capture}" title="${COPY.capture}">
+            <svg class="send-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path
+                d="M7 11.5V2.5M7 2.5L3 6.5M7 2.5L11 6.5"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <svg class="send-spinner" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <circle
+                cx="7"
+                cy="7"
+                r="5.5"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-dasharray="20 12"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
-      <div class="keys">${SHORTCUTS.submit} · ${SHORTCUTS.cancel}</div>
     </section>
     <section class="fallback" part="fallback" aria-label="${COPY.fallbackTitle}"></section>
     <div class="toast" part="toast" role="status" aria-live="polite"></div>
@@ -77,7 +118,6 @@ export function renderOverlayChrome(shadow: ShadowRoot): OverlayRefs {
     textarea: mustFind<HTMLTextAreaElement>(shadow, "textarea"),
     debugButton: mustFind<HTMLButtonElement>(shadow, ".debug-toggle"),
     primaryButton: mustFind<HTMLButtonElement>(shadow, ".primary"),
-    secondaryButton: mustFind<HTMLButtonElement>(shadow, ".secondary"),
     toast: mustFind<HTMLDivElement>(shadow, ".toast"),
     fallback: mustFind<HTMLDivElement>(shadow, ".fallback"),
   };
@@ -173,10 +213,11 @@ export function showToast(refs: OverlayRefs, message: string, timeoutMs = 2200):
 
 export function setCapturing(refs: OverlayRefs, capturing: boolean): void {
   refs.primaryButton.disabled = capturing;
-  refs.secondaryButton.disabled = capturing;
   refs.debugButton.disabled = capturing;
   refs.textarea.disabled = capturing;
-  refs.primaryButton.textContent = capturing ? COPY.copying : COPY.capture;
+  refs.primaryButton.classList.toggle("is-capturing", capturing);
+  refs.primaryButton.setAttribute("aria-label", capturing ? COPY.copying : COPY.capture);
+  refs.primaryButton.title = capturing ? COPY.copying : COPY.capture;
 }
 
 export function showFallback(
@@ -487,36 +528,44 @@ function overlayCss(): string {
       font-weight: 650;
     }
 
-    textarea {
-      width: 100%;
-      min-height: 84px;
-      max-height: 160px;
-      resize: vertical;
+    .composer-field {
+      position: relative;
       border: 1px solid var(--annotations-line);
       border-radius: 7px;
       background: var(--annotations-field);
-      color: var(--annotations-ink);
-      padding: 9px 10px;
-      font: 500 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-      outline: none;
+      transition:
+        border-color 120ms ease,
+        box-shadow 120ms ease;
     }
 
-    textarea:focus {
+    .composer-field:focus-within {
       border-color: var(--annotations-accent);
       box-shadow: 0 0 0 3px var(--annotations-accent-soft);
     }
 
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
-      margin-top: 10px;
+    .composer-field textarea {
+      display: block;
+      width: 100%;
+      min-height: 96px;
+      max-height: 180px;
+      resize: none;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--annotations-ink);
+      padding: 9px 10px 48px;
+      font: 500 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      outline: none;
     }
 
-    .actions-fill {
-      flex: 1 1 auto;
-      min-width: 8px;
+    .composer-actions {
+      position: absolute;
+      right: 8px;
+      bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 7px;
     }
 
     .panel button,
@@ -535,25 +584,68 @@ function overlayCss(): string {
       opacity: 0.58;
     }
 
-    .primary {
+    .panel button.icon-button {
+      display: inline-grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      flex: 0 0 32px;
+      border-radius: 999px;
+      padding: 0;
+      transition:
+        background 120ms ease,
+        border-color 120ms ease,
+        color 120ms ease,
+        opacity 120ms ease,
+        transform 120ms ease;
+    }
+
+    .panel button.icon-button:hover:not(:disabled) {
+      transform: scale(1.05);
+    }
+
+    .panel button.icon-button:disabled {
+      transform: none;
+    }
+
+    .panel button.primary {
       background: var(--annotations-accent);
       border-color: var(--annotations-accent);
       color: #0b0e14;
     }
 
-    .secondary {
-      background: transparent;
-      color: var(--annotations-ink);
+    .panel button.primary:hover:not(:disabled) {
+      background: #ffc16c;
+      border-color: #ffc16c;
+      transform: scale(1.05);
+    }
+
+    .send-icon,
+    .send-spinner {
+      grid-area: 1 / 1;
+    }
+
+    .send-spinner {
+      display: none;
+      animation: annotations-spin 760ms linear infinite;
+    }
+
+    .panel button.primary.is-capturing .send-icon {
+      display: none;
+    }
+
+    .panel button.primary.is-capturing .send-spinner {
+      display: block;
     }
 
     .debug-toggle {
       background: rgba(89, 194, 255, 0.08);
       color: var(--annotations-muted);
-      min-width: 62px;
     }
 
     .debug-toggle:hover {
-      border-color: rgba(255, 180, 84, 0.42);
+      background: rgba(89, 194, 255, 0.13);
+      border-color: rgba(89, 194, 255, 0.32);
       color: var(--annotations-ink);
     }
 
@@ -561,12 +653,6 @@ function overlayCss(): string {
       border-color: rgba(255, 180, 84, 0.56);
       background: var(--annotations-accent-soft);
       color: var(--annotations-accent);
-    }
-
-    .keys {
-      margin-top: 8px;
-      color: var(--annotations-muted);
-      font: 500 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
 
     .toast {
@@ -649,10 +735,23 @@ function overlayCss(): string {
     }
 
     .fallback-text {
+      width: 100%;
       min-height: 140px;
       margin-top: 10px;
+      resize: vertical;
+      border: 1px solid var(--annotations-line);
+      border-radius: 7px;
+      background: var(--annotations-field);
+      color: var(--annotations-ink);
+      padding: 9px 10px;
+      outline: none;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 12px;
+    }
+
+    .fallback-text:focus {
+      border-color: var(--annotations-accent);
+      box-shadow: 0 0 0 3px var(--annotations-accent-soft);
     }
 
     .fallback-diagnostics {
@@ -681,6 +780,12 @@ function overlayCss(): string {
       word-break: break-word;
       color: var(--annotations-ink);
       font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    @keyframes annotations-spin {
+      to {
+        transform: rotate(360deg);
+      }
     }
   `;
 }

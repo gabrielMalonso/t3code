@@ -10,6 +10,11 @@ describe("Annotations shadow root", () => {
     expect(host.id).toBe(ROOT_ID);
     expect(host.shadowRoot).toBe(shadow);
     expect(refs.textarea.getAttribute("aria-label")).toBe("Comentário");
-    expect(refs.primaryButton.textContent).toBe("Enviar ao T3");
+    expect(refs.debugButton.getAttribute("aria-label")).toBe("Debug");
+    expect(refs.primaryButton.getAttribute("aria-label")).toBe("Enviar ao T3");
+    expect(shadow.querySelector(".composer-field")).not.toBeNull();
+    expect(shadow.querySelector(".bug-icon")).not.toBeNull();
+    expect(shadow.querySelector(".secondary")).toBeNull();
+    expect(shadow.querySelector(".keys")).toBeNull();
   });
 });

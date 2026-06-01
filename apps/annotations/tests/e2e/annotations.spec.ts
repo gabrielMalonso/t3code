@@ -533,7 +533,7 @@ test("successful copy can run twice after reinjection", async ({ page }) => {
   expect(requests[1].payload.comment).toBe("segunda copia");
 });
 
-test("copy and cancel buttons receive clicks inside the overlay", async ({ page }) => {
+test("send button receives clicks and Escape cancels inside the overlay", async ({ page }) => {
   await page.goto(new URL("../fixtures/simple-page.html", import.meta.url).toString());
   await page.addScriptTag({ path: contentScriptPath });
   await page.evaluate(() => window.__ANNOTATIONS_START__?.());
@@ -545,6 +545,7 @@ test("copy and cancel buttons receive clicks inside the overlay", async ({ page 
   await page.mouse.move(box!.x + 32, box!.y + 32);
   await page.mouse.click(box!.x + 32, box!.y + 32);
   await page.locator('textarea[aria-label="Comentário"]').fill("quero deixar maior.");
+  await expect(page.getByRole("button", { name: "Cancelar" })).toHaveCount(0);
   await page.getByRole("button", { name: "Enviar ao T3" }).click();
 
   await expect
@@ -558,7 +559,7 @@ test("copy and cancel buttons receive clicks inside the overlay", async ({ page 
   await page.evaluate(() => window.__ANNOTATIONS_START__?.());
   await page.mouse.move(box!.x + 32, box!.y + 32);
   await page.mouse.click(box!.x + 32, box!.y + 32);
-  await page.getByRole("button", { name: "Cancelar" }).click();
+  await page.keyboard.press("Escape");
 
   await expect(page.locator('textarea[aria-label="Comentário"]')).toBeHidden();
 });
