@@ -30,6 +30,8 @@ export type BridgeStatusPresentation = {
   title?: string;
 };
 
+const PANEL_FADE_MS = 160;
+
 export function renderOverlayChrome(shadow: ShadowRoot): OverlayRefs {
   shadow.innerHTML = `
     <style>${overlayCss()}</style>
@@ -47,31 +49,22 @@ export function renderOverlayChrome(shadow: ShadowRoot): OverlayRefs {
     <div class="box locked" part="locked"></div>
     <div class="badge" part="badge"></div>
     <section class="panel" part="panel" aria-label="Annotations">
-      <label class="label" for="annotations-comment">${COPY.commentLabel}</label>
       <div class="composer-field">
         <textarea id="annotations-comment" aria-label="${COPY.commentLabel}" placeholder="${COPY.commentPlaceholder}" spellcheck="true"></textarea>
         <div class="composer-actions">
           <button class="icon-button debug-toggle" type="button" aria-label="${COPY.debug}" aria-pressed="false" title="${COPY.debugMode}" data-testid="annotations-debug">
-            <svg class="bug-icon" width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path
-                d="M5.5 5.75V4.8a2.5 2.5 0 0 1 5 0v.95M4.8 1.8l1.35 1.35M11.2 1.8 9.85 3.15"
-                stroke="currentColor"
-                stroke-width="1.45"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <path
-                d="M4.75 6.05h6.5A2.75 2.75 0 0 1 14 8.8v1.45A3.75 3.75 0 0 1 10.25 14h-4.5A3.75 3.75 0 0 1 2 10.25V8.8a2.75 2.75 0 0 1 2.75-2.75Z"
-                stroke="currentColor"
-                stroke-width="1.45"
-                stroke-linejoin="round"
-              />
-              <path
-                d="M8 8.4v5.1M2 8.8H.8M15.2 8.8H14M2 11.3H.8M15.2 11.3H14"
-                stroke="currentColor"
-                stroke-width="1.45"
-                stroke-linecap="round"
-              />
+            <svg xmlns="http://www.w3.org/2000/svg" class="bug-icon lucide lucide-bug-icon lucide-bug" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 20v-9" />
+              <path d="M14 7a4 4 0 0 1 4 4v3a6 6 0 0 1-12 0v-3a4 4 0 0 1 4-4z" />
+              <path d="M14.12 3.88 16 2" />
+              <path d="M21 21a4 4 0 0 0-3.81-4" />
+              <path d="M21 5a4 4 0 0 1-3.55 3.97" />
+              <path d="M22 13h-4" />
+              <path d="M3 21a4 4 0 0 1 3.81-4" />
+              <path d="M3 5a4 4 0 0 0 3.55 3.97" />
+              <path d="M6 13H2" />
+              <path d="m8 2 1.88 1.88" />
+              <path d="M9 7.13V6a3 3 0 1 1 6 0v1.13" />
             </svg>
           </button>
           <button class="icon-button primary" type="button" aria-label="${COPY.capture}" title="${COPY.capture}">
@@ -170,20 +163,40 @@ export function showPanel(refs: OverlayRefs, rect: Rect): void {
   const below = rect.y + rect.height + 12;
   const above = rect.y - 178;
   const top = below + 170 < window.innerHeight ? below : Math.max(12, above);
+  const wasHidden = refs.panel.style.display === "" || refs.panel.style.display === "none";
+
+  refs.panel.dataset.visible = "true";
+  if (wasHidden) refs.panel.style.opacity = "0";
 
   Object.assign(refs.panel.style, {
     display: "block",
-    opacity: "1",
     pointerEvents: "auto",
     width: `${panelWidth}px`,
     transform: `translate(${Math.round(left)}px, ${Math.round(top)}px)`,
   });
+
+  if (!wasHidden) {
+    refs.panel.style.opacity = "1";
+    return;
+  }
+
+  window.requestAnimationFrame(() => {
+    if (refs.panel.dataset.visible === "true") {
+      refs.panel.style.opacity = "1";
+    }
+  });
 }
 
 export function hidePanel(refs: OverlayRefs): void {
+  refs.panel.dataset.visible = "false";
   refs.panel.style.opacity = "0";
   refs.panel.style.pointerEvents = "none";
-  refs.panel.style.display = "none";
+
+  window.setTimeout(() => {
+    if (refs.panel.dataset.visible === "false") {
+      refs.panel.style.display = "none";
+    }
+  }, PANEL_FADE_MS);
 }
 
 export function showBadge(refs: OverlayRefs, label: string, rect: Rect): void {
@@ -277,22 +290,56 @@ function escapeHtml(value: string): string {
     .replaceAll('"', "&quot;");
 }
 
+function extensionAssetUrl(path: string): string {
+  if (typeof chrome === "undefined" || !chrome.runtime?.getURL) return path;
+  return chrome.runtime.getURL(path);
+}
+
+function cssString(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+}
+
 function overlayCss(): string {
+  const dmSansLatinUrl = cssString(extensionAssetUrl("fonts/dm-sans-latin.woff2"));
+  const dmSansLatinExtUrl = cssString(extensionAssetUrl("fonts/dm-sans-latin-ext.woff2"));
+
   return `
+    @font-face {
+      font-family: "DM Sans";
+      font-style: normal;
+      font-weight: 300 800;
+      font-display: swap;
+      src: url("${dmSansLatinExtUrl}") format("woff2");
+      unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+    }
+
+    @font-face {
+      font-family: "DM Sans";
+      font-style: normal;
+      font-weight: 300 800;
+      font-display: swap;
+      src: url("${dmSansLatinUrl}") format("woff2");
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    }
+
     :host {
-      --annotations-bg: #0b0e14;
-      --annotations-field: #0f141b;
-      --annotations-ink: #e6e1cf;
-      --annotations-muted: #8a9199;
-      --annotations-line: #2d3640;
-      --annotations-accent: #ffb454;
-      --annotations-accent-soft: rgba(255, 180, 84, 0.18);
-      --annotations-shell: #0b0e14;
-      --annotations-shell-line: #1f2430;
+      --annotations-font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      --annotations-mono-font-family: "JetBrainsMono Nerd Font", "JetBrains Mono", "SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      --annotations-bg: #0a0a0a;
+      --annotations-field: #1a1a1a;
+      --annotations-ink: #ffffff;
+      --annotations-muted: #a6a6a6;
+      --annotations-line: #242424;
+      --annotations-accent: #f2c04b;
+      --annotations-accent-soft: rgba(242, 192, 75, 0.18);
+      --annotations-shell: #000000;
+      --annotations-shell-line: #242424;
       --annotations-shell-muted: #59c2ff;
       --annotations-success: #aad94c;
-      --annotations-danger: #f07178;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      --annotations-danger: #ff6b73;
+      --annotations-composer-frame-radius: 22px;
+      --annotations-composer-surface-radius: 20px;
+      font-family: var(--annotations-font-family);
     }
 
     * { box-sizing: border-box; }
@@ -318,7 +365,7 @@ function overlayCss(): string {
       transform: translateX(-50%);
       border: 1px solid var(--annotations-shell-line);
       border-radius: 9px;
-      background: rgba(11, 14, 20, 0.94);
+      background: rgba(0, 0, 0, 0.94);
       color: var(--annotations-ink);
       padding: 3px;
       pointer-events: auto;
@@ -334,7 +381,7 @@ function overlayCss(): string {
       width: 22px;
       height: 26px;
       color: var(--annotations-accent);
-      font: 760 18px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font: 760 18px var(--annotations-mono-font-family);
     }
 
     .hud button {
@@ -342,7 +389,7 @@ function overlayCss(): string {
       border: 1px solid var(--annotations-shell-line);
       box-shadow: none;
       cursor: pointer;
-      font: 650 12px -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font: 650 12px var(--annotations-font-family);
       outline: none;
       transition:
         background 120ms ease,
@@ -367,8 +414,8 @@ function overlayCss(): string {
     }
 
     .hud-pick.is-active {
-      border-color: rgba(255, 180, 84, 0.46);
-      background: rgba(255, 180, 84, 0.13);
+      border-color: rgba(242, 192, 75, 0.46);
+      background: rgba(242, 192, 75, 0.13);
       color: var(--annotations-accent);
     }
 
@@ -382,7 +429,7 @@ function overlayCss(): string {
 
     .hud-pick.is-active .hud-pick-dot {
       background: var(--annotations-accent);
-      box-shadow: 0 0 0 2px rgba(255, 180, 84, 0.18), 0 0 12px rgba(255, 180, 84, 0.34);
+      box-shadow: 0 0 0 2px rgba(242, 192, 75, 0.18), 0 0 12px rgba(242, 192, 75, 0.34);
     }
 
     .bridge-status {
@@ -393,7 +440,7 @@ function overlayCss(): string {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      border: 1px solid rgba(255, 180, 84, 0.18);
+      border: 1px solid rgba(242, 192, 75, 0.18);
       border-radius: 6px;
       padding: 0 8px;
       height: 26px;
@@ -412,7 +459,7 @@ function overlayCss(): string {
       width: 7px;
       height: 7px;
       border-radius: 999px;
-      background: rgba(230, 225, 207, 0.46);
+      background: rgba(255, 255, 255, 0.46);
     }
 
     .bridge-status.is-connected {
@@ -426,8 +473,8 @@ function overlayCss(): string {
 
     .bridge-status.is-warning {
       color: var(--annotations-accent);
-      border-color: rgba(255, 180, 84, 0.32);
-      background: rgba(255, 180, 84, 0.08);
+      border-color: rgba(242, 192, 75, 0.32);
+      background: rgba(242, 192, 75, 0.08);
     }
 
     .bridge-status.is-warning::before {
@@ -436,8 +483,8 @@ function overlayCss(): string {
 
     .bridge-status.is-error {
       color: var(--annotations-danger);
-      border-color: rgba(240, 113, 120, 0.34);
-      background: rgba(240, 113, 120, 0.08);
+      border-color: rgba(255, 107, 115, 0.34);
+      background: rgba(255, 107, 115, 0.08);
     }
 
     .bridge-status.is-error::before {
@@ -449,7 +496,7 @@ function overlayCss(): string {
       height: 26px;
       border-radius: 6px;
       background: transparent;
-      color: rgba(230, 225, 207, 0.68);
+      color: rgba(255, 255, 255, 0.68);
       padding: 0;
       font-size: 17px;
       line-height: 1;
@@ -473,12 +520,12 @@ function overlayCss(): string {
 
     .hover {
       border: 2px solid var(--annotations-accent);
-      box-shadow: 0 0 0 1px rgba(255, 180, 84, 0.24), 0 0 0 6px var(--annotations-accent-soft);
+      box-shadow: 0 0 0 1px rgba(242, 192, 75, 0.24), 0 0 0 6px var(--annotations-accent-soft);
     }
 
     .locked {
       border: 2px solid var(--annotations-accent);
-      box-shadow: inset 0 0 0 1px rgba(230, 225, 207, 0.7), 0 0 0 9999px rgba(11, 14, 20, 0.1);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7), 0 0 0 9999px rgba(0, 0, 0, 0.1);
     }
 
     .badge {
@@ -494,10 +541,10 @@ function overlayCss(): string {
       z-index: 3;
       background: var(--annotations-field);
       color: var(--annotations-ink);
-      border: 1px solid rgba(255, 180, 84, 0.25);
+      border: 1px solid rgba(242, 192, 75, 0.25);
       border-radius: 6px;
       padding: 4px 8px;
-      font: 600 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font: 600 11px var(--annotations-mono-font-family);
       box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
     }
 
@@ -510,28 +557,26 @@ function overlayCss(): string {
       background: var(--annotations-bg);
       color: var(--annotations-ink);
       border: 1px solid var(--annotations-line);
-      border-radius: 8px;
       box-shadow: 0 18px 50px rgba(0, 0, 0, 0.44), 0 3px 12px rgba(0, 0, 0, 0.28);
       z-index: 5;
     }
 
     .panel {
+      border-radius: var(--annotations-composer-frame-radius);
       padding: 12px;
-      transition: opacity 120ms ease;
+      transition: opacity ${PANEL_FADE_MS}ms ease;
+      will-change: opacity;
     }
 
-    .label {
-      display: block;
-      margin-bottom: 7px;
-      color: var(--annotations-muted);
-      font-size: 12px;
-      font-weight: 650;
+    .fallback {
+      border-radius: 8px;
     }
 
     .composer-field {
       position: relative;
+      overflow: hidden;
       border: 1px solid var(--annotations-line);
-      border-radius: 7px;
+      border-radius: var(--annotations-composer-surface-radius);
       background: var(--annotations-field);
       transition:
         border-color 120ms ease,
@@ -550,11 +595,11 @@ function overlayCss(): string {
       max-height: 180px;
       resize: none;
       border: 0;
-      border-radius: 7px;
+      border-radius: var(--annotations-composer-surface-radius);
       background: transparent;
       color: var(--annotations-ink);
       padding: 9px 10px 48px;
-      font: 500 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font: 500 13px/1.45 var(--annotations-font-family);
       outline: none;
     }
 
@@ -574,7 +619,7 @@ function overlayCss(): string {
       border-radius: 7px;
       border: 1px solid var(--annotations-line);
       padding: 0 10px;
-      font: 650 12px -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font: 650 12px var(--annotations-font-family);
       cursor: pointer;
     }
 
@@ -611,12 +656,12 @@ function overlayCss(): string {
     .panel button.primary {
       background: var(--annotations-accent);
       border-color: var(--annotations-accent);
-      color: #0b0e14;
+      color: #000000;
     }
 
     .panel button.primary:hover:not(:disabled) {
-      background: #ffc16c;
-      border-color: #ffc16c;
+      background: #ffe6a6;
+      border-color: #ffe6a6;
       transform: scale(1.05);
     }
 
@@ -650,7 +695,7 @@ function overlayCss(): string {
     }
 
     .debug-toggle.is-active {
-      border-color: rgba(255, 180, 84, 0.56);
+      border-color: rgba(242, 192, 75, 0.56);
       background: var(--annotations-accent-soft);
       color: var(--annotations-accent);
     }
@@ -745,7 +790,7 @@ function overlayCss(): string {
       color: var(--annotations-ink);
       padding: 9px 10px;
       outline: none;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-family: var(--annotations-mono-font-family);
       font-size: 12px;
     }
 
@@ -779,7 +824,7 @@ function overlayCss(): string {
       white-space: pre-wrap;
       word-break: break-word;
       color: var(--annotations-ink);
-      font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font: 11px/1.45 var(--annotations-mono-font-family);
     }
 
     @keyframes annotations-spin {
