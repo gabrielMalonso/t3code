@@ -17,7 +17,7 @@ export function buildUiNote(request: CaptureRequest, options: BuildUiNoteOptions
     "",
     "## Prompt",
     "",
-    textBlock(request.comment, 500, request.privacyMode),
+    promptBlock(request.comment, request.privacyMode),
     "",
     "## Informações",
     "",
@@ -65,7 +65,7 @@ export function buildMinimalUiNote(comment: string): string {
     "",
     "## Prompt",
     "",
-    textBlock(comment, 500, "redact-sensitive"),
+    promptBlock(comment, "redact-sensitive"),
     "",
     "## Informações",
     "",
@@ -193,8 +193,10 @@ function formatPoint(element: ElementContext): string {
   return `x=${round(top.x)} y=${round(top.y)}`;
 }
 
-function textBlock(value: string, maxLength: number, privacyMode: PrivacyMode): string {
-  return formatPrivacyText(value, privacyMode, "(vazio)", maxLength) || "(vazio)";
+function promptBlock(value: string, privacyMode: PrivacyMode): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "(vazio)";
+  return privacyMode === "redact-sensitive" ? redactSensitiveText(trimmed) : trimmed;
 }
 
 function code(value: string): string {

@@ -3,8 +3,18 @@
   "name": "Annotations",
   "description": "Selecione um elemento, anote, salve um PNG local e copie uma UI Note para agentes de código.",
   "version": "0.1.0",
+  "icons": {
+    "16": "icons/favicon.png",
+    "32": "icons/favicon.png",
+    "48": "icons/favicon.png",
+    "128": "icons/favicon.png"
+  },
   "action": {
-    "default_title": "Annotations"
+    "default_title": "Annotations",
+    "default_icon": {
+      "16": "icons/favicon.png",
+      "32": "icons/favicon.png"
+    }
   },
   "background": {
     "service_worker": "background/service-worker.js",
@@ -12,6 +22,12 @@
   },
   "permissions": ["activeTab", "scripting", "offscreen", "downloads", "storage", "clipboardWrite"],
   "host_permissions": ["<all_urls>"],
+  "web_accessible_resources": [
+    {
+      "resources": ["fonts/*.woff2"],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "commands": {
     "toggle-annotations": {
       "suggested_key": {

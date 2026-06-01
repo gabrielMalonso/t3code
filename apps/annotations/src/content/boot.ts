@@ -90,7 +90,6 @@ class AnnotationsController {
     this.refs.hudCloseButton.addEventListener("click", () => this.hideOverlay());
     this.refs.debugButton.addEventListener("click", () => this.toggleDebugMode());
     this.refs.primaryButton.addEventListener("click", () => void this.submit());
-    this.refs.secondaryButton.addEventListener("click", () => this.cancel());
     this.refs.textarea.addEventListener("keydown", (event) => this.handleTextareaKeyDown(event));
     host.style.display = "none";
   }
@@ -370,7 +369,6 @@ class AnnotationsController {
     this.refs.textarea.value = "";
     placeFixedBox(this.refs.hoverBox, { x: 0, y: 0, width: 0, height: 0 }, false);
     this.reposition();
-    showPanel(this.refs, elementRect(element));
     this.refs.textarea.focus();
   }
 
@@ -393,7 +391,7 @@ class AnnotationsController {
     showBadge(this.refs, elementLabel(element), rect);
 
     if (this.selectedElement) {
-      placeFixedBox(this.refs.lockedBox, rect, true);
+      placeFixedBox(this.refs.lockedBox, rect, true, { animateOpacity: true });
       showPanel(this.refs, rect);
     } else {
       placeFixedBox(this.refs.hoverBox, rect, true);

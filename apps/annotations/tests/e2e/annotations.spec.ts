@@ -388,6 +388,60 @@ test("adds debug metadata to the capture request when Debug is enabled", async (
   expect(request.payload.element.debug.domPreview).toContain("spacing-card");
 });
 
+test("keeps composer actions outside the scrollable comment text", async ({ page }) => {
+  await page.goto(new URL("../fixtures/simple-page.html", import.meta.url).toString());
+  await page.addScriptTag({ path: contentScriptPath });
+  await page.evaluate(() => window.__ANNOTATIONS_START__?.());
+
+  const card = page.locator('[data-shot-target="spacing-card"]');
+  const box = await card.boundingBox();
+  expect(box).toBeTruthy();
+
+  await page.mouse.move(box!.x + 32, box!.y + 32);
+  await page.mouse.click(box!.x + 32, box!.y + 32);
+  await page
+    .locator('textarea[aria-label="Comentário"]')
+    .fill(
+      Array.from({ length: 18 }, (_, index) =>
+        index === 8
+          ? "testetestetestetestetestetestetestetestetestetestetestetestetestetestetestetestetestetesteteste"
+          : `teste ${index + 1}`,
+      ).join("\n"),
+    );
+
+  const metrics = await page.evaluate(() => {
+    const host = document.getElementById("annotations-root");
+    const shadow = host?.shadowRoot;
+    const textarea = shadow?.querySelector("textarea");
+    const actions = shadow?.querySelector(".composer-actions");
+    if (!(textarea instanceof HTMLTextAreaElement) || !(actions instanceof HTMLElement)) {
+      throw new Error("Annotations composer pieces missing.");
+    }
+
+    textarea.scrollTop = textarea.scrollHeight;
+    const textareaRect = textarea.getBoundingClientRect();
+    const actionsRect = actions.getBoundingClientRect();
+    const textareaStyle = window.getComputedStyle(textarea);
+    const actionsStyle = window.getComputedStyle(actions);
+
+    return {
+      actionsPosition: actionsStyle.position,
+      actionsTop: actionsRect.top,
+      textareaBottom: textareaRect.bottom,
+      textareaClientHeight: textarea.clientHeight,
+      textareaOverflowY: textareaStyle.overflowY,
+      textareaScrollbarColor: textareaStyle.scrollbarColor,
+      textareaScrollHeight: textarea.scrollHeight,
+    };
+  });
+
+  expect(metrics.actionsPosition).toBe("static");
+  expect(metrics.textareaBottom).toBeLessThanOrEqual(metrics.actionsTop);
+  expect(metrics.textareaOverflowY).toBe("auto");
+  expect(metrics.textareaScrollHeight).toBeGreaterThan(metrics.textareaClientHeight);
+  expect(metrics.textareaScrollbarColor).toContain("rgba(255, 255, 255, 0.22)");
+});
+
 test("shows a manual fallback when writeText is blocked after the image is saved", async ({
   page,
 }) => {
@@ -533,7 +587,7 @@ test("successful copy can run twice after reinjection", async ({ page }) => {
   expect(requests[1].payload.comment).toBe("segunda copia");
 });
 
-test("copy and cancel buttons receive clicks inside the overlay", async ({ page }) => {
+test("send button receives clicks and Escape cancels inside the overlay", async ({ page }) => {
   await page.goto(new URL("../fixtures/simple-page.html", import.meta.url).toString());
   await page.addScriptTag({ path: contentScriptPath });
   await page.evaluate(() => window.__ANNOTATIONS_START__?.());
@@ -545,6 +599,7 @@ test("copy and cancel buttons receive clicks inside the overlay", async ({ page 
   await page.mouse.move(box!.x + 32, box!.y + 32);
   await page.mouse.click(box!.x + 32, box!.y + 32);
   await page.locator('textarea[aria-label="Comentário"]').fill("quero deixar maior.");
+  await expect(page.getByRole("button", { name: "Cancelar" })).toHaveCount(0);
   await page.getByRole("button", { name: "Enviar ao T3" }).click();
 
   await expect
@@ -558,7 +613,7 @@ test("copy and cancel buttons receive clicks inside the overlay", async ({ page 
   await page.evaluate(() => window.__ANNOTATIONS_START__?.());
   await page.mouse.move(box!.x + 32, box!.y + 32);
   await page.mouse.click(box!.x + 32, box!.y + 32);
-  await page.getByRole("button", { name: "Cancelar" }).click();
+  await page.keyboard.press("Escape");
 
   await expect(page.locator('textarea[aria-label="Comentário"]')).toBeHidden();
 });
