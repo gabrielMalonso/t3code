@@ -90,7 +90,6 @@ class AnnotationsController {
     this.refs.hudCloseButton.addEventListener("click", () => this.hideOverlay());
     this.refs.debugButton.addEventListener("click", () => this.toggleDebugMode());
     this.refs.primaryButton.addEventListener("click", () => void this.submit());
-    this.refs.secondaryButton.addEventListener("click", () => this.cancel());
     this.refs.textarea.addEventListener("keydown", (event) => this.handleTextareaKeyDown(event));
     host.style.display = "none";
   }
