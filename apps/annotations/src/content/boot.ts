@@ -20,6 +20,8 @@ import {
 import { createCaptureRequest, createCaptureRequestId } from "./page-context";
 import {
   createAnnotationsShadowRoot,
+  enterAnnotationsTopLayer,
+  exitAnnotationsTopLayer,
   isAnnotationsEvent,
   ROOT_ID,
   stopHostilePageHandlers,
@@ -142,6 +144,7 @@ class AnnotationsController {
     this.selectedElement = null;
     this.refs.host.style.display = "block";
     this.refs.host.style.visibility = "visible";
+    exitAnnotationsTopLayer(this.refs.host);
     setPickActive(this.refs, true);
     setPageInteractionBlocked(this.refs, true);
     hidePanel(this.refs);
@@ -170,6 +173,7 @@ class AnnotationsController {
     this.setDebugMode(false);
     this.refs.textarea.value = "";
     this.refs.host.style.visibility = "visible";
+    exitAnnotationsTopLayer(this.refs.host);
     setCapturing(this.refs, false);
     setPickActive(this.refs, false);
     setPageInteractionBlocked(this.refs, false);
@@ -368,6 +372,7 @@ class AnnotationsController {
     this.hoveredElement = null;
     this.refs.textarea.value = "";
     placeFixedBox(this.refs.hoverBox, { x: 0, y: 0, width: 0, height: 0 }, false);
+    enterAnnotationsTopLayer(this.refs.host);
     this.reposition();
     this.refs.textarea.focus();
   }
@@ -376,6 +381,7 @@ class AnnotationsController {
     this.state = "picking";
     setPickActive(this.refs, true);
     setPageInteractionBlocked(this.refs, true);
+    exitAnnotationsTopLayer(this.refs.host);
     this.selectedElement = null;
     this.refs.textarea.value = "";
     hidePanel(this.refs);
