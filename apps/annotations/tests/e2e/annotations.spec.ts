@@ -635,3 +635,53 @@ test("focus inside the comment box does not close an existing modal", async ({ p
 
   await expect(page.locator('[data-testid="modal"]')).toBeVisible();
 });
+
+test("keeps the composer clickable above native dialog top-layer modals", async ({ page }) => {
+  await page.goto(new URL("../fixtures/native-dialog-page.html", import.meta.url).toString());
+  await page.addScriptTag({ path: contentScriptPath });
+  await page.evaluate(() => window.__ANNOTATIONS_START__?.());
+
+  const target = page.locator('[data-shot-target="native-dialog-button"]');
+  const box = await target.boundingBox();
+  expect(box).toBeTruthy();
+
+  await page.mouse.move(box!.x + 8, box!.y + 8);
+  await page.mouse.click(box!.x + 8, box!.y + 8);
+
+  const textarea = page.locator('textarea[aria-label="Comentário"]');
+  await expect(textarea).toBeVisible();
+
+  const hitTarget = await page.evaluate(() => {
+    const host = document.getElementById("annotations-root");
+    const topLayer = document.getElementById("annotations-top-layer");
+    const shadow = host?.shadowRoot;
+    const textarea = shadow?.querySelector("textarea");
+    if (!shadow || !(textarea instanceof HTMLTextAreaElement)) {
+      throw new Error("Annotations textarea missing.");
+    }
+
+    const rect = textarea.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const lightTop = document.elementFromPoint(x, y);
+    const shadowTop = shadow.elementFromPoint(x, y);
+
+    return {
+      x,
+      y,
+      lightTopId: lightTop?.id ?? null,
+      shadowTopTag: shadowTop?.tagName ?? null,
+      topLayerOpen: topLayer instanceof HTMLDialogElement && topLayer.open,
+    };
+  });
+
+  expect(hitTarget.topLayerOpen).toBe(true);
+  expect(hitTarget.lightTopId).toBe("annotations-root");
+  expect(hitTarget.shadowTopTag).toBe("TEXTAREA");
+
+  await page.mouse.click(hitTarget.x, hitTarget.y);
+  await page.keyboard.type("Texto acima do modal nativo.");
+
+  await expect(textarea).toHaveValue("Texto acima do modal nativo.");
+  await expect(page.locator("#native-dialog")).toBeVisible();
+});
