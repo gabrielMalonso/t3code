@@ -42,6 +42,7 @@ import {
   CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS,
   CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS,
 } from "../CodexDeveloperInstructions.ts";
+import { mcpElicitationResponseFromAnswers } from "./CodexMcpElicitation.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
 
 const PROVIDER = ProviderDriverKind.make("codex");
@@ -233,12 +234,28 @@ interface ApprovalCorrelation {
   readonly itemId: ProviderItemId | undefined;
 }
 
-interface PendingUserInput {
+type McpServerElicitationRequestParams =
+  | EffectCodexSchema.McpServerElicitationRequestParams
+  | EffectCodexSchema.ServerRequest__McpServerElicitationRequestParams;
+
+interface PendingToolUserInput {
+  readonly kind: "tool";
   readonly requestId: ApprovalRequestId;
   readonly turnId: TurnId | undefined;
   readonly itemId: ProviderItemId | undefined;
   readonly answers: Deferred.Deferred<ProviderUserInputAnswers>;
 }
+
+interface PendingMcpElicitationUserInput {
+  readonly kind: "mcp-elicitation";
+  readonly requestId: ApprovalRequestId;
+  readonly elicitation: McpServerElicitationRequestParams;
+  readonly turnId: TurnId | undefined;
+  readonly itemId: undefined;
+  readonly answers: Deferred.Deferred<ProviderUserInputAnswers>;
+}
+
+type PendingUserInput = PendingToolUserInput | PendingMcpElicitationUserInput;
 
 type CodexServerNotification = {
   readonly [M in CodexRpc.ServerNotificationMethod]: {
@@ -1073,6 +1090,7 @@ export const makeCodexSessionRuntime = (
         yield* Ref.update(pendingUserInputsRef, (current) => {
           const next = new Map(current);
           next.set(requestId, {
+            kind: "tool",
             requestId,
             turnId,
             itemId,
@@ -1110,6 +1128,58 @@ export const makeCodexSessionRuntime = (
             ),
           ),
         } satisfies EffectCodexSchema.ToolRequestUserInputResponse;
+      }),
+    );
+
+    yield* client.handleServerRequest("mcpServer/elicitation/request", (payload) =>
+      Effect.gen(function* () {
+        const requestId = ApprovalRequestId.make(yield* Random.nextUUIDv4);
+        const turnId = typeof payload.turnId === "string" ? TurnId.make(payload.turnId) : undefined;
+        const answers = yield* Deferred.make<ProviderUserInputAnswers>();
+
+        yield* Ref.update(pendingUserInputsRef, (current) => {
+          const next = new Map(current);
+          next.set(requestId, {
+            kind: "mcp-elicitation",
+            requestId,
+            elicitation: payload,
+            turnId,
+            itemId: undefined,
+            answers,
+          });
+          return next;
+        });
+
+        yield* emitEvent({
+          kind: "request",
+          threadId: options.threadId,
+          method: "mcpServer/elicitation/request",
+          requestId,
+          ...(turnId ? { turnId } : {}),
+          payload,
+        });
+
+        const resolvedAnswers = yield* Deferred.await(answers).pipe(
+          Effect.ensuring(
+            Ref.update(pendingUserInputsRef, (current) => {
+              const next = new Map(current);
+              next.delete(requestId);
+              return next;
+            }),
+          ),
+        );
+
+        const response = mcpElicitationResponseFromAnswers(payload, resolvedAnswers);
+        if (response._tag === "InvalidAnswer") {
+          return yield* CodexErrors.CodexAppServerRequestError.invalidParams(
+            `Invalid MCP elicitation answer for question '${response.questionId}'`,
+            {
+              questionId: response.questionId,
+            },
+          );
+        }
+
+        return response.response;
       }),
     );
 
@@ -1378,7 +1448,33 @@ export const makeCodexSessionRuntime = (
               requestId,
             });
           }
-          const codexAnswers = yield* toCodexUserInputAnswers(answers);
+          const payload =
+            pending.kind === "tool"
+              ? {
+                  method: "item/tool/requestUserInput/answered",
+                  value: {
+                    answers: yield* toCodexUserInputAnswers(answers),
+                  },
+                }
+              : (() => {
+                  const response = mcpElicitationResponseFromAnswers(pending.elicitation, answers);
+                  if (response._tag === "InvalidAnswer") {
+                    return response;
+                  }
+                  return {
+                    _tag: "Ok" as const,
+                    method: "mcpServer/elicitation/request/answered",
+                    value: {
+                      answers,
+                      response: response.response,
+                    },
+                  };
+                })();
+          if ("_tag" in payload && payload._tag === "InvalidAnswer") {
+            return yield* new CodexSessionRuntimeInvalidUserInputAnswersError({
+              questionId: payload.questionId,
+            });
+          }
           yield* Ref.update(pendingUserInputsRef, (current) => {
             const next = new Map(current);
             next.delete(requestId);
@@ -1388,13 +1484,11 @@ export const makeCodexSessionRuntime = (
           yield* emitEvent({
             kind: "notification",
             threadId: options.threadId,
-            method: "item/tool/requestUserInput/answered",
+            method: payload.method,
             requestId: pending.requestId,
             ...(pending.turnId ? { turnId: pending.turnId } : {}),
             ...(pending.itemId ? { itemId: pending.itemId } : {}),
-            payload: {
-              answers: codexAnswers,
-            },
+            payload: payload.value,
           });
         }),
       events: Stream.fromQueue(events),
