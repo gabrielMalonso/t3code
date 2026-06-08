@@ -496,6 +496,7 @@ describe("ThreadLoopScheduler", () => {
             streamDomainEvents: Stream.fromPubSub(eventPubSub),
           }),
         ),
+        Layer.provide(NodeServices.layer),
       ),
     );
 

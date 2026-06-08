@@ -1,6 +1,7 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { create } from "zustand";
 
+import { randomUUID } from "../lib/utils";
 import type { MobileConnectionMode } from "./pairingTarget";
 import {
   readMobileProfileSecret,
@@ -244,5 +245,5 @@ export function getMobileProfileByEnvironmentId(
 }
 
 export function createMobileProfileId(mode: MobileConnectionMode): string {
-  return `${mode}-${crypto.randomUUID()}`;
+  return `${mode}-${randomUUID()}`;
 }

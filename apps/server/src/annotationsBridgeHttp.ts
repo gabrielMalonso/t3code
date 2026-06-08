@@ -1,18 +1,18 @@
 import {
+  AuthAccessWriteScope,
   AnnotationsBridgeDeliverRequest,
   AnnotationsBridgePairingDecision,
   AnnotationsBridgePairingRequest,
   AnnotationsBridgePairingStatusRequest,
   AnnotationsBridgeRevokeClientRequest,
 } from "@t3tools/contracts";
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 
-import { AuthError } from "./auth/Services/ServerAuth.ts";
-import { ServerAuth } from "./auth/Services/ServerAuth.ts";
-import { respondToAuthError } from "./auth/http.ts";
+import { EnvironmentAuth } from "./auth/EnvironmentAuth.ts";
 import { browserApiCorsHeaders } from "./httpCors.ts";
 import {
   AnnotationsBridge,
@@ -23,6 +23,12 @@ const annotationsBridgeCorsHeaders = {
   ...browserApiCorsHeaders,
   "access-control-allow-private-network": "true",
 } as const;
+
+class AnnotationsBridgeAuthError extends Data.TaggedError("AnnotationsBridgeAuthError")<{
+  readonly message: string;
+  readonly status: 400 | 401 | 403 | 500;
+  readonly cause?: unknown;
+}> {}
 
 const AnnotationsBridgeRequestHeaders = Schema.Struct({
   authorization: Schema.optionalKey(Schema.String),
@@ -77,6 +83,24 @@ function unauthenticatedBridgeResponse(tokenPresent: boolean) {
   );
 }
 
+function respondToAnnotationsBridgeAuthError(error: AnnotationsBridgeAuthError) {
+  return Effect.succeed(
+    bridgeJson(
+      {
+        ok: false,
+        reason:
+          error.status === 400
+            ? "invalid-payload"
+            : error.status === 401
+              ? "unauthorized"
+              : "forbidden",
+        message: error.message,
+      },
+      error.status,
+    ),
+  );
+}
+
 function withBridgeClient<R>(
   run: (
     client: AuthenticatedAnnotationsBridgeClient,
@@ -91,10 +115,31 @@ function withBridgeClient<R>(
 
 const requireOwnerSession = Effect.gen(function* () {
   const request = yield* HttpServerRequest.HttpServerRequest;
-  const serverAuth = yield* ServerAuth;
-  const session = yield* serverAuth.authenticateHttpRequest(request);
-  if (session.role !== "owner") {
-    return yield* new AuthError({
+  const serverAuth = yield* EnvironmentAuth;
+  const session = yield* serverAuth.authenticateHttpRequest(request).pipe(
+    Effect.catchTags({
+      ServerAuthInvalidCredentialError: (error) =>
+        Effect.fail(
+          new AnnotationsBridgeAuthError({
+            message:
+              error.reason === "missing_credential"
+                ? "Authentication required."
+                : "Invalid credentials.",
+            status: 401,
+          }),
+        ),
+      ServerAuthInternalError: (error) =>
+        Effect.fail(
+          new AnnotationsBridgeAuthError({
+            message: "Failed to authenticate Annotations bridge request.",
+            status: 500,
+            cause: error,
+          }),
+        ),
+    }),
+  );
+  if (!session.scopes.includes(AuthAccessWriteScope)) {
+    return yield* new AnnotationsBridgeAuthError({
       message: "Only owner sessions can manage the Annotations bridge.",
       status: 403,
     });
@@ -112,7 +157,7 @@ const handlePairingRequestPost = Effect.gen(function* () {
   const headers = yield* readBridgeHeaders();
   const bridge = yield* AnnotationsBridge;
   const payload = yield* HttpServerRequest.schemaBodyJson(AnnotationsBridgePairingRequest).pipe(
-    Effect.catch(() => Effect.succeed(null as typeof AnnotationsBridgePairingRequest.Type | null)),
+    Effect.catch(() => Effect.succeed(null as AnnotationsBridgePairingRequest | null)),
   );
   if (!payload) {
     return bridgeJson(
@@ -136,11 +181,7 @@ const handlePairingStatusPost = Effect.gen(function* () {
   const bridge = yield* AnnotationsBridge;
   const payload = yield* HttpServerRequest.schemaBodyJson(
     AnnotationsBridgePairingStatusRequest,
-  ).pipe(
-    Effect.catch(() =>
-      Effect.succeed(null as typeof AnnotationsBridgePairingStatusRequest.Type | null),
-    ),
-  );
+  ).pipe(Effect.catch(() => Effect.succeed(null as AnnotationsBridgePairingStatusRequest | null)));
   if (!payload) {
     return bridgeJson(
       {
@@ -171,9 +212,7 @@ const handleDeliverPost = withBridgeClient((client) =>
   Effect.gen(function* () {
     const bridge = yield* AnnotationsBridge;
     const payload = yield* HttpServerRequest.schemaBodyJson(AnnotationsBridgeDeliverRequest).pipe(
-      Effect.catch(() =>
-        Effect.succeed(null as typeof AnnotationsBridgeDeliverRequest.Type | null),
-      ),
+      Effect.catch(() => Effect.succeed(null as AnnotationsBridgeDeliverRequest | null)),
     );
     if (!payload) {
       return bridgeJson(
@@ -211,7 +250,7 @@ const handlePendingPairingsGet = Effect.gen(function* () {
   const bridge = yield* AnnotationsBridge;
   const requests = yield* bridge.listPendingPairingRequests;
   return bridgeJson(requests, 200);
-}).pipe(Effect.catchTag("AuthError", respondToAuthError));
+}).pipe(Effect.catchTag("AnnotationsBridgeAuthError", respondToAnnotationsBridgeAuthError));
 
 const handleApprovePairingPost = Effect.gen(function* () {
   yield* requireOwnerSession;
@@ -219,7 +258,7 @@ const handleApprovePairingPost = Effect.gen(function* () {
   const payload = yield* HttpServerRequest.schemaBodyJson(AnnotationsBridgePairingDecision).pipe(
     Effect.mapError(
       (cause) =>
-        new AuthError({
+        new AnnotationsBridgeAuthError({
           message: "Invalid Annotations bridge pairing approval payload.",
           status: 400,
           cause,
@@ -228,7 +267,7 @@ const handleApprovePairingPost = Effect.gen(function* () {
   );
   const result = yield* bridge.approvePairingRequest(payload.requestId);
   return bridgeJson(result, result.ok ? 200 : 404);
-}).pipe(Effect.catchTag("AuthError", respondToAuthError));
+}).pipe(Effect.catchTag("AnnotationsBridgeAuthError", respondToAnnotationsBridgeAuthError));
 
 const handleRejectPairingPost = Effect.gen(function* () {
   yield* requireOwnerSession;
@@ -236,7 +275,7 @@ const handleRejectPairingPost = Effect.gen(function* () {
   const payload = yield* HttpServerRequest.schemaBodyJson(AnnotationsBridgePairingDecision).pipe(
     Effect.mapError(
       (cause) =>
-        new AuthError({
+        new AnnotationsBridgeAuthError({
           message: "Invalid Annotations bridge pairing rejection payload.",
           status: 400,
           cause,
@@ -245,14 +284,14 @@ const handleRejectPairingPost = Effect.gen(function* () {
   );
   const result = yield* bridge.rejectPairingRequest(payload.requestId);
   return bridgeJson(result, 200);
-}).pipe(Effect.catchTag("AuthError", respondToAuthError));
+}).pipe(Effect.catchTag("AnnotationsBridgeAuthError", respondToAnnotationsBridgeAuthError));
 
 const handleClientsGet = Effect.gen(function* () {
   yield* requireOwnerSession;
   const bridge = yield* AnnotationsBridge;
   const clients = yield* bridge.listClients;
   return bridgeJson(clients, 200);
-}).pipe(Effect.catchTag("AuthError", respondToAuthError));
+}).pipe(Effect.catchTag("AnnotationsBridgeAuthError", respondToAnnotationsBridgeAuthError));
 
 const handleRevokeClientPost = Effect.gen(function* () {
   yield* requireOwnerSession;
@@ -262,7 +301,7 @@ const handleRevokeClientPost = Effect.gen(function* () {
   ).pipe(
     Effect.mapError(
       (cause) =>
-        new AuthError({
+        new AnnotationsBridgeAuthError({
           message: "Invalid Annotations bridge revoke payload.",
           status: 400,
           cause,
@@ -271,7 +310,7 @@ const handleRevokeClientPost = Effect.gen(function* () {
   );
   const result = yield* bridge.revokeClient(payload.clientId);
   return bridgeJson(result, 200);
-}).pipe(Effect.catchTag("AuthError", respondToAuthError));
+}).pipe(Effect.catchTag("AnnotationsBridgeAuthError", respondToAnnotationsBridgeAuthError));
 
 export const annotationsBridgeRouteLayer = Layer.mergeAll(
   HttpRouter.add("OPTIONS", "/api/annotations/bridge/manifest", bridgeOptionsResponse()),
