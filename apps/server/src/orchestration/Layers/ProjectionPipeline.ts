@@ -341,7 +341,7 @@ const runAttachmentSideEffects = Effect.fn("runAttachmentSideEffects")(function*
   const attachmentsRootDir = serverConfig.attachmentsDir;
   const readAttachmentRootEntries = fileSystem
     .readDirectory(attachmentsRootDir, { recursive: false })
-    .pipe(Effect.catch(() => Effect.succeed([] as Array<string>)));
+    .pipe(Effect.orElseSucceed(() => [] as Array<string>));
 
   const removeDeletedThreadAttachmentEntry = Effect.fn("removeDeletedThreadAttachmentEntry")(
     function* (threadSegment: string, entry: string) {
@@ -403,9 +403,7 @@ const runAttachmentSideEffects = Effect.fn("runAttachmentSideEffects")(function*
     }
 
     const absolutePath = path.join(attachmentsRootDir, relativePath);
-    const fileInfo = yield* fileSystem
-      .stat(absolutePath)
-      .pipe(Effect.catch(() => Effect.succeed(null)));
+    const fileInfo = yield* fileSystem.stat(absolutePath).pipe(Effect.orElseSucceed(() => null));
     if (!fileInfo || fileInfo.type !== "File") {
       return;
     }

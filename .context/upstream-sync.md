@@ -2,10 +2,10 @@
 
 ## Status atual
 
-- Data: 2026-06-03
+- Data: 2026-06-08
 - Branch de trabalho: `feature/annotation-composer-redesign`
-- Upstream integrado nesta wave: `f0116e44b` (`upstream/main`)
-- Estado: merge `--no-commit` resolvido e validado; upstream mobile WIP nao absorvido; custom vivo preservado com adaptadores pequenos para auth/client-runtime/TSGo
+- Upstream integrado nesta wave: `0e4a43519` (`upstream/main`)
+- Estado: merge `--no-commit` resolvido e validado; upstream core/tooling/cloud/relay absorvido; upstream mobile ignorado nesta wave
 - Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
 ## Features locais vivas
@@ -78,10 +78,67 @@
 - Se a mudanca for Git/source-control/VCS, aceitar o modelo novo de VCS e reaplicar custom so nos pontos de UX/RPC ainda vivos
 - Se a mudanca for regra de negocio local, empurrar para `t3code-custom/*`
 - Se a mudanca for mobile/root/runtime/header/composer, preservar o fluxo upstream e reaplicar o app mobile como `apps/mobile/*`, `apps/web/src/mobile/*` e guards pequenos atras de `isMobileCapacitorRuntime()`
+- Se o usuario pedir sync ignorando mobile, congelar `apps/mobile/*`, `apps/web/src/mobile/*`, docs/workflows/patches/scripts explicitamente mobile e nao puxar Expo/React Native/Nitro do upstream
 - Se a mudanca for launch de browser/editor/processo, aceitar `ExternalLauncher` upstream e reaplicar so fallback macOS/Ghostty que continuar diferencial real
 - Se precisar tocar `ChatComposer` ou `ComposerPromptEditor`, fazer o minimo e deixar a adaptacao visivel
 - Se a mudanca for release/build desktop, nao permitir fallback automatico para `GITHUB_REPOSITORY` no feed de updater; o fork precisa de opt-in explicito para nao reinstalar upstream por acidente
 - Se OpenPets aparecer em branch antiga, tratar como custom arqueologico e nao reaplicar.
+
+## 2026-06-08 — Sync ate `0e4a43519` ignorando upstream mobile
+
+- Branch de sync: `feature/annotation-composer-redesign`
+- Donor local usado para replay seletivo: `dc8ed5048` (`Refresh upstream sync references`)
+- Upstream absorvido:
+  - `0e4a43519` — infraestrutura, telemetria e tooling de testes
+  - `5ae77c0d6` — managed relay tunnels e APN service
+  - `b440dd181` — migracao do workspace para Vite+/pnpm
+  - `49c1b6468` — source-control com GitHub multi-account, GitLab self-hosted e Azure DevOps web URL
+  - `53042f47f` — file mentions com espacos no composer
+  - correcoes de desktop packaging/release, TCC macOS, Claude Agent SDK 0.3.x e spawn sem shell
+- Upstream deliberadamente nao absorvido:
+  - pacote mobile Expo/React Native upstream em `apps/mobile/*`
+  - workflow `mobile-eas-preview`, script `scripts/mobile-native-static-check.ts` e patches mobile `@expo/metro-config`/`react-native-nitro-modules`
+  - qualquer dependencia Expo/React Native/Nitro introduzida apenas pelo mobile upstream
+- Zona de atrito prevista antes do merge:
+  - `apps/web/src/components/chat/ChatComposer.tsx`, `ComposerPromptEditor.tsx`, `MessagesTimeline.tsx`, `composerDraftStore.ts` — `hotspot-compartilhado`
+  - `apps/server/src/ws.ts`, `apps/server/src/server.ts`, `packages/contracts/src/{ipc,rpc}.ts` — `hotspot-compartilhado`
+  - `apps/desktop/src/preload.ts`, `apps/desktop/src/ipc/*` — `adaptador-core`
+  - `apps/server/src/persistence/Migrations.ts` — `hotspot-compartilhado`
+  - `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml` — `tooling-hotspot`
+  - `apps/mobile/*` e `apps/web/src/mobile/*` — `perimetro-custom congelado`
+- Conflitos reais resolvidos:
+  - desktop bridge: `activateWindow` local + cloud auth IPC upstream coexistem
+  - server runtime: Annotations bridge/local intake + cloud managed endpoint runtime coexistem
+  - migrations: upstream `032_AuthPairingProofKeyThumbprint` foi preservada como migration `37` para nao colidir com IDs locais 31-36
+  - packages/tooling: aceito Vite+/pnpm upstream, removendo `bun.lock`; `pnpm install` regenerou `pnpm-lock.yaml`
+  - build desktop: mantido opt-in explicito de updater do fork junto com staging pnpm e protocolo `t3code`
+  - contracts/RPC: mantidos RPCs de external composer intake junto com RPCs cloud upstream
+- O que foi reaplicado do custom vivo:
+  - Annotations bridge/intake como layer e endpoints custom pequenos sobre auth/runtime upstream
+  - `activateWindow` e `getPathForFile` no desktop bridge/preload
+  - Capacitor deps no `apps/web/package.json`, sem aceitar o app mobile upstream
+  - registro de temas custom do diff em cima do import path upstream novo de `@pierre/diffs`
+  - opt-in explicito de auto-update desktop por `T3CODE_DESKTOP_UPDATE_REPOSITORY`
+- O que foi deliberadamente deixado de fora do replay:
+  - mobile Expo/React Native upstream inteiro
+  - script/CI/patches mobile upstream
+  - retorno de OpenPets
+- Classificacao:
+  - `apps/mobile/*`, `apps/web/src/mobile/*`, `docs/mobile-capacitor-tailscale.md` — `perimetro-custom congelado`
+  - `apps/server/src/server.ts` — `hotspot-compartilhado`
+  - `packages/contracts/src/{ipc,rpc}.ts` — `hotspot-compartilhado`
+  - `apps/desktop/src/preload.ts`, `apps/desktop/src/ipc/*` — `adaptador-core`
+  - `apps/server/src/persistence/Migrations.ts` — `hotspot-compartilhado`
+  - `scripts/build-desktop-artifact.ts` — `adaptador-core`
+  - `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml` — `tooling-hotspot`
+- Decisoes importantes:
+  - aceitar Vite+/pnpm como tooling do upstream para reduzir drift futuro
+  - congelar mobile por pedido explicito do usuario; isso evita misturar o app Capacitor vivo com o mobile Expo upstream nesta wave
+  - manter o bridge desktop como contrato combinado: cloud auth upstream + helpers locais `activateWindow`/`getPathForFile`
+- Validacao final:
+  - `pnpm install`
+  - `pnpm exec vp check`
+  - `pnpm exec vp run typecheck` (passou com sugestoes TSGo nao bloqueantes de `Effect.orElseSucceed` em arquivos existentes)
 
 ## 2026-06-03 — Sync sem upstream mobile ate `f0116e44b`
 

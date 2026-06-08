@@ -69,6 +69,6 @@ export class ExternalLauncherError extends Schema.TaggedErrorClass<ExternalLaunc
   "ExternalLauncherError",
   {
     message: Schema.String,
-    cause: Schema.optional(Schema.Defect),
+    cause: Schema.optional(Schema.Defect()),
   },
 ) {}

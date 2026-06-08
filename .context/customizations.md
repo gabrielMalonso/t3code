@@ -179,7 +179,8 @@ Regra pratica:
   - `apps/web/src/components/ProjectScriptsControl.tsx`
   - `apps/web/src/components/Sidebar.tsx`
   - `apps/web/package.json`
-  - `bun.lock`
+  - `pnpm-lock.yaml`
+  - `pnpm-workspace.yaml`
 - Invariantes:
   - app mobile abre em estado neutro, sem `primary environment`, `LocalApi`, server state ou WebSocket antes de um profile ativo
   - so um profile mobile pode ficar ativo por vez
@@ -195,6 +196,7 @@ Regra pratica:
   - se o upstream mexer em reconnect/resume do browser, nao montar `startEnvironmentConnectionService()` no mobile conectado so para herdar isso; reaplique o diferencial no runtime mobile
   - se o upstream mexer em layout mobile/safe-area/header/composer, mantenha a melhoria upstream e recoloque so gates `isMobileCapacitorRuntime()`
   - se o upstream criar suporte mobile nativo equivalente, apagar duplicacao local e preservar apenas o diferencial Android/Capacitor/Tailscale real
+  - se o sync for explicitamente "ignorar mobile", preservar `apps/mobile/*`, `apps/web/src/mobile/*` e docs mobile do donor; nao absorver Expo/React Native/Nitro, workflow mobile ou patches mobile do upstream
   - nao deixar plugin Capacitor vazar para codigo desktop/browser fora dos imports dinamicos ou guards mobile
 
 ### Annotations/point-and-shoot composer

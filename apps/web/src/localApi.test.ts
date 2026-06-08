@@ -14,7 +14,7 @@ import {
   type TerminalMetadataStreamEvent,
   ThreadId,
 } from "@t3tools/contracts";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { ContextMenuItem } from "@t3tools/contracts";
 
@@ -240,6 +240,18 @@ function makeDesktopBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridg
     showContextMenu: async () => null,
     openExternal: async () => true,
     activateWindow: async () => undefined,
+    createCloudAuthRequest: async () => "t3code-dev://auth/callback?t3_state=test",
+    getCloudAuthToken: async () => null,
+    setCloudAuthToken: async () => true,
+    clearCloudAuthToken: async () => undefined,
+    fetchCloudAuth: async () => ({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      body: "",
+    }),
+    onCloudAuthCallback: () => () => undefined,
     onMenuAction: () => () => undefined,
     getUpdateState: async () => {
       throw new Error("getUpdateState not implemented in test");
