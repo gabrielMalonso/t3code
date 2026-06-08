@@ -49,6 +49,7 @@ import Migration0033 from "./Migrations/031_ProjectionThreadLoopCompactTiming.ts
 import Migration0034 from "./Migrations/032_ProjectionThreadLoopCompactCounter.ts";
 import Migration0035 from "./Migrations/033_ProjectionThreadLoopCompactContextUsageThreshold.ts";
 import Migration0036 from "./Migrations/031_AuthAuthorizationScopes.ts";
+import Migration0037 from "./Migrations/032_AuthPairingProofKeyThumbprint.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -97,6 +98,7 @@ export const migrationEntries = [
   [34, "ProjectionThreadLoopCompactCounter", Migration0034],
   [35, "ProjectionThreadLoopCompactContextUsageThreshold", Migration0035],
   [36, "AuthAuthorizationScopes", Migration0036],
+  [37, "AuthPairingProofKeyThumbprint", Migration0037],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

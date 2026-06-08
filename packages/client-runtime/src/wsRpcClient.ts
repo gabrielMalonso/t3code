@@ -4,6 +4,8 @@ import {
   type GitRunStackedActionResult,
   type LocalApi,
   ORCHESTRATION_WS_METHODS,
+  type RelayClientInstallProgressEvent,
+  type RelayClientStatus,
   type ServerSettingsPatch,
   type VcsStatusResult,
   type VcsStatusStreamEvent,
@@ -161,6 +163,12 @@ export interface WsRpcClient {
     readonly subscribeExternalComposerIntake: RpcInputStreamMethod<
       typeof WS_METHODS.subscribeExternalComposerIntake
     >;
+  };
+  readonly cloud: {
+    readonly getRelayClientStatus: RpcUnaryNoArgMethod<typeof WS_METHODS.cloudGetRelayClientStatus>;
+    readonly installRelayClient: (
+      onProgress?: (event: RelayClientInstallProgressEvent) => void,
+    ) => Promise<RelayClientStatus>;
   };
   readonly orchestration: {
     readonly dispatchCommand: RpcUnaryMethod<typeof ORCHESTRATION_WS_METHODS.dispatchCommand>;
@@ -346,6 +354,26 @@ export function createWsRpcClient(
           listener,
           subscriptionOptions(options, WS_METHODS.subscribeExternalComposerIntake),
         ),
+    },
+    cloud: {
+      getRelayClientStatus: () =>
+        transport.request((client) => client[WS_METHODS.cloudGetRelayClientStatus]({})),
+      installRelayClient: async (onProgress) => {
+        let installed: RelayClientStatus | null = null;
+        await transport.requestStream(
+          (client) => client[WS_METHODS.cloudInstallRelayClient]({}),
+          (event) => {
+            onProgress?.(event);
+            if (event.type === "complete") {
+              installed = event.status;
+            }
+          },
+        );
+        if (installed) {
+          return installed;
+        }
+        throw new Error("Relay client install stream completed without a final status.");
+      },
     },
     orchestration: {
       dispatchCommand: (input) =>

@@ -20,8 +20,8 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
-import { page } from "vitest/browser";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { page } from "vite-plus/test/browser";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { render } from "vitest-browser-react";
 import type { ReactNode } from "react";
 import {
@@ -148,6 +148,14 @@ const authAccessHarness = vi.hoisted(() => {
 });
 
 const mockConnectDesktopSshEnvironment = vi.hoisted(() => vi.fn());
+const mockGetClerkToken = vi.hoisted(() => vi.fn(async () => null));
+
+vi.mock("@clerk/react", () => ({
+  useAuth: () => ({
+    getToken: mockGetClerkToken,
+    isSignedIn: false,
+  }),
+}));
 
 vi.mock("../../environments/runtime", () => {
   const primaryConnection = {
@@ -186,6 +194,7 @@ vi.mock("../../environments/runtime", () => {
       new URL(path, "http://localhost:3000").toString(),
     waitForSavedEnvironmentRegistryHydration: async () => undefined,
     activateMobileEnvironmentConnection: vi.fn(),
+    addManagedRelayEnvironment: vi.fn(),
     addSavedEnvironment: vi.fn(),
     connectDesktopSshEnvironment: mockConnectDesktopSshEnvironment,
     disconnectSavedEnvironment: vi.fn(),
@@ -454,6 +463,18 @@ const createDesktopBridgeStub = (overrides?: {
     showContextMenu: vi.fn().mockResolvedValue(null),
     openExternal: vi.fn().mockResolvedValue(true),
     activateWindow: vi.fn().mockResolvedValue(undefined),
+    createCloudAuthRequest: vi.fn().mockResolvedValue("t3code-dev://auth/callback?t3_state=test"),
+    getCloudAuthToken: vi.fn().mockResolvedValue(null),
+    setCloudAuthToken: vi.fn().mockResolvedValue(true),
+    clearCloudAuthToken: vi.fn().mockResolvedValue(undefined),
+    fetchCloudAuth: vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {},
+      body: "",
+    }),
+    onCloudAuthCallback: () => () => {},
     onMenuAction: () => () => {},
     getUpdateState: vi.fn().mockResolvedValue(idleUpdateState),
     setUpdateChannel:
@@ -557,7 +578,9 @@ describe("GeneralSettingsPanel observability", () => {
       </AppAtomRegistryProvider>,
     );
 
-    await expect.element(page.getByText("Manage local backend")).toBeInTheDocument();
+    await expect
+      .element(page.getByRole("heading", { name: "This environment", exact: true }))
+      .toBeInTheDocument();
     await expect.element(page.getByLabelText("Enable network access")).toBeDisabled();
     await expect
       .element(

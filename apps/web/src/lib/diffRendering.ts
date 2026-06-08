@@ -1,5 +1,6 @@
-import { parsePatchFiles, RegisteredCustomThemes, registerCustomTheme } from "@pierre/diffs";
-import type { FileDiffMetadata } from "@pierre/diffs/react";
+import { RegisteredCustomThemes, registerCustomTheme } from "@pierre/diffs";
+import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
+import type { FileDiffMetadata } from "@pierre/diffs/types";
 
 import abyssTheme from "../themes/abyss-color-theme.json";
 import ayuBlackTheme from "../themes/ayu-black-color-theme.json";

@@ -157,7 +157,7 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
 function syncDesktopTheme(theme: DesktopTheme) {
   if (typeof window === "undefined") return;
   const bridge = window.desktopBridge;
-  if (!bridge || lastDesktopTheme === theme) {
+  if (!bridge || typeof bridge.setTheme !== "function" || lastDesktopTheme === theme) {
     return;
   }
 
