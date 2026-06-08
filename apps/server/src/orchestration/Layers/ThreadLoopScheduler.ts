@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
+import * as Crypto from "effect/Crypto";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -48,8 +49,6 @@ function normalizeBeforeRunCompactTiming(
 class ThreadLoopSchedulerError extends Data.TaggedError("ThreadLoopSchedulerError")<{
   readonly message: string;
 }> {}
-
-const serverCommandId = (tag: string) => CommandId.make(`server:${tag}:${crypto.randomUUID()}`);
 
 const isThreadLoopBusy = (thread: {
   readonly session: {
@@ -162,10 +161,20 @@ function getCompactContextUsageDecision(input: {
 }
 
 export const makeThreadLoopScheduler = Effect.gen(function* () {
+  const crypto = yield* Crypto.Crypto;
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const projectionThreadActivityRepository = yield* ProjectionThreadActivityRepository;
   const projectionThreadLoopRepository = yield* ProjectionThreadLoopRepository;
+
+  const makeServerCommandId = (tag: string) =>
+    crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
+
+  const makeEventId = crypto.randomUUIDv4.pipe(Effect.map((uuid) => EventId.make(uuid)));
+
+  const makeLoopMessageId = crypto.randomUUIDv4.pipe(
+    Effect.map((uuid) => MessageId.make(`loop-msg:${uuid}`)),
+  );
 
   const appendLoopActivity = (input: {
     readonly threadId: ThreadId;
@@ -181,20 +190,24 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
     readonly tone?: "info" | "error";
     readonly createdAt: string;
   }) =>
-    orchestrationEngine.dispatch({
-      type: "thread.activity.append",
-      commandId: serverCommandId("thread-loop-activity"),
-      threadId: input.threadId,
-      activity: {
-        id: EventId.make(crypto.randomUUID()),
-        tone: input.tone ?? "info",
-        kind: input.kind,
-        summary: input.summary,
-        payload: input.detail ? { detail: input.detail } : {},
-        turnId: null,
+    Effect.gen(function* () {
+      const commandId = yield* makeServerCommandId("thread-loop-activity");
+      const eventId = yield* makeEventId;
+      return yield* orchestrationEngine.dispatch({
+        type: "thread.activity.append",
+        commandId,
+        threadId: input.threadId,
+        activity: {
+          id: eventId,
+          tone: input.tone ?? "info",
+          kind: input.kind,
+          summary: input.summary,
+          payload: input.detail ? { detail: input.detail } : {},
+          turnId: null,
+          createdAt: input.createdAt,
+        },
         createdAt: input.createdAt,
-      },
-      createdAt: input.createdAt,
+      });
     });
 
   const syncLoopPatch = (input: {
@@ -208,12 +221,15 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
       readonly runsSinceCompaction?: number;
     };
   }) =>
-    orchestrationEngine.dispatch({
-      type: "thread.loop.sync",
-      commandId: serverCommandId("thread-loop-sync"),
-      threadId: input.threadId,
-      patch: input.patch,
-      createdAt: input.createdAt,
+    Effect.gen(function* () {
+      const commandId = yield* makeServerCommandId("thread-loop-sync");
+      return yield* orchestrationEngine.dispatch({
+        type: "thread.loop.sync",
+        commandId,
+        threadId: input.threadId,
+        patch: input.patch,
+        createdAt: input.createdAt,
+      });
     });
 
   const pauseLoopForArchivedThread = Effect.fn("pauseLoopForArchivedThread")(function* (
@@ -391,9 +407,10 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
         summary: "Loop context compaction started before the run",
         createdAt: input.createdAt,
       });
+      const commandId = yield* makeServerCommandId("thread-loop-compact-start");
       yield* orchestrationEngine.dispatch({
         type: "thread.compact.start",
-        commandId: serverCommandId("thread-loop-compact-start"),
+        commandId,
         threadId: input.threadId,
         createdAt: input.createdAt,
       });
@@ -527,11 +544,12 @@ export const makeThreadLoopScheduler = Effect.gen(function* () {
       createdAt: nowIso,
     });
 
-    const loopMessageId = MessageId.make(`loop-msg:${crypto.randomUUID()}`);
+    const loopMessageId = yield* makeLoopMessageId;
+    const commandId = yield* makeServerCommandId("thread-loop-turn-start");
     yield* orchestrationEngine
       .dispatch({
         type: "thread.turn.start",
-        commandId: serverCommandId("thread-loop-turn-start"),
+        commandId,
         threadId: loop.threadId,
         message: {
           messageId: loopMessageId,

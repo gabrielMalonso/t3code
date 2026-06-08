@@ -15,8 +15,14 @@ vi.mock("../environments/runtime", () => ({
   resetRuntimeForClosedEnvironment: mockResetRuntimeForClosedEnvironment,
 }));
 
-vi.mock("../environments/remote/api", () => ({
+vi.mock("@t3tools/client-runtime", () => ({
   fetchRemoteSessionState: mockFetchRemoteSessionState,
+}));
+
+vi.mock("../lib/runtime", () => ({
+  remoteHttpRuntime: {
+    runPromise: (effect: Promise<unknown>) => effect,
+  },
 }));
 
 function makeProfile(input?: Partial<MobileConnectionProfile>): MobileConnectionProfile {

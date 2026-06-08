@@ -27,6 +27,25 @@ vi.mock("@legendapp/list/react", async () => {
   return { LegendList };
 });
 
+function MockFileDiff(props: {
+  fileDiff: { name?: string | null; prevName?: string | null };
+  renderCustomHeader?: (fileDiff: {
+    name?: string | null;
+    prevName?: string | null;
+  }) => React.ReactNode;
+}) {
+  return (
+    <div data-testid="file-diff">
+      {props.renderCustomHeader?.(props.fileDiff)}
+      {props.fileDiff.name ?? props.fileDiff.prevName ?? "diff"}
+    </div>
+  );
+}
+
+vi.mock("@pierre/diffs/react", () => {
+  return { FileDiff: MockFileDiff };
+});
+
 function matchMedia() {
   return {
     matches: false,
@@ -275,5 +294,44 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Workspace");
     expect(markup).toContain("Externo");
     expect(markup).not.toContain("&lt;t3code-file-references&gt;");
+  });
+
+  it("renders review comment contexts as structured cards instead of raw tags", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-1",
+            kind: "message",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            message: {
+              id: MessageId.make("message-2"),
+              role: "user",
+              text: [
+                '<review_comment sectionId="turn:2" sectionTitle="Turn 2" filePath="apps/web/src/lib/contextWindow.test.ts" startIndex="3" endIndex="14" rangeLabel="+47 to +58">',
+                "Wadduo",
+                "```diff",
+                "@@ -0,0 +47,2 @@",
+                '+  it("keeps valid zero-usage snapshots", () => {',
+                "+    expect(snapshot).not.toBeNull();",
+                "```",
+                "</review_comment>",
+              ].join("\n"),
+              createdAt: "2026-03-17T19:12:28.000Z",
+              streaming: false,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("contextWindow.test.ts");
+    expect(markup).toContain("Wadduo");
+    expect(markup).toContain('data-testid="file-diff"');
+    expect(markup).not.toContain(">Review comment<");
+    expect(markup).not.toContain("&lt;review_comment");
+    expect(markup).not.toContain("&lt;/review_comment&gt;");
   });
 });

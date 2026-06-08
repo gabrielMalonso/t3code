@@ -2,10 +2,10 @@
 
 ## Status atual
 
-- Data: 2026-05-23
-- Branch de trabalho: `feature/macos-reinstall-hardening`
-- Upstream integrado nesta wave: `4f0f24f05` (`upstream/main`)
-- Estado: merge limpo aplicado e validado; selecoes de reasoning por multiplas provider instances absorvidas do upstream; custom vivo preservado
+- Data: 2026-06-03
+- Branch de trabalho: `feature/annotation-composer-redesign`
+- Upstream integrado nesta wave: `f0116e44b` (`upstream/main`)
+- Estado: merge `--no-commit` resolvido e validado; upstream mobile WIP nao absorvido; custom vivo preservado com adaptadores pequenos para auth/client-runtime/TSGo
 - Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
 ## Features locais vivas
@@ -18,6 +18,7 @@
 - `apps/server/src/t3code-custom/workspace/internalArtifacts.ts`: artefatos internos de workspace, como `.t3code/.gitignore`
 - `apps/web/src/t3code-custom/terminal/fontFamily.ts`: policy local da fonte monoespacada no terminal e blocos de codigo
 - `apps/mobile` + `apps/web/src/mobile`: app mobile Capacitor Android-first/iOS-compatible como cliente nativo do `apps/web`, com pareamento LAN/Tailscale e runtime mobile de um environment ativo por vez
+- `apps/annotations/*` + Annotations bridge/external composer intake: point-and-shoot composer via extensao/ponte local
 - `scripts/build-desktop-artifact.ts`: builds desktop do fork so criam feed de auto-update quando `T3CODE_DESKTOP_UPDATE_REPOSITORY` estiver definido explicitamente
 - `apps/server/src/process/externalLauncher.ts`: fallbacks locais de editor no macOS/Ghostty em cima do `ExternalLauncher` upstream
 
@@ -81,6 +82,85 @@
 - Se precisar tocar `ChatComposer` ou `ComposerPromptEditor`, fazer o minimo e deixar a adaptacao visivel
 - Se a mudanca for release/build desktop, nao permitir fallback automatico para `GITHUB_REPOSITORY` no feed de updater; o fork precisa de opt-in explicito para nao reinstalar upstream por acidente
 - Se OpenPets aparecer em branch antiga, tratar como custom arqueologico e nao reaplicar.
+
+## 2026-06-03 — Sync sem upstream mobile ate `f0116e44b`
+
+- Branch de sync: `feature/annotation-composer-redesign`
+- Donor local usado para replay seletivo: `e69f29274` (`Default repository publishing to HTTPS`)
+- Upstream absorvido:
+  - `f0116e44b` — AppImage icons para Niri/Noctalia
+  - `a04c09a19` — Environment APIs em `HttpApi` e authn/authz padronizados
+  - `6b3050ee7` — typecheck migrado para Effect TSGo
+  - `83f0cc9e3` — Claude Opus 4.8
+  - `e6330ead8` — Effect beta.73
+  - extracao de runtime web para `packages/client-runtime`
+  - renderizacao de review comments/diffs com `@pierre/diffs`
+  - `.repos/alchemy-effect` e atualizacao de repos de referencia/tooling
+- Upstream deliberadamente nao absorvido:
+  - `b3e8c0334` — `T3 Code Mobile [WIP] (#2013)`
+  - o app Capacitor do fork continua sendo o mobile vivo; `apps/mobile/*` e `docs/mobile-capacitor-tailscale.md` ficaram preservados
+  - `apps/web/src/mobile/*` recebeu apenas adaptacao pequena para os helpers remotos movidos para `@t3tools/client-runtime` e para TSGo (`crypto.randomUUID`)
+- Conflitos reais do merge:
+  - `apps/mobile/README.md`, `apps/mobile/package.json`, `apps/mobile/tsconfig.json` — resolvidos como ours
+  - `apps/server/src/auth/Layers/ServerSecretStore.ts` — deleted upstream; guard local reaplicado em `apps/server/src/auth/ServerSecretStore.ts`
+  - `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts`
+  - `apps/server/src/orchestration/decider.ts`
+  - `apps/server/src/persistence/Migrations.ts`
+  - `apps/server/src/process/externalLauncher.test.ts`
+  - `apps/server/src/provider/Layers/OpenCodeAdapter.ts`
+  - `apps/server/src/server.ts`
+  - `apps/server/src/ws.ts`
+  - `apps/web/src/components/ChatView.tsx`
+  - `apps/web/src/components/chat/ChatComposer.tsx`
+  - `apps/web/src/components/chat/ChatHeader.tsx`
+  - `apps/web/src/components/chat/MessagesTimeline.tsx`
+  - `apps/web/src/components/chat/MessagesTimeline.test.tsx`
+  - `apps/web/src/components/settings/ConnectionsSettings.tsx`
+  - `apps/web/src/components/settings/SettingsPanels.tsx`
+  - `apps/web/src/environments/runtime/connection.ts`
+  - `apps/web/src/environments/runtime/service.ts`
+  - `apps/web/src/lib/diffRendering.ts`
+  - `apps/web/src/rpc/wsTransport.ts`
+  - `apps/web/src/rpc/wsTransport.test.ts`
+  - `packages/client-runtime/src/wsRpcClient.ts`
+  - `packages/contracts/src/rpc.ts`
+  - `bun.lock`
+- O que foi reaplicado do custom vivo:
+  - Annotations bridge, external composer intake e rotas HTTP custom sobre o novo `EnvironmentAuth`
+  - `listProviderSkills`, skills de workspace e overlay de `$skill` no composer
+  - file references na composer/timeline e testes dos chips
+  - thread loop, `bootstrapPhase`, migrations locais 31-35 preservadas; migration upstream de auth scopes entrou como 36
+  - `showPlanSidebar` e auto-open guard
+  - mobile Capacitor com conexao `mobile` no `packages/client-runtime/src/environmentConnection.ts`
+  - blur/focus mobile em `ChatView`
+  - guard seguro de `PlatformError` no `ServerSecretStore`
+  - fallback Ghostty/macOS em `ExternalLauncher`
+  - opt-in explicito de auto-update desktop por `T3CODE_DESKTOP_UPDATE_REPOSITORY`
+- O que foi deliberadamente deixado de fora do replay:
+  - upstream mobile WIP, `react-native-nitro-modules`, script `lint:mobile`, patch Nitro e qualquer dependencia Expo/React Native do upstream
+  - qualquer retorno de OpenPets
+- Classificacao:
+  - `apps/mobile/*`, `docs/mobile-capacitor-tailscale.md` — `perimetro-custom preservado`
+  - `apps/web/src/mobile/*` — `perimetro-custom com adaptacao minima`
+  - `packages/client-runtime/src/environmentConnection.ts` — `adaptador-core`
+  - `apps/server/src/persistence/Migrations.ts` — `hotspot-compartilhado`
+  - `apps/server/src/ws.ts` — `hotspot-compartilhado`
+  - `apps/server/src/server.ts` — `hotspot-compartilhado`
+  - `apps/web/src/components/chat/ChatComposer.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/components/ChatView.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/components/chat/MessagesTimeline.tsx` — `adaptador-core+custom`
+  - `apps/web/src/lib/diffRendering.ts` — `hotspot-compartilhado`
+  - `packages/contracts/src/rpc.ts` — `hotspot-compartilhado`
+  - `package.json`, `bun.lock` — `tooling-hotspot`
+- Decisoes importantes:
+  - aceitar `HttpApi`/`EnvironmentAuth` upstream como fonte de auth; bridge custom mapeia owner/admin por `access:write`
+  - aceitar `packages/client-runtime` como novo dono de runtime/RPC client; web antigo reexporta ou importa dali
+  - nao reutilizar IDs de migration ja ocupados pelo fork; upstream `AuthAuthorizationScopes` virou migration 36
+  - manter a autorizacao uniforme no WS e declarar `EnvironmentAuthorizationError` nos RPCs custom
+- Validacao final:
+  - `bun fmt`
+  - `bun lint` (0 erros; warnings preexistentes de hooks/ref e `no-map-spread`)
+  - `bun typecheck`
 
 ## 2026-05-23 — Sync ate `4f0f24f05`
 

@@ -34,7 +34,7 @@ export interface ExternalComposerIntakeShape {
 export class ExternalComposerIntake extends Context.Service<
   ExternalComposerIntake,
   ExternalComposerIntakeShape
->()("t3/externalComposerIntake/ExternalComposerIntake") {}
+>()("t3/externalComposerIntake") {}
 
 type SubscriberRecord = ExternalComposerIntakeSubscription & {
   readonly queue: Queue.Queue<ExternalComposerIntakeStreamEvent>;

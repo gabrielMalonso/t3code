@@ -24,8 +24,8 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
-import { ServerAuth } from "./auth/Services/ServerAuth.ts";
-import { ServerSecretStore } from "./auth/Services/ServerSecretStore.ts";
+import { EnvironmentAuth } from "./auth/EnvironmentAuth.ts";
+import { ServerSecretStore } from "./auth/ServerSecretStore.ts";
 import { ExternalComposerIntake } from "./externalComposerIntake.ts";
 import { ServerSettingsService } from "./serverSettings.ts";
 
@@ -104,7 +104,7 @@ export interface AnnotationsBridgeShape {
 }
 
 export class AnnotationsBridge extends Context.Service<AnnotationsBridge, AnnotationsBridgeShape>()(
-  "t3/annotations/AnnotationsBridge",
+  "t3/annotationsBridge",
 ) {}
 
 export const AnnotationsBridgeLive = Layer.effect(
@@ -112,7 +112,7 @@ export const AnnotationsBridgeLive = Layer.effect(
   Effect.gen(function* () {
     const secretStore = yield* ServerSecretStore;
     const serverSettings = yield* ServerSettingsService;
-    const serverAuth = yield* ServerAuth;
+    const serverAuth = yield* EnvironmentAuth;
     const composerIntake = yield* ExternalComposerIntake;
     const fileSystem = yield* FileSystem.FileSystem;
     const pendingPairingsRef = yield* Ref.make(new Map<string, PendingPairingRecord>());

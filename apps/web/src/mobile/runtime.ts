@@ -1,4 +1,5 @@
 import type { EnvironmentId } from "@t3tools/contracts";
+import { fetchRemoteSessionState } from "@t3tools/client-runtime";
 import { create } from "zustand";
 
 import {
@@ -6,7 +7,7 @@ import {
   readEnvironmentConnection,
   resetRuntimeForClosedEnvironment,
 } from "../environments/runtime";
-import { fetchRemoteSessionState } from "../environments/remote/api";
+import { remoteHttpRuntime } from "../lib/runtime";
 import { bindLocalApiToRpcClient, clearLocalApiBinding } from "../localApi";
 import { useStore } from "../store";
 import { revokeMobileBearerAssetBlobUrls } from "./assets";
@@ -94,10 +95,12 @@ export async function activateMobileProfile(profileId: string): Promise<void> {
   assertSessionFresh(profile);
   useMobileRuntimeStore.getState().setConnecting(profile.profileId, profile.environmentId);
   try {
-    const sessionState = await fetchRemoteSessionState({
-      httpBaseUrl: profile.httpBaseUrl,
-      bearerToken: profile.bearerToken,
-    });
+    const sessionState = await remoteHttpRuntime.runPromise(
+      fetchRemoteSessionState({
+        httpBaseUrl: profile.httpBaseUrl,
+        bearerToken: profile.bearerToken,
+      }),
+    );
     if (!sessionState.authenticated) {
       throw new Error("Invalid session. Pair this profile again.");
     }

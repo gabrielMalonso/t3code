@@ -92,8 +92,8 @@ export const ChatHeader = memo(function ChatHeader({
     primaryEnvironmentId === null || activeThreadEnvironmentId !== primaryEnvironmentId;
 
   return (
-    <div className="@container/header-actions flex min-w-0 flex-1 items-center gap-2">
-      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden sm:gap-3">
+    <div className="@container/header-actions flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 overflow-hidden sm:flex-1 sm:flex-nowrap sm:gap-3">
         <SidebarTrigger className="size-7 shrink-0 md:hidden" />
         <div className="flex min-w-0 flex-1 flex-col md:flex-row md:items-center md:gap-2 md:overflow-hidden">
           <h2

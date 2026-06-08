@@ -26,7 +26,8 @@ import { Input } from "../components/ui/input";
 import {
   bootstrapRemoteBearerSession,
   fetchRemoteEnvironmentDescriptor,
-} from "../environments/remote/api";
+} from "@t3tools/client-runtime";
+import { remoteHttpRuntime } from "../lib/runtime";
 import { activateMobileProfile, closeActiveMobileProfile, useMobileRuntimeStore } from "./runtime";
 import { parseMobilePairingDeepLink } from "./deepLink";
 import { getMobilePlatformLabel } from "./platform";
@@ -286,13 +287,18 @@ export function MobileNeutralSurface() {
           pairingUrlOrToken: pairingInputValue,
           host: input.mode === "lan" ? "" : hostValue,
         });
-        const descriptor = await fetchRemoteEnvironmentDescriptor({
-          httpBaseUrl: target.httpBaseUrl,
-        });
-        const bearerSession = await bootstrapRemoteBearerSession({
-          httpBaseUrl: target.httpBaseUrl,
-          credential: target.credential,
-        });
+        const descriptor = await remoteHttpRuntime.runPromise(
+          fetchRemoteEnvironmentDescriptor({
+            httpBaseUrl: target.httpBaseUrl,
+          }),
+        );
+        const bearerSession = await remoteHttpRuntime.runPromise(
+          bootstrapRemoteBearerSession({
+            httpBaseUrl: target.httpBaseUrl,
+            credential: target.credential,
+          }),
+        );
+        const createdAt = new Date();
         const profile: MobileConnectionProfile = {
           profileId: createMobileProfileId(input.mode),
           environmentId: descriptor.environmentId,
@@ -302,9 +308,11 @@ export function MobileNeutralSurface() {
           mode: input.mode,
           httpBaseUrl: target.httpBaseUrl,
           wsBaseUrl: target.wsBaseUrl,
-          bearerToken: bearerSession.sessionToken,
-          sessionExpiresAt: String(bearerSession.expiresAt),
-          createdAt: new Date().toISOString(),
+          bearerToken: bearerSession.access_token,
+          sessionExpiresAt: new Date(
+            createdAt.getTime() + bearerSession.expires_in * 1000,
+          ).toISOString(),
+          createdAt: createdAt.toISOString(),
           lastConnectedAt: null,
         };
         await profileStore.upsert(profile);

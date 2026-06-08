@@ -2,12 +2,12 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { assertSuccess } from "@effect/vitest/utils";
 import { EDITORS } from "@t3tools/contracts";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
-import * as Random from "effect/Random";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
@@ -680,7 +680,9 @@ it.layer(NodeServices.layer)("launchEditorProcess", (it) => {
     Effect.gen(function* () {
       const spawnerLayer = Layer.mock(ChildProcessSpawner.ChildProcessSpawner, {});
       const result = yield* launchEditorProcess({
-        command: `t3code-no-such-command-${yield* Random.nextUUIDv4}`,
+        command: `t3code-no-such-command-${yield* Crypto.Crypto.pipe(
+          Effect.flatMap((crypto) => crypto.randomUUIDv4),
+        )}`,
         args: [],
       }).pipe(Effect.provide(spawnerLayer), Effect.result);
       assert.equal(result._tag, "Failure");
