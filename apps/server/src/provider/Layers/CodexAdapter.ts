@@ -62,6 +62,7 @@ import {
   type CodexSessionRuntimeShape,
 } from "./CodexSessionRuntime.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
+import { toT3codeMcpElicitationQuestions } from "../../t3code-custom/provider/mcpElicitationPolicy.ts";
 const isCodexAppServerProcessExitedError = Schema.is(CodexErrors.CodexAppServerProcessExitedError);
 const isCodexAppServerTransportError = Schema.is(CodexErrors.CodexAppServerTransportError);
 const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
@@ -418,6 +419,8 @@ function toRequestTypeFromMethod(method: string): CanonicalRequestType {
       return "exec_command_approval";
     case "item/tool/requestUserInput":
       return "tool_user_input";
+    case "mcpServer/elicitation/request":
+      return "tool_user_input";
     case "item/tool/call":
       return "dynamic_tool_call";
     case "account/chatgptAuthTokens/refresh":
@@ -625,6 +628,26 @@ function mapToRuntimeEvents(
   }
 
   if (event.kind === "request") {
+    if (event.method === "mcpServer/elicitation/request") {
+      const payload = readPayload(
+        EffectCodexSchema.ServerRequest__McpServerElicitationRequestParams,
+        event.payload,
+      );
+      const questions = payload ? toT3codeMcpElicitationQuestions(payload) : undefined;
+      if (!questions) {
+        return [];
+      }
+      return [
+        {
+          ...runtimeEventBase(event, canonicalThreadId),
+          type: "user-input.requested",
+          payload: {
+            questions,
+          },
+        },
+      ];
+    }
+
     if (event.method === "item/tool/requestUserInput") {
       const payload =
         readPayload(EffectCodexSchema.ServerRequest__ToolRequestUserInputParams, event.payload) ??

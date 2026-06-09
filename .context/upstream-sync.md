@@ -14,6 +14,7 @@
 - `t3code-custom/chat/ThreadLoop*`: controles e comportamento de thread loop
 - `showPlanSidebar`: toggle local para desligar a Plan/Tasks sidebar e impedir auto-open
 - `t3code-custom/hooks/useComposerProviderSkills.ts`: descoberta de skills do workspace e selecao de `$skill` para turnos do Codex
+- `apps/server/src/t3code-custom/provider/mcpElicitationPolicy.ts`: policy local de Allow/Deny para Computer Use via `mcpServer/elicitation/request`
 - `t3code-custom/hooks/useComposerFileReferenceSend.ts`: serializacao custom no envio
 - `apps/server/src/t3code-custom/workspace/internalArtifacts.ts`: artefatos internos de workspace, como `.t3code/.gitignore`
 - `apps/web/src/t3code-custom/terminal/fontFamily.ts`: policy local da fonte monoespacada no terminal e blocos de codigo
