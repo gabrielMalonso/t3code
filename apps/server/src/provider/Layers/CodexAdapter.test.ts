@@ -46,6 +46,11 @@ import {
   type CodexThreadSnapshot,
 } from "./CodexSessionRuntime.ts";
 import { makeCodexAdapter } from "./CodexAdapter.ts";
+import {
+  CODEX_MCP_ELICITATION_ACCEPT_LABEL,
+  CODEX_MCP_ELICITATION_APPROVAL_QUESTION_ID,
+  CODEX_MCP_ELICITATION_DECLINE_LABEL,
+} from "../../t3code-custom/provider/mcpElicitationPolicy.ts";
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 
 // Test-local service tag so the rest of the file can keep using `yield* CodexAdapter`.
@@ -1054,6 +1059,67 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
           });
         }
       }),
+  );
+
+  it.effect("maps MCP elicitation requests to canonical user-input events", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-mcp-elicitation-requested"),
+        kind: "request",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "mcpServer/elicitation/request",
+        requestId: ApprovalRequestId.make("req-mcp-elicitation-1"),
+        payload: {
+          _meta: {
+            persist: ["always"],
+          },
+          message: "Allow Codex to use Finder?",
+          mode: "form",
+          requestedSchema: {
+            properties: {},
+            type: "object",
+          },
+          serverName: "computer-use",
+          threadId: "thread-1",
+          turnId: "turn-1",
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+
+      assert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") {
+        return;
+      }
+      assert.equal(firstEvent.value.type, "user-input.requested");
+      if (firstEvent.value.type !== "user-input.requested") {
+        return;
+      }
+      assert.equal(firstEvent.value.requestId, "req-mcp-elicitation-1");
+      assert.deepEqual(firstEvent.value.payload.questions, [
+        {
+          id: CODEX_MCP_ELICITATION_APPROVAL_QUESTION_ID,
+          header: "Computer Use",
+          question: "Allow Codex to use Finder?",
+          options: [
+            {
+              label: CODEX_MCP_ELICITATION_ACCEPT_LABEL,
+              description: "Allow this computer-use request.",
+            },
+            {
+              label: CODEX_MCP_ELICITATION_DECLINE_LABEL,
+              description: "Decline this computer-use request.",
+            },
+          ],
+          multiSelect: false,
+        },
+      ]);
+    }),
   );
 
   it.effect("unwraps Codex token usage payloads for context window events", () =>

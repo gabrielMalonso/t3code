@@ -16,6 +16,10 @@ import {
   isRecoverableThreadResumeError,
   openCodexThread,
 } from "./CodexSessionRuntime.ts";
+import {
+  CODEX_MCP_ELICITATION_APPROVAL_QUESTION_ID,
+  toT3codeMcpElicitationResponse,
+} from "../../t3code-custom/provider/mcpElicitationPolicy.ts";
 const isCodexAppServerRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
 
 function makeThreadOpenResponse(
@@ -193,6 +197,34 @@ describe("isRecoverableThreadResumeError", () => {
       ),
       false,
     );
+  });
+});
+
+describe("toT3codeMcpElicitationResponse", () => {
+  it("accepts explicit approval answers", () => {
+    assert.deepStrictEqual(
+      toT3codeMcpElicitationResponse({
+        [CODEX_MCP_ELICITATION_APPROVAL_QUESTION_ID]: "Allow",
+      }),
+      {
+        action: "accept",
+        content: {},
+      },
+    );
+  });
+
+  it("declines denied or missing approval answers", () => {
+    assert.deepStrictEqual(
+      toT3codeMcpElicitationResponse({
+        [CODEX_MCP_ELICITATION_APPROVAL_QUESTION_ID]: "Deny",
+      }),
+      {
+        action: "decline",
+      },
+    );
+    assert.deepStrictEqual(toT3codeMcpElicitationResponse({}), {
+      action: "decline",
+    });
   });
 });
 

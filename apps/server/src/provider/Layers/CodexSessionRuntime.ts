@@ -42,6 +42,7 @@ import {
   CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS,
   CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS,
 } from "../CodexDeveloperInstructions.ts";
+import { toT3codeMcpElicitationResponse } from "../../t3code-custom/provider/mcpElicitationPolicy.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
 
 const PROVIDER = ProviderDriverKind.make("codex");
@@ -234,6 +235,7 @@ interface ApprovalCorrelation {
 }
 
 interface PendingUserInput {
+  readonly responseKind: "tool-user-input" | "mcp-elicitation";
   readonly requestId: ApprovalRequestId;
   readonly turnId: TurnId | undefined;
   readonly itemId: ProviderItemId | undefined;
@@ -1083,6 +1085,7 @@ export const makeCodexSessionRuntime = (
         yield* Ref.update(pendingUserInputsRef, (current) => {
           const next = new Map(current);
           next.set(requestId, {
+            responseKind: "tool-user-input",
             requestId,
             turnId,
             itemId,
@@ -1120,6 +1123,47 @@ export const makeCodexSessionRuntime = (
             ),
           ),
         } satisfies EffectCodexSchema.ToolRequestUserInputResponse;
+      }),
+    );
+
+    yield* client.handleServerRequest("mcpServer/elicitation/request", (payload) =>
+      Effect.gen(function* () {
+        const requestId = ApprovalRequestId.make(yield* randomUUIDv4);
+        const turnId = payload.turnId ? TurnId.make(payload.turnId) : undefined;
+        const answers = yield* Deferred.make<ProviderUserInputAnswers>();
+
+        yield* Ref.update(pendingUserInputsRef, (current) => {
+          const next = new Map(current);
+          next.set(requestId, {
+            responseKind: "mcp-elicitation",
+            requestId,
+            turnId,
+            itemId: undefined,
+            answers,
+          });
+          return next;
+        });
+
+        yield* emitEvent({
+          kind: "request",
+          threadId: options.threadId,
+          method: "mcpServer/elicitation/request",
+          requestId,
+          ...(turnId ? { turnId } : {}),
+          payload,
+        });
+
+        const resolvedAnswers = yield* Deferred.await(answers).pipe(
+          Effect.ensuring(
+            Ref.update(pendingUserInputsRef, (current) => {
+              const next = new Map(current);
+              next.delete(requestId);
+              return next;
+            }),
+          ),
+        );
+
+        return toT3codeMcpElicitationResponse(resolvedAnswers);
       }),
     );
 
@@ -1392,13 +1436,16 @@ export const makeCodexSessionRuntime = (
               requestId,
             });
           }
-          const codexAnswers = yield* toCodexUserInputAnswers(answers);
           yield* Ref.update(pendingUserInputsRef, (current) => {
             const next = new Map(current);
             next.delete(requestId);
             return next;
           });
           yield* Deferred.succeed(pending.answers, answers);
+          const codexAnswers =
+            pending.responseKind === "tool-user-input"
+              ? yield* toCodexUserInputAnswers(answers)
+              : undefined;
           yield* emitEvent({
             kind: "notification",
             threadId: options.threadId,
@@ -1407,7 +1454,7 @@ export const makeCodexSessionRuntime = (
             ...(pending.turnId ? { turnId: pending.turnId } : {}),
             ...(pending.itemId ? { itemId: pending.itemId } : {}),
             payload: {
-              answers: codexAnswers,
+              answers: codexAnswers ?? answers,
             },
           });
         }),
