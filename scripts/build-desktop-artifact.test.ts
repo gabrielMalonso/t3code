@@ -270,10 +270,15 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         signedMacConfig.extendInfo?.NSAppleEventsUsageDescription,
         "T3 Code uses Apple Events to let computer-use tools inspect and control local apps when you ask them to.",
       );
-      assert.equal(signedMacConfig.entitlements, "apps/desktop/resources/entitlements.mac.plist");
       assert.equal(
-        signedMacConfig.entitlementsInherit,
-        "apps/desktop/resources/entitlements.mac.inherit.plist",
+        signedMacConfig.entitlements?.endsWith("/apps/desktop/resources/entitlements.mac.plist"),
+        true,
+      );
+      assert.equal(
+        signedMacConfig.entitlementsInherit?.endsWith(
+          "/apps/desktop/resources/entitlements.mac.inherit.plist",
+        ),
+        true,
       );
       assert.equal(signedMacConfig.hardenedRuntime, true);
 

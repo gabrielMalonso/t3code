@@ -712,6 +712,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   mockUpdates: boolean,
   mockUpdateServerPort: number | undefined,
 ) {
+  const path = yield* Path.Path;
+  const repoRoot = yield* RepoRoot;
   const buildConfig: Record<string, unknown> = {
     appId: "com.t3tools.t3code",
     productName: resolveDesktopProductName(version),
@@ -751,8 +753,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       },
       ...(signed
         ? {
-            entitlements: MAC_ENTITLEMENTS_PATH,
-            entitlementsInherit: MAC_ENTITLEMENTS_INHERIT_PATH,
+            entitlements: path.join(repoRoot, MAC_ENTITLEMENTS_PATH),
+            entitlementsInherit: path.join(repoRoot, MAC_ENTITLEMENTS_INHERIT_PATH),
             hardenedRuntime: true,
           }
         : {}),
