@@ -6,9 +6,8 @@ import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import { ServerConfig } from "./config.ts";
 import {
-  attachmentsRouteLayer,
   otlpTracesProxyRouteLayer,
-  projectFaviconRouteLayer,
+  assetRouteLayer,
   serverEnvironmentHttpApiLayer,
   staticAndDevRouteLayer,
   browserApiCorsLayer,
@@ -35,6 +34,11 @@ import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
 import { TerminalManagerLive } from "./terminal/Layers/Manager.ts";
+import * as McpHttpServer from "./mcp/McpHttpServer.ts";
+import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
+import * as PreviewManager from "./preview/Manager.ts";
+import * as PortScanner from "./preview/PortScanner.ts";
+import * as ProcessRunner from "./processRunner.ts";
 import * as GitManager from "./git/GitManager.ts";
 import { KeybindingsLive } from "./keybindings.ts";
 import { ServerRuntimeStartup, ServerRuntimeStartupLive } from "./serverRuntimeStartup.ts";
@@ -70,7 +74,7 @@ import { ServerEnvironmentLive } from "./environment/Layers/ServerEnvironment.ts
 import { authHttpApiLayer, environmentAuthenticatedAuthLayer } from "./auth/http.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
-import { cloudHttpApiLayer, reconcileDesiredCloudLink } from "./cloud/http.ts";
+import { connectHttpApiLayer, reconcileDesiredCloudLink } from "./cloud/http.ts";
 import * as CloudManagedEndpointRuntime from "./cloud/ManagedEndpointRuntime.ts";
 import * as CloudCliTokenManager from "./cloud/CliTokenManager.ts";
 import * as CloudCliState from "./cloud/CliState.ts";
@@ -90,6 +94,12 @@ import { orchestrationHttpApiLayer } from "./orchestration/http.ts";
 import * as NetService from "@t3tools/shared/Net";
 import * as RelayClient from "@t3tools/shared/relayClient";
 import { disableTailscaleServe, ensureTailscaleServe } from "@t3tools/tailscale";
+
+// Effect's default preemptive shutdown waits 20s before finalizing request scopes.
+// T3's primary transport is long-lived WebSocket RPC, whose Effect scope finalizer
+// already closes the websocket gracefully. Do not add an artificial drain before
+// those finalizers get a chance to run.
+const HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS = 0;
 
 const PtyAdapterLive = Layer.unwrap(
   Effect.gen(function* () {
@@ -120,6 +130,7 @@ const HttpServerLive = Layer.unwrap(
       return BunHttpServer.layer({
         port: config.port,
         ...(config.host ? { hostname: config.host } : {}),
+        gracefulShutdownTimeout: HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS,
       });
     } else {
       const [NodeHttpServer, NodeHttp] = yield* Effect.all([
@@ -129,6 +140,7 @@ const HttpServerLive = Layer.unwrap(
       return NodeHttpServer.layer(NodeHttp.createServer, {
         host: config.host,
         port: config.port,
+        gracefulShutdownTimeout: HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS,
       });
     }
   }),
@@ -227,7 +239,17 @@ const CheckpointingLayerLive = Layer.empty.pipe(
   Layer.provideMerge(CheckpointStoreLive.pipe(Layer.provide(VcsDriverRegistryLayerLive))),
 );
 
-const TerminalLayerLive = TerminalManagerLive.pipe(Layer.provide(PtyAdapterLive));
+const PortScannerLayerLive = PortScanner.layer.pipe(Layer.provide(ProcessRunner.layer));
+
+const TerminalLayerLive = TerminalManagerLive.pipe(
+  Layer.provide(PtyAdapterLive),
+  Layer.provide(PortScannerLayerLive),
+);
+
+const PreviewLayerLive = Layer.empty.pipe(
+  Layer.provideMerge(PreviewManager.layer),
+  Layer.provideMerge(PortScannerLayerLive),
+);
 
 const WorkspaceEntriesLayerLive = WorkspaceEntriesLive.pipe(
   Layer.provide(WorkspacePathsLive),
@@ -243,6 +265,10 @@ const WorkspaceLayerLive = Layer.mergeAll(
   WorkspacePathsLive,
   WorkspaceEntriesLayerLive,
   WorkspaceFileSystemLayerLive,
+);
+
+const ProjectFaviconResolverLayerLive = ProjectFaviconResolverLive.pipe(
+  Layer.provide(WorkspacePathsLive),
 );
 
 const AuthLayerLive = EnvironmentAuth.layer.pipe(
@@ -277,7 +303,7 @@ const RuntimeCoreBaseDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(GitLayerLive),
   Layer.provideMerge(VcsLayerLive),
   Layer.provideMerge(ProviderRuntimeLayerLive),
-  Layer.provideMerge(TerminalLayerLive),
+  Layer.provideMerge(Layer.mergeAll(TerminalLayerLive, PreviewLayerLive)),
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(KeybindingsLive),
   Layer.provideMerge(ProviderRegistryLive),
@@ -305,7 +331,7 @@ const RuntimeCoreDependenciesLive = RuntimeCoreBaseDependenciesLive.pipe(
   Layer.provideMerge(ServerSettingsLive),
   Layer.provideMerge(ExternalComposerIntakeLive),
   Layer.provideMerge(WorkspaceLayerLive),
-  Layer.provideMerge(ProjectFaviconResolverLive),
+  Layer.provideMerge(ProjectFaviconResolverLayerLive),
   Layer.provideMerge(RepositoryIdentityResolverLive),
   Layer.provideMerge(ServerEnvironmentLive),
   Layer.provideMerge(AuthLayerLive),
@@ -335,19 +361,21 @@ const RuntimeServicesLive = ServerRuntimeStartupLive.pipe(
 );
 
 export const makeRoutesLayer = Layer.mergeAll(
-  HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
-    Layer.provide(authHttpApiLayer),
-    Layer.provide(cloudHttpApiLayer),
-    Layer.provide(orchestrationHttpApiLayer),
-    Layer.provide(serverEnvironmentHttpApiLayer),
-    Layer.provide(environmentAuthenticatedAuthLayer),
+  Layer.mergeAll(
+    HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
+      Layer.provide(authHttpApiLayer),
+      Layer.provide(connectHttpApiLayer),
+      Layer.provide(orchestrationHttpApiLayer),
+      Layer.provide(serverEnvironmentHttpApiLayer),
+      Layer.provide(environmentAuthenticatedAuthLayer),
+    ),
+    otlpTracesProxyRouteLayer,
+    assetRouteLayer,
+    staticAndDevRouteLayer,
+    websocketRpcRouteLayer,
   ),
-  attachmentsRouteLayer,
   annotationsBridgeRouteLayer,
-  otlpTracesProxyRouteLayer,
-  projectFaviconRouteLayer,
-  staticAndDevRouteLayer,
-  websocketRpcRouteLayer,
+  McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
 ).pipe(Layer.provide(browserApiCorsLayer));
 
 export const makeServerLayer = Layer.unwrap(
@@ -446,9 +474,9 @@ export const makeServerLayer = Layer.unwrap(
           Effect.sleep("250 millis").pipe(
             Effect.andThen(reconcileDesiredCloudLink(`http://127.0.0.1:${address.port}`)),
             Effect.retry({ times: 4 }),
-            Effect.tap(() => Effect.logInfo("T3 Cloud desired link reconciled on startup")),
+            Effect.tap(() => Effect.logInfo("T3 Connect desired link reconciled on startup")),
             Effect.catch((cause) =>
-              Effect.logWarning("Failed to reconcile T3 Cloud desired link on startup", {
+              Effect.logWarning("Failed to reconcile T3 Connect desired link on startup", {
                 cause,
               }),
             ),

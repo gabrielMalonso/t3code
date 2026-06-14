@@ -1101,14 +1101,13 @@ describe("resolveLiveThreadBranchUpdate", () => {
     assert.equal(update, null);
   });
 
-  it("returns null while thread bootstrap is still in progress", () => {
+  it("allows a temporary worktree ref to reconcile to a semantic branch", () => {
     const update = resolveLiveThreadBranchUpdate({
-      threadBranch: "t3code/1234abcd",
-      gitStatus: status({ refName: "main" }),
-      bootstrapPhase: "renaming_branch",
+      threadBranch: "t3code/a9628676",
+      gitStatus: status({ refName: "feature/diff-panel-toggle" }),
     });
 
-    assert.equal(update, null);
+    assert.deepEqual(update, { branch: "feature/diff-panel-toggle" });
   });
 });
 

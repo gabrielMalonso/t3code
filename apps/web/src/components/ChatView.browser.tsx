@@ -65,6 +65,7 @@ import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
 import { getServerConfig } from "../rpc/serverState";
 import { getRouter } from "../router";
 import { deriveLogicalProjectKeyFromSettings } from "../logicalProject";
+import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
 import { selectBootstrapCompleteForActiveEnvironment, useStore } from "../store";
 import { terminalSessionManager } from "../terminalSessionState";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
@@ -99,6 +100,7 @@ vi.mock("../lib/vcsStatusState", () => {
   };
 
   return {
+    getVcsStatusDataForTarget: (state: typeof status) => state.data,
     getVcsStatusSnapshot: () => status,
     useVcsStatus: () => status,
     useVcsStatuses: () => new Map(),
@@ -259,6 +261,18 @@ function createMockEnvironmentApi(input: {
     filesystem: {
       browse: input.browse,
     },
+    assets: {
+      createUrl: vi.fn(async ({ resource }) => ({
+        relativeUrl: `/api/assets/test/${encodeURIComponent(
+          resource._tag === "attachment"
+            ? resource.attachmentId
+            : resource._tag === "project-favicon"
+              ? "favicon.svg"
+              : (resource.path.split(/[\\/]/).at(-1) ?? "asset"),
+        )}`,
+        expiresAt: Date.now() + 60_000,
+      })),
+    },
     sourceControl: {} as EnvironmentApi["sourceControl"],
     vcs: {} as EnvironmentApi["vcs"],
     git: {} as EnvironmentApi["git"],
@@ -281,6 +295,32 @@ function createMockEnvironmentApi(input: {
       subscribeThread: (() => () =>
         undefined) as EnvironmentApi["orchestration"]["subscribeThread"],
     },
+    preview: {
+      open: () => {
+        throw new Error("Not implemented in browser test.");
+      },
+      navigate: () => {
+        throw new Error("Not implemented in browser test.");
+      },
+      refresh: () => {
+        throw new Error("Not implemented in browser test.");
+      },
+      close: () => {
+        throw new Error("Not implemented in browser test.");
+      },
+      list: () => Promise.resolve({ sessions: [] }),
+      reportStatus: () => {
+        throw new Error("Not implemented in browser test.");
+      },
+      automation: {
+        connect: () => () => undefined,
+        respond: () => Promise.resolve(),
+        reportOwner: () => Promise.resolve(),
+        clearOwner: () => Promise.resolve(),
+      },
+      onEvent: () => () => undefined,
+      subscribePorts: () => () => undefined,
+    } as EnvironmentApi["preview"],
   };
 }
 
@@ -359,7 +399,6 @@ function createSnapshotForTargetUser(options: {
             name: `attachment-${attachmentIndex + 1}.png`,
             mimeType: "image/png",
             sizeBytes: 128,
-            previewUrl: `/attachments/attachment-${attachmentIndex + 1}`,
           }))
         : undefined;
 
@@ -1180,14 +1219,13 @@ const worker = setupWorker(
     });
   }),
   ...createAuthenticatedSessionHandlers(() => fixture.serverConfig.auth),
-  http.get("*/attachments/:attachmentId", () =>
+  http.get("*/api/assets/test/:assetName", () =>
     HttpResponse.text(ATTACHMENT_SVG, {
       headers: {
         "Content-Type": "image/svg+xml",
       },
     }),
   ),
-  http.get("*/api/project-favicon", () => new HttpResponse(null, { status: 204 })),
 );
 
 async function nextFrame(): Promise<void> {
@@ -1470,16 +1508,25 @@ async function waitForButtonByText(text: string): Promise<HTMLButtonElement> {
   return waitForElement(() => findButtonByText(text), `Unable to find "${text}" button.`);
 }
 
-function findButtonContainingText(text: string): HTMLButtonElement | null {
-  return (Array.from(document.querySelectorAll("button")).find((button) =>
-    button.textContent?.includes(text),
-  ) ?? null) as HTMLButtonElement | null;
+function findButtonContainingText(text: string): HTMLElement | null {
+  return (
+    Array.from(document.querySelectorAll<HTMLElement>('button, [role="button"]')).find((button) =>
+      button.textContent?.includes(text),
+    ) ?? null
+  );
 }
 
-async function waitForButtonContainingText(text: string): Promise<HTMLButtonElement> {
+async function waitForButtonContainingText(text: string): Promise<HTMLElement> {
   return waitForElement(
     () => findButtonContainingText(text),
     `Unable to find button containing "${text}".`,
+  );
+}
+
+async function waitForInteractionModeButton(text: string): Promise<HTMLButtonElement> {
+  return waitForElement(
+    () => findButtonContainingText(text) as HTMLButtonElement | null,
+    `Unable to find interaction mode button "${text}".`,
   );
 }
 
@@ -1539,6 +1586,18 @@ function dispatchChatNewShortcut(): void {
       shiftKey: true,
       metaKey: useMetaForMod,
       ctrlKey: !useMetaForMod,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+}
+
+function dispatchConfiguredDiffToggleShortcut(): void {
+  window.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "g",
+      shiftKey: true,
+      altKey: true,
       bubbles: true,
       cancelable: true,
     }),
@@ -1812,6 +1871,8 @@ describe("ChatView timeline estimator parity (full app)", () => {
     useTerminalUiStateStore.setState({
       terminalUiStateByThreadKey: {},
     });
+    useRightPanelStore.persist.clearStorage();
+    useRightPanelStore.setState({ byThreadKey: {} });
   });
 
   afterEach(() => {
@@ -2065,12 +2126,12 @@ describe("ChatView timeline estimator parity (full app)", () => {
     });
 
     try {
-      const toggle = await waitForElement(
+      const terminalToggle = await waitForElement(
         () =>
           document.querySelector<HTMLButtonElement>('button[aria-label="Toggle terminal drawer"]'),
         "Unable to find terminal drawer toggle.",
       );
-      toggle.click();
+      terminalToggle.click();
 
       await vi.waitFor(
         () => {
@@ -2083,9 +2144,131 @@ describe("ChatView timeline estimator parity (full app)", () => {
             terminalId: DEFAULT_TERMINAL_ID,
             cwd: "/repo/project",
           });
+          expect(
+            selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, THREAD_REF)
+              .isOpen,
+          ).toBe(false);
         },
         { timeout: 8_000, interval: 16 },
       );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("keeps multiple terminal panel surfaces separate from the bottom drawer", async () => {
+    const mounted = await mountChatView({
+      viewport: WIDE_FOOTER_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-open-inline-terminal-panel" as MessageId,
+        targetText: "open inline terminal panel",
+      }),
+    });
+
+    try {
+      const rightPanelToggle = await waitForElement(
+        () => document.querySelector<HTMLButtonElement>('button[aria-label="Toggle right panel"]'),
+        "Unable to find right panel toggle.",
+      );
+      rightPanelToggle.click();
+
+      const addSurface = await waitForElement(
+        () => document.querySelector<HTMLButtonElement>('button[aria-label="Add panel surface"]'),
+        "Unable to find add panel surface button.",
+      );
+      expect(document.body.textContent).toContain("Open a surface");
+      expect(
+        selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, THREAD_REF),
+      ).toEqual({
+        isOpen: true,
+        activeSurfaceId: null,
+        surfaces: [],
+      });
+      expect(wsRequests.some((request) => request._tag === WS_METHODS.terminalOpen)).toBe(false);
+
+      addSurface.click();
+
+      const terminalItem = await waitForElement(
+        () =>
+          Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
+            (item) => item.textContent?.trim() === "Terminal",
+          ) ?? null,
+        "Unable to find Terminal panel menu item.",
+      );
+      terminalItem.click();
+
+      await vi.waitFor(() => {
+        expect(
+          selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, THREAD_REF)
+            .surfaces.filter((surface) => surface.kind === "terminal")
+            .map((surface) => surface.resourceId),
+        ).toEqual(["term-1"]);
+      });
+
+      addSurface.click();
+      const secondTerminalItem = await waitForElement(
+        () =>
+          Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
+            (item) => item.textContent?.trim() === "Terminal",
+          ) ?? null,
+        "Unable to find Terminal panel menu item.",
+      );
+      secondTerminalItem.click();
+
+      await vi.waitFor(
+        () => {
+          expect(
+            selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, THREAD_REF)
+              .surfaces.filter((surface) => surface.kind === "terminal")
+              .map((surface) => surface.resourceId),
+          ).toEqual(["term-1", "term-2"]);
+          expect(
+            document.querySelector('[data-preview-panel-mode="inline"] .thread-terminal-drawer'),
+          ).not.toBeNull();
+          expect(
+            wsRequests
+              .filter((request) => request._tag === WS_METHODS.terminalOpen)
+              .map((request) => ("terminalId" in request ? request.terminalId : null)),
+          ).toEqual(expect.arrayContaining(["term-1", "term-2"]));
+          const attachRequest = wsRequests.find(
+            (request) =>
+              request._tag === WS_METHODS.terminalAttach &&
+              "terminalId" in request &&
+              request.terminalId === "term-2",
+          );
+          expect(attachRequest).toMatchObject({
+            _tag: WS_METHODS.terminalAttach,
+            threadId: THREAD_ID,
+            terminalId: "term-2",
+            cwd: "/repo/project",
+          });
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      const drawerToggle = await waitForElement(
+        () =>
+          document.querySelector<HTMLButtonElement>('button[aria-label="Toggle terminal drawer"]'),
+        "Unable to find terminal drawer toggle.",
+      );
+      drawerToggle.click();
+
+      await vi.waitFor(() => {
+        expect(
+          useTerminalUiStateStore.getState().terminalUiStateByThreadKey[THREAD_KEY],
+        ).toMatchObject({
+          terminalOpen: true,
+          terminalIds: ["term-3"],
+        });
+        expect(
+          wsRequests.some(
+            (request) =>
+              request._tag === WS_METHODS.terminalAttach &&
+              "terminalId" in request &&
+              request.terminalId === "term-3",
+          ),
+        ).toBe(true);
+      });
     } finally {
       await mounted.cleanup();
     }
@@ -2380,7 +2563,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       const runButton = await waitForElement(
         () =>
           Array.from(document.querySelectorAll("button")).find(
-            (button) => button.title === "Run Lint",
+            (button) => button.getAttribute("aria-label") === "Run Lint",
           ) as HTMLButtonElement | null,
         "Unable to find Run Lint button.",
       );
@@ -2459,7 +2642,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
       const runButton = await waitForElement(
         () =>
           Array.from(document.querySelectorAll("button")).find(
-            (button) => button.title === "Run Test",
+            (button) => button.getAttribute("aria-label") === "Run Test",
           ) as HTMLButtonElement | null,
         "Unable to find Run Test button.",
       );
@@ -3198,7 +3381,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
     });
 
     try {
-      expect(composerDraftFor(THREAD_KEY)?.interactionMode ?? "default").toBe("default");
+      const initialModeButton = await waitForInteractionModeButton("Build");
+      expect(initialModeButton.getAttribute("aria-label")).toContain("enter plan mode");
+      expect(initialModeButton.hasAttribute("title")).toBe(false);
 
       window.dispatchEvent(
         new KeyboardEvent("keydown", {
@@ -3210,7 +3395,9 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
       await waitForLayout();
 
-      expect(composerDraftFor(THREAD_KEY)?.interactionMode ?? "default").toBe("default");
+      expect((await waitForInteractionModeButton("Build")).getAttribute("aria-label")).toContain(
+        "enter plan mode",
+      );
 
       const composerEditor = await waitForComposerEditor();
       composerEditor.focus();
@@ -3224,8 +3411,10 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
 
       await vi.waitFor(
-        () => {
-          expect(composerDraftFor(THREAD_KEY)?.interactionMode).toBe("plan");
+        async () => {
+          expect((await waitForInteractionModeButton("Plan")).getAttribute("aria-label")).toContain(
+            "return to normal build mode",
+          );
         },
         { timeout: 8_000, interval: 16 },
       );
@@ -3240,12 +3429,167 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
 
       await vi.waitFor(
-        () => {
-          expect(composerDraftFor(THREAD_KEY)?.interactionMode ?? "default").toBe("default");
+        async () => {
+          expect(
+            (await waitForInteractionModeButton("Build")).getAttribute("aria-label"),
+          ).toContain("enter plan mode");
         },
         { timeout: 8_000, interval: 16 },
       );
     } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("uses the configured diff toggle binding without discarding its surface", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-target-diff-hotkey" as MessageId,
+        targetText: "diff hotkey target",
+      }),
+      configureFixture: (nextFixture) => {
+        nextFixture.serverConfig = {
+          ...nextFixture.serverConfig,
+          keybindings: [
+            {
+              command: "diff.toggle",
+              shortcut: {
+                key: "g",
+                metaKey: false,
+                ctrlKey: false,
+                shiftKey: true,
+                altKey: true,
+                modKey: false,
+              },
+              whenAst: {
+                type: "not",
+                node: { type: "identifier", name: "terminalFocus" },
+              },
+            },
+          ],
+        };
+      },
+    });
+
+    try {
+      await waitForServerConfigToApply();
+      dispatchConfiguredDiffToggleShortcut();
+      await vi.waitFor(() => {
+        expect(
+          selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, THREAD_REF),
+        ).toEqual({
+          isOpen: true,
+          activeSurfaceId: "diff",
+          surfaces: [{ id: "diff", kind: "diff" }],
+        });
+      });
+
+      dispatchConfiguredDiffToggleShortcut();
+      await vi.waitFor(() => {
+        expect(
+          selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, THREAD_REF),
+        ).toEqual({
+          isOpen: false,
+          activeSurfaceId: "diff",
+          surfaces: [{ id: "diff", kind: "diff" }],
+        });
+      });
+
+      dispatchConfiguredDiffToggleShortcut();
+      await vi.waitFor(() => {
+        expect(
+          selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, THREAD_REF),
+        ).toEqual({
+          isOpen: true,
+          activeSurfaceId: "diff",
+          surfaces: [{ id: "diff", kind: "diff" }],
+        });
+      });
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("focuses the composer and inserts printable text typed from the page background", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-target-type-to-focus" as MessageId,
+        targetText: "type-to-focus target",
+      }),
+    });
+
+    const backgroundTarget = document.createElement("div");
+    backgroundTarget.tabIndex = -1;
+    document.body.append(backgroundTarget);
+
+    try {
+      const composerEditor = await waitForComposerEditor();
+      backgroundTarget.focus();
+      expect(document.activeElement).not.toBe(composerEditor);
+
+      const event = new KeyboardEvent("keydown", {
+        key: "h",
+        bubbles: true,
+        cancelable: true,
+      });
+      backgroundTarget.dispatchEvent(event);
+
+      await waitForComposerText("h");
+      expect(event.defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(composerEditor);
+
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "i",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+
+      await waitForComposerText("hi");
+    } finally {
+      backgroundTarget.remove();
+      await mounted.cleanup();
+    }
+  });
+
+  it("does not steal printable keys from editable targets or shortcut modifiers", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-target-type-to-focus-guards" as MessageId,
+        targetText: "type-to-focus guards target",
+      }),
+    });
+    const input = document.createElement("input");
+    document.body.append(input);
+
+    try {
+      input.focus();
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "x",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await waitForLayout();
+      expect(useComposerDraftStore.getState().draftsByThreadKey[THREAD_KEY]?.prompt ?? "").toBe("");
+
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "k",
+          metaKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await waitForLayout();
+      expect(useComposerDraftStore.getState().draftsByThreadKey[THREAD_KEY]?.prompt ?? "").toBe("");
+    } finally {
+      input.remove();
       await mounted.cleanup();
     }
   });
@@ -3623,13 +3967,13 @@ describe("ChatView timeline estimator parity (full app)", () => {
         },
         { timeout: 8_000, interval: 16 },
       );
-      await waitForComposerText("hi @package.json there");
+      await waitForComposerText("hi [package.json](package.json) there");
       await setComposerSelectionByTextOffsets({
         start: "hi package.json ".length,
         end: "hi package.json there".length,
       });
       await pressComposerKey("(");
-      await waitForComposerText("hi @package.json (there)");
+      await waitForComposerText("hi [package.json](package.json) (there)");
     } finally {
       await mounted.cleanup();
     }
@@ -3661,7 +4005,48 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
-  it("shows runtime mode options in the compact composer controls menu", async () => {
+  it("stores selected file tags as markdown links while keeping the composer chip", async () => {
+    useComposerDraftStore.getState().setPrompt(THREAD_REF, "@pack");
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-file-tag-encoding" as MessageId,
+        targetText: "file tag encoding",
+      }),
+      resolveRpc: (body) => {
+        if (body._tag !== WS_METHODS.projectsSearchEntries) {
+          return undefined;
+        }
+        return {
+          entries: [
+            {
+              path: "path/to/package.json",
+              kind: "file",
+              parentPath: "path/to",
+            },
+          ],
+          truncated: false,
+        };
+      },
+    });
+
+    try {
+      const item = await waitForComposerMenuItem("path:file:path/to/package.json");
+      item.click();
+
+      await waitForComposerText("[package.json](path/to/package.json) ");
+      const chip = await waitForElement(
+        () => document.querySelector<HTMLElement>('[data-composer-mention-chip="true"]'),
+        "Unable to find rendered composer file chip.",
+      );
+      expect(chip.textContent).toContain("package.json");
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("shows runtime mode descriptions in the desktop composer access select", async () => {
     setDraftThreadWithoutWorktree();
 
     const mounted = await mountChatView({

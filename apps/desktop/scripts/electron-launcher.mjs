@@ -30,7 +30,7 @@ export const APP_BUNDLE_ID = isDevelopment
   ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`
   : "com.t3tools.t3code";
 const APP_PROTOCOL_SCHEMES = isDevelopment ? ["t3code-dev"] : ["t3code"];
-const LAUNCHER_VERSION = 10;
+const LAUNCHER_VERSION = 11;
 const defaultIconPath = join(desktopDir, "resources", "icon.icns");
 const developmentMacIconPngPath = join(repoRoot, "assets", "dev", "blueprint-macos-1024.png");
 
@@ -295,7 +295,11 @@ function buildMacLauncher(electronBinaryPath) {
   }
 
   rmSync(targetAppBundlePath, { recursive: true, force: true });
-  cpSync(sourceAppBundlePath, targetAppBundlePath, { recursive: true });
+  // verbatimSymlinks keeps the framework's relative symlinks intact
+  // (e.g. Resources -> Versions/Current/Resources). Without it cpSync
+  // rewrites them to absolute paths into node_modules, which escape the
+  // bundle and crash sandboxed helper processes (icudtl.dat not found).
+  cpSync(sourceAppBundlePath, targetAppBundlePath, { recursive: true, verbatimSymlinks: true });
   patchMainBundleInfoPlist(targetAppBundlePath, iconPath);
   patchHelperBundleInfoPlists(targetAppBundlePath);
   if (isDevelopment) {
@@ -305,6 +309,31 @@ function buildMacLauncher(electronBinaryPath) {
   registerMacLauncherBundle(targetAppBundlePath);
 
   return targetBinaryPath;
+}
+
+function isLinuxSetuidSandboxConfigured(electronBinaryPath) {
+  if (process.platform !== "linux") {
+    return true;
+  }
+
+  const sandboxPath = join(dirname(electronBinaryPath), "chrome-sandbox");
+  try {
+    const sandboxStat = statSync(sandboxPath);
+    return sandboxStat.uid === 0 && (sandboxStat.mode & 0o4777) === 0o4755;
+  } catch {
+    return false;
+  }
+}
+
+function resolveLinuxSandboxArgs(electronBinaryPath) {
+  if (isLinuxSetuidSandboxConfigured(electronBinaryPath)) {
+    return [];
+  }
+
+  console.warn(
+    "[desktop-launcher] Electron chrome-sandbox is not root-owned with mode 4755; launching local Electron with --no-sandbox.",
+  );
+  return ["--no-sandbox"];
 }
 
 export function resolveElectronPath() {
@@ -318,6 +347,14 @@ export function resolveElectronPath() {
   }
 
   return buildMacLauncher(electronBinaryPath);
+}
+
+export function resolveElectronLaunchCommand(args = []) {
+  const electronPath = resolveElectronPath();
+  return {
+    electronPath,
+    args: [...resolveLinuxSandboxArgs(electronPath), ...args],
+  };
 }
 
 export function resolveDevProtocolClient() {

@@ -17,6 +17,10 @@ import {
 } from "./catalog";
 import { useMobileProfileStore } from "../../mobile/profileStorage";
 
+let resolveRegistryRead: (records: readonly PersistedSavedEnvironmentRecord[]) => void = () => {
+  throw new Error("Registry read resolver was not initialized.");
+};
+
 describe("environment runtime catalog stores", () => {
   beforeEach(async () => {
     vi.stubGlobal("window", {
@@ -144,9 +148,9 @@ describe("environment runtime catalog stores", () => {
   });
 
   it("does not let stale hydration overwrite records added while hydration is in flight", async () => {
-    let resolveRegistryRead:
-      | ((value: readonly PersistedSavedEnvironmentRecord[]) => void)
-      | undefined;
+    resolveRegistryRead = () => {
+      throw new Error("Registry read resolver was not initialized.");
+    };
 
     vi.stubGlobal("window", {
       location: {

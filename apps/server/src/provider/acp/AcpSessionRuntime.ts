@@ -47,6 +47,7 @@ export interface AcpSessionRuntimeOptions {
     readonly version: string;
   };
   readonly authMethodId: string;
+  readonly mcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
   readonly requestLogger?: (event: AcpSessionRequestLogEvent) => Effect.Effect<void, never>;
   readonly protocolLogging?: {
     readonly logIncoming?: boolean;
@@ -105,6 +106,9 @@ export interface AcpSessionRuntimeShape {
     value: string | boolean,
   ) => Effect.Effect<EffectAcpSchema.SetSessionConfigOptionResponse, EffectAcpErrors.AcpError>;
   readonly setModel: (model: string) => Effect.Effect<void, EffectAcpErrors.AcpError>;
+  readonly setSessionModel: (
+    modelId: string,
+  ) => Effect.Effect<EffectAcpSchema.SetSessionModelResponse, EffectAcpErrors.AcpError>;
   readonly request: (
     method: string,
     payload: unknown,
@@ -397,7 +401,7 @@ const makeAcpSessionRuntime = (
         const loadPayload = {
           sessionId: options.resumeSessionId,
           cwd: options.cwd,
-          mcpServers: [],
+          mcpServers: options.mcpServers ?? [],
         } satisfies EffectAcpSchema.LoadSessionRequest;
         const resumed = yield* runLoggedRequest(
           "session/load",
@@ -410,7 +414,7 @@ const makeAcpSessionRuntime = (
         } else {
           const createPayload = {
             cwd: options.cwd,
-            mcpServers: [],
+            mcpServers: options.mcpServers ?? [],
           } satisfies EffectAcpSchema.NewSessionRequest;
           const created = yield* runLoggedRequest(
             "session/new",
@@ -423,7 +427,7 @@ const makeAcpSessionRuntime = (
       } else {
         const createPayload = {
           cwd: options.cwd,
-          mcpServers: [],
+          mcpServers: options.mcpServers ?? [],
         } satisfies EffectAcpSchema.NewSessionRequest;
         const created = yield* runLoggedRequest(
           "session/new",
@@ -545,6 +549,20 @@ const makeAcpSessionRuntime = (
         getStartedState.pipe(
           Effect.flatMap((started) => setConfigOption(started.modelConfigId ?? "model", model)),
           Effect.asVoid,
+        ),
+      setSessionModel: (modelId) =>
+        getStartedState.pipe(
+          Effect.flatMap((started) => {
+            const requestPayload = {
+              sessionId: started.sessionId,
+              modelId,
+            } satisfies EffectAcpSchema.SetSessionModelRequest;
+            return runLoggedRequest(
+              "session/set_model",
+              requestPayload,
+              acp.agent.setSessionModel(requestPayload),
+            );
+          }),
         ),
       request: (method, payload) =>
         runLoggedRequest(method, payload, acp.raw.request(method, payload)),
