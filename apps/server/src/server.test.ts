@@ -3427,6 +3427,32 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("allows Capacitor mobile auth preflights when a dev URL is configured", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({
+        config: { devUrl: new URL(crossOriginClientOrigin) },
+      });
+
+      const wsTicketUrl = yield* getHttpServerUrl("/api/auth/websocket-ticket");
+      for (const origin of ["http://localhost", "capacitor://localhost"]) {
+        const response = yield* fetchEffect(wsTicketUrl, {
+          method: "OPTIONS",
+          headers: {
+            origin,
+            "access-control-request-method": "POST",
+            "access-control-request-headers": "authorization",
+          },
+        });
+
+        assert.equal(response.status, 204);
+        assertBrowserApiCorsPreflightHeaders(response.headers, {
+          origin,
+          credentials: true,
+        });
+      }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("allows credentialed cloud link proof preflights from the configured dev UI", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest({

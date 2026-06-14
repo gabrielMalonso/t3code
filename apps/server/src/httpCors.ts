@@ -7,6 +7,11 @@ export const browserApiCorsAllowedHeaders = [
   "dpop",
 ] as const;
 
+export const mobileCapacitorCorsAllowedOrigins = [
+  "http://localhost",
+  "capacitor://localhost",
+] as const;
+
 export const browserApiCorsHeaders = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": browserApiCorsAllowedMethods.join(", "),

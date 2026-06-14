@@ -11,13 +11,22 @@ const mockFetchRemoteSessionState = vi.hoisted(() => vi.fn());
 
 vi.mock("../environments/runtime", () => ({
   activateMobileEnvironmentConnection: mockActivateMobileEnvironmentConnection,
+  getPrimaryEnvironmentConnection: vi.fn(() => ({ client: {} })),
   readEnvironmentConnection: mockReadEnvironmentConnection,
+  resetEnvironmentServiceForTests: vi.fn(async () => undefined),
+  resetSavedEnvironmentRegistryStoreForTests: vi.fn(),
+  resetSavedEnvironmentRuntimeStoreForTests: vi.fn(),
   resetRuntimeForClosedEnvironment: mockResetRuntimeForClosedEnvironment,
+  subscribeEnvironmentConnections: vi.fn(() => () => undefined),
 }));
 
-vi.mock("@t3tools/client-runtime", () => ({
-  fetchRemoteSessionState: mockFetchRemoteSessionState,
-}));
+vi.mock("@t3tools/client-runtime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@t3tools/client-runtime")>();
+  return {
+    ...actual,
+    fetchRemoteSessionState: mockFetchRemoteSessionState,
+  };
+});
 
 vi.mock("../lib/runtime", () => ({
   remoteHttpRuntime: {
