@@ -85,6 +85,19 @@
 
 - OpenPets nao e mais custom vivo. Nao reaplicar `apps/server/src/openpets/*`, `OpenPetsReactor`, `OpenPetsBridge`, `server.getOpenPetsStatus`, `settings.openPets` nem a secao OpenPets das settings.
 
+## 2026-06-14 — Repair pos-sync da conexao mobile Capacitor
+
+- Problema encontrado: com `ServerConfig.devUrl`, o CORS upstream restringia as APIs HTTP autenticadas apenas ao dev UI; o app Capacitor usa origens `http://localhost` no Android e `capacitor://localhost` no iOS, entao pareamento/sessao bearer/`websocket-ticket` podiam falhar no mobile.
+- Reencaixe feito:
+  - `apps/server/src/httpCors.ts` agora declara as origens Capacitor permitidas.
+  - `apps/server/src/http.ts` preserva o CORS credentialed do upstream para o dev UI e inclui essas origens mobile quando `devUrl` existe.
+  - `apps/server/src/server.test.ts` cobre preflight de `/api/auth/websocket-ticket` para as duas origens mobile.
+- Classificacao:
+  - `apps/server/src/http.ts` — `adaptador-core`
+  - `apps/server/src/httpCors.ts` — `adaptador-core`
+  - `apps/server/src/server.test.ts` — `hotspot-compartilhado` de auth/CORS
+- Regra futura: se o upstream mexer em CORS/auth HTTP, aceitar a estrutura upstream primeiro, mas manter `http://localhost` e `capacitor://localhost` como diferencial real do mobile Capacitor enquanto `apps/mobile` continuar vivo.
+
 ## Refatoracoes feitas para sair da frente do upstream
 
 - OpenPets foi removido do backend, contratos, RPC, settings e UI. A feature estava custando superficie de conflito sem utilidade real.
