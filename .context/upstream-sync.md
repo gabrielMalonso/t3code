@@ -2,10 +2,10 @@
 
 ## Status atual
 
-- Data: 2026-06-08
+- Data: 2026-06-14
 - Branch de trabalho: `feature/annotation-composer-redesign`
-- Upstream integrado nesta wave: `0e4a43519` (`upstream/main`)
-- Estado: merge `--no-commit` resolvido e validado; upstream core/tooling/cloud/relay absorvido; upstream mobile ignorado nesta wave
+- Upstream integrado nesta wave: `a23b83314` (`upstream/main`)
+- Estado: merge `--no-commit` resolvido e validado; upstream browser preview/MCP/provider/runtime/UI absorvido; upstream mobile ignorado nesta wave
 - Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
 ## Features locais vivas
@@ -22,6 +22,64 @@
 - `apps/annotations/*` + Annotations bridge/external composer intake: point-and-shoot composer via extensao/ponte local
 - `scripts/build-desktop-artifact.ts`: builds desktop do fork so criam feed de auto-update quando `T3CODE_DESKTOP_UPDATE_REPOSITORY` estiver definido explicitamente
 - `apps/server/src/process/externalLauncher.ts`: fallbacks locais de editor no macOS/Ghostty em cima do `ExternalLauncher` upstream
+
+## 2026-06-14 — Sync ate `a23b83314` ignorando upstream mobile
+
+- Branch de sync: `feature/annotation-composer-redesign`
+- Donor local usado para replay seletivo: `d9270e02a` (`Handle Codex MCP elicitation requests`)
+- Upstream absorvido:
+  - `a23b83314` — fix desktop para crash no `start:desktop` em macOS com symlinks de framework reescritos
+  - browser preview nativo no desktop/web, incluindo right panel, webview bridge, picking/annotations de preview e automacao MCP
+  - servidor MCP HTTP, registry de sessoes MCP e toolkit de preview automation
+  - rotas unificadas de assets/favicon e helpers `useAssetUrl`
+  - provider Grok/xAI ACP, melhorias de provider startup, service tier/model options e lifecycle de turnos
+  - ajustes de VCS/source-control, relay/connect, UI de settings, keybindings e componentes compartilhados
+- Upstream deliberadamente nao absorvido:
+  - upstream mobile em `apps/mobile/*`, incluindo arquivos removidos/adicionados pelo WIP mobile upstream
+  - qualquer troca para stack mobile upstream que conflite com o app Capacitor vivo do fork
+- Zona de atrito prevista antes do merge:
+  - `apps/web/src/components/ChatView.tsx`, `apps/web/src/components/chat/ChatComposer.tsx`, `apps/web/src/components/chat/MessagesTimeline.tsx`, `apps/web/src/composerDraftStore.ts` — `hotspot-compartilhado`
+  - `apps/server/src/server.ts`, `apps/server/src/provider/Layers/{CodexAdapter,CodexSessionRuntime,ProviderService}.ts`, `apps/server/src/orchestration/Layers/ProjectionPipeline.ts` — `hotspot-compartilhado`
+  - `apps/desktop/src/preload.ts` e preview IPC/desktop — `adaptador-core`
+  - `apps/mobile/*` — `perimetro-custom congelado`
+- Conflitos reais resolvidos:
+  - mobile: congelado como ours; arquivos mobile upstream removidos do merge para preservar o app Capacitor do fork
+  - desktop preload: `getPathForFile`/`activateWindow` locais coexistem com bridge de preview upstream
+  - server runtime: Annotations bridge/intake e MCP elicitation local coexistem com MCP HTTP/preview automation upstream
+  - composer/timeline/store: file references, skills de workspace, thread loop e plan-sidebar local reencaixados sobre element contexts e preview annotations upstream
+  - right panel: aceito modelo upstream de preview/diff/right panel e preservado gate local `showPlanSidebar`
+- O que foi reaplicado do custom vivo:
+  - Annotations bridge e external composer intake como endpoints/RPC custom pequenos sobre auth/runtime upstream
+  - `mcpServer/elicitation/request` com policy local de Allow/Deny para Computer Use
+  - file references por path no composer, timeline, draft store e serializacao do envio
+  - thread loop, restore de envio custom e toggle local da Plan sidebar
+  - helpers desktop `activateWindow` e `getPathForFile`
+  - mobile bearer asset/favicons guards no web, sem aceitar upstream mobile
+  - policy local de fonte monoespacada no terminal/codigo
+- O que foi deliberadamente deixado de fora do replay:
+  - app mobile upstream e arquivos mobile WIP removidos pelo merge
+  - qualquer duplicacao local de preview/browser que o upstream agora cobre nativamente
+  - retorno de OpenPets
+- Classificacao:
+  - `apps/mobile/*` — `perimetro-custom congelado`
+  - `apps/web/src/mobile/*` — `perimetro-custom preservado`
+  - `apps/web/src/components/ChatView.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/components/chat/ChatComposer.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/components/chat/MessagesTimeline.tsx` — `adaptador-core+custom`
+  - `apps/web/src/composerDraftStore.ts` — `hotspot-compartilhado`
+  - `apps/server/src/server.ts` — `hotspot-compartilhado`
+  - `apps/server/src/provider/Layers/CodexAdapter.ts` — `hotspot-compartilhado`
+  - `apps/server/src/provider/Layers/CodexSessionRuntime.ts` — `hotspot-compartilhado`
+  - `apps/desktop/src/preload.ts` — `adaptador-core`
+  - `apps/web/src/components/preview/*`, `apps/server/src/preview/*`, `apps/server/src/mcp/*`, `packages/contracts/src/preview*.ts` — `upstream-puro absorvido`
+- Decisoes importantes:
+  - aceitar o browser preview/MCP automation upstream como fonte de verdade e manter Annotations como point-and-shoot externo, nao como fork paralelo do preview
+  - trocar attachments/favicon routes antigas pelo `assetRouteLayer` upstream, mantendo apenas `annotationsBridgeRouteLayer` como camada extra
+  - adicionar `vitest` nos pacotes que agora possuem testes locais dependentes do catalogo pnpm
+- Validacao final:
+  - `pnpm install`
+  - `pnpm exec vp check`
+  - `pnpm exec vp run typecheck` (passou com sugestoes TSGo nao bloqueantes de `Effect.orElseSucceed` em arquivos custom existentes)
 
 ## Custom deliberadamente descartado
 
