@@ -12,14 +12,14 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", exact: "8.3.3"),
-        .package(name: "AparajitaCapacitorSecureStorage", path: "../../../../../node_modules/.bun/@aparajita+capacitor-secure-storage@8.0.0/node_modules/@aparajita/capacitor-secure-storage"),
-        .package(name: "CapacitorCommunitySafeArea", path: "../../../../../node_modules/.bun/@capacitor-community+safe-area@8.0.1+73a76fe9b2b73c4e/node_modules/@capacitor-community/safe-area"),
-        .package(name: "CapacitorApp", path: "../../../../../node_modules/.bun/@capacitor+app@8.1.0+73a76fe9b2b73c4e/node_modules/@capacitor/app"),
-        .package(name: "CapacitorBarcodeScanner", path: "../../../../../node_modules/.bun/@capacitor+barcode-scanner@3.0.2+73a76fe9b2b73c4e/node_modules/@capacitor/barcode-scanner"),
-        .package(name: "CapacitorClipboard", path: "../../../../../node_modules/.bun/@capacitor+clipboard@8.0.1+73a76fe9b2b73c4e/node_modules/@capacitor/clipboard"),
-        .package(name: "CapacitorKeyboard", path: "../../../../../node_modules/.bun/@capacitor+keyboard@8.0.3+73a76fe9b2b73c4e/node_modules/@capacitor/keyboard"),
-        .package(name: "CapacitorNetwork", path: "../../../../../node_modules/.bun/@capacitor+network@8.0.1+73a76fe9b2b73c4e/node_modules/@capacitor/network"),
-        .package(name: "CapacitorPreferences", path: "../../../../../node_modules/.bun/@capacitor+preferences@8.0.1+73a76fe9b2b73c4e/node_modules/@capacitor/preferences")
+        .package(name: "AparajitaCapacitorSecureStorage", path: "../../../../../node_modules/.pnpm/@aparajita+capacitor-secure-storage@8.0.0/node_modules/@aparajita/capacitor-secure-storage"),
+        .package(name: "CapacitorCommunitySafeArea", path: "../../../../../node_modules/.pnpm/@capacitor-community+safe-area@8.0.1_@capacitor+core@8.3.3/node_modules/@capacitor-community/safe-area"),
+        .package(name: "CapacitorApp", path: "../../../../../node_modules/.pnpm/@capacitor+app@8.1.0_@capacitor+core@8.3.3/node_modules/@capacitor/app"),
+        .package(name: "CapacitorBarcodeScanner", path: "../../../../../node_modules/.pnpm/@capacitor+barcode-scanner@3.0.2_@capacitor+core@8.3.3/node_modules/@capacitor/barcode-scanner"),
+        .package(name: "CapacitorClipboard", path: "../../../../../node_modules/.pnpm/@capacitor+clipboard@8.0.1_@capacitor+core@8.3.3/node_modules/@capacitor/clipboard"),
+        .package(name: "CapacitorKeyboard", path: "../../../../../node_modules/.pnpm/@capacitor+keyboard@8.0.3_@capacitor+core@8.3.3/node_modules/@capacitor/keyboard"),
+        .package(name: "CapacitorNetwork", path: "../../../../../node_modules/.pnpm/@capacitor+network@8.0.1_@capacitor+core@8.3.3/node_modules/@capacitor/network"),
+        .package(name: "CapacitorPreferences", path: "../../../../../node_modules/.pnpm/@capacitor+preferences@8.0.1_@capacitor+core@8.3.3/node_modules/@capacitor/preferences")
     ],
     targets: [
         .target(

@@ -174,6 +174,7 @@ async function takePendingNativeDeepLink(): Promise<string | null> {
       Preferences?: {
         get: (options: { key: string }) => Promise<{ value: string | null }>;
         remove: (options: { key: string }) => Promise<void>;
+        set: (options: { key: string; value: string }) => Promise<void>;
       };
     };
     const preferences = module.Preferences;
@@ -182,8 +183,15 @@ async function takePendingNativeDeepLink(): Promise<string | null> {
     }
 
     const result = await preferences.get({ key: PENDING_NATIVE_DEEP_LINK_STORAGE_KEY });
-    const value = result.value?.trim() ?? "";
+    const rawValue = result.value;
+    const value =
+      typeof rawValue === "string"
+        ? rawValue.trim()
+        : rawValue == null
+          ? ""
+          : String(rawValue).trim();
     if (value) {
+      await preferences.set({ key: PENDING_NATIVE_DEEP_LINK_STORAGE_KEY, value: "" });
       await preferences.remove({ key: PENDING_NATIVE_DEEP_LINK_STORAGE_KEY });
       return value;
     }
@@ -371,17 +379,12 @@ export function MobileNeutralSurface() {
   useEffect(() => {
     let disposed = false;
     let pendingPoll: number | null = null;
-    let pendingPollStop: number | null = null;
     const listeners: Array<{ remove: () => Promise<void> }> = [];
 
     function stopPendingPoll() {
       if (pendingPoll !== null) {
         window.clearInterval(pendingPoll);
         pendingPoll = null;
-      }
-      if (pendingPollStop !== null) {
-        window.clearTimeout(pendingPollStop);
-        pendingPollStop = null;
       }
     }
 
@@ -443,7 +446,6 @@ export function MobileNeutralSurface() {
         pendingPoll = window.setInterval(() => {
           void takeAndHandlePendingNativeDeepLink();
         }, 500);
-        pendingPollStop = window.setTimeout(stopPendingPoll, 5000);
       } catch {
         void takeAndHandlePendingNativeDeepLink();
       }
