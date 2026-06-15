@@ -1,6 +1,8 @@
 import * as Data from "effect/Data";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest } from "effect/unstable/http";
@@ -17,6 +19,7 @@ export class TailscaleCommandError extends Data.TaggedError("TailscaleCommandErr
   readonly message: string;
   readonly exitCode: number | null;
   readonly stderr: string;
+  readonly stdout: string;
 }> {}
 
 export class TailscaleStatusParseError extends Data.TaggedError("TailscaleStatusParseError")<{
@@ -60,13 +63,26 @@ const tailscaleCommandError = (
   message: string,
   exitCode: number | null,
   stderr = "",
+  stdout = "",
 ): TailscaleCommandError =>
   new TailscaleCommandError({
     command: ["tailscale", ...args],
     message,
     exitCode,
     stderr,
+    stdout,
   });
+
+function parseTailscaleServeEnablePrompt(stdout: string): string | null {
+  if (!stdout.includes("Serve is not enabled on your tailnet.")) {
+    return null;
+  }
+
+  const url = stdout.match(/https:\/\/login\.tailscale\.com\/f\/serve\?[^\s]+/u)?.[0];
+  return url
+    ? `Tailscale Serve is not enabled for this tailnet. Enable it at ${url}, then try again.`
+    : "Tailscale Serve is not enabled for this tailnet. Enable it in Tailscale, then try again.";
+}
 
 const decodeTailscaleStatusJson = Schema.decodeEffect(Schema.fromJsonString(TailscaleStatusJson));
 
@@ -211,6 +227,9 @@ const runTailscaleCommand = (
 ): Effect.Effect<void, TailscaleCommandError, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const stdoutRef = yield* Ref.make("");
+    const stderrRef = yield* Ref.make("");
+    const promptDeferred = yield* Deferred.make<never, TailscaleCommandError>();
     const child = yield* spawner
       .spawn(ChildProcess.make(TAILSCALE_COMMAND, args))
       .pipe(
@@ -222,10 +241,34 @@ const runTailscaleCommand = (
           ),
         ),
       );
-    const [stderr, exitCode] = yield* Effect.all(
-      [collectStderr(child.stderr), child.exitCode.pipe(Effect.map(Number))],
-      { concurrency: "unbounded" },
-    ).pipe(
+
+    yield* child.stdout.pipe(
+      Stream.decodeText(),
+      Stream.runForEach((chunk) =>
+        Ref.updateAndGet(stdoutRef, (stdout) => `${stdout}${chunk}`).pipe(
+          Effect.flatMap((stdout) => {
+            const promptMessage = parseTailscaleServeEnablePrompt(stdout);
+            return promptMessage
+              ? Deferred.fail(
+                  promptDeferred,
+                  tailscaleCommandError(args, promptMessage, null, "", stdout),
+                ).pipe(Effect.ignore)
+              : Effect.void;
+          }),
+        ),
+      ),
+      Effect.ignore,
+      Effect.forkScoped,
+    );
+
+    yield* child.stderr.pipe(
+      Stream.decodeText(),
+      Stream.runForEach((chunk) => Ref.update(stderrRef, (stderr) => `${stderr}${chunk}`)),
+      Effect.ignore,
+      Effect.forkScoped,
+    );
+
+    const exit = child.exitCode.pipe(
       Effect.mapError((cause) =>
         tailscaleCommandError(
           args,
@@ -233,10 +276,30 @@ const runTailscaleCommand = (
           null,
         ),
       ),
+      Effect.flatMap((code) =>
+        Effect.gen(function* () {
+          const stdout = yield* Ref.get(stdoutRef);
+          const stderr = yield* Ref.get(stderrRef);
+          const promptMessage = parseTailscaleServeEnablePrompt(stdout);
+          if (promptMessage) {
+            return yield* tailscaleCommandError(args, promptMessage, null, stderr, stdout);
+          }
+
+          const exitCode = Number(code);
+          if (exitCode !== 0) {
+            return yield* tailscaleCommandError(
+              args,
+              input.exitMessage(exitCode),
+              exitCode,
+              stderr,
+              stdout,
+            );
+          }
+        }),
+      ),
     );
-    if (exitCode !== 0) {
-      return yield* tailscaleCommandError(args, input.exitMessage(exitCode), exitCode, stderr);
-    }
+
+    yield* Effect.raceFirst(exit, Deferred.await(promptDeferred));
   }).pipe(
     Effect.scoped,
     Effect.timeoutOption(input.timeoutMs),

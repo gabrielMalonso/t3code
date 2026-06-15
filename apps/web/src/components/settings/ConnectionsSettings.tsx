@@ -446,6 +446,20 @@ function formatDesktopSshConnectionError(error: unknown): string {
   return withoutTaggedErrorPrefix.trim() || fallback;
 }
 
+function formatDesktopTailscaleServeError(error: unknown): string {
+  const fallback = "Failed to configure Tailscale HTTPS.";
+  const rawMessage = error instanceof Error ? error.message : fallback;
+  const withoutIpcPrefix = rawMessage.replace(
+    /^Error invoking remote method 'desktop:set-tailscale-serve-enabled':\s*/u,
+    "",
+  );
+  const withoutTaggedErrorPrefix = withoutIpcPrefix.replace(
+    /^DesktopServerExposureTailscaleServeError:\s*/u,
+    "",
+  );
+  return withoutTaggedErrorPrefix.trim() || fallback;
+}
+
 /** Direct row in the card – same pattern as the Provider / ACP-agent list rows. */
 const ITEM_ROW_CLASSNAME = "border-t border-border/60 px-4 py-4 first:border-t-0 sm:px-5";
 const ENDPOINT_ROW_CLASSNAME = "border-t border-border/60 px-4 py-2.5 first:border-t-0 sm:px-5";
@@ -591,6 +605,14 @@ function isTailscaleHttpsEndpoint(endpoint: AdvertisedEndpoint): boolean {
   return endpoint.id.startsWith("tailscale-magicdns:");
 }
 
+function isTailscaleIpEndpoint(endpoint: AdvertisedEndpoint): boolean {
+  return endpoint.id.startsWith("tailscale-ip:");
+}
+
+function isTailscaleEndpoint(endpoint: AdvertisedEndpoint): boolean {
+  return isTailscaleIpEndpoint(endpoint) || isTailscaleHttpsEndpoint(endpoint);
+}
+
 function endpointDefaultPreferenceKey(endpoint: AdvertisedEndpoint): string {
   if (endpoint.id.startsWith("desktop-loopback:")) {
     return "desktop-core:loopback:http";
@@ -646,6 +668,7 @@ type PairingLinkListRowProps = {
   pairingLink: ServerPairingLinkRecord;
   endpointUrl: string | null | undefined;
   endpoints: ReadonlyArray<AdvertisedEndpoint>;
+  qrEndpoints: ReadonlyArray<AdvertisedEndpoint>;
   defaultEndpointKey: string | null;
   presentation?: AccessSectionPresentation;
   revokingPairingLinkId: string | null;
@@ -684,6 +707,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   pairingLink,
   endpointUrl,
   endpoints,
+  qrEndpoints,
   defaultEndpointKey,
   presentation = "current",
   revokingPairingLinkId,
@@ -820,15 +844,15 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   );
   const localPairingQrUrl = useMemo(() => {
     const endpoint =
-      endpoints
+      qrEndpoints
         .filter((entry) => entry.status !== "unavailable")
         .find((entry) => endpointDefaultPreferenceKey(entry) === "desktop-core:lan:http") ?? null;
     return endpoint
       ? resolveAdvertisedEndpointPairingUrl(endpoint, pairingLink.credential)
       : shareablePairingUrl;
-  }, [endpoints, pairingLink.credential, shareablePairingUrl]);
+  }, [pairingLink.credential, qrEndpoints, shareablePairingUrl]);
   const tailscalePairingQrUrl = useMemo(() => {
-    const availableEndpoints = endpoints.filter((entry) => entry.status !== "unavailable");
+    const availableEndpoints = qrEndpoints.filter((entry) => entry.status !== "unavailable");
     const endpoint =
       availableEndpoints.find(
         (entry) => endpointDefaultPreferenceKey(entry) === "tailscale:ip:http",
@@ -838,7 +862,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
       ) ??
       null;
     return endpoint ? resolveAdvertisedEndpointPairingUrl(endpoint, pairingLink.credential) : null;
-  }, [endpoints, pairingLink.credential]);
+  }, [pairingLink.credential, qrEndpoints]);
   const renderEndpointMenuItems = (
     options: typeof endpointCopyOptions = endpointCopyOptions,
     renderDetail = true,
@@ -1336,6 +1360,7 @@ const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHeaderActio
 type PairingClientsListProps = {
   endpointUrl: string | null | undefined;
   endpoints: ReadonlyArray<AdvertisedEndpoint>;
+  qrEndpoints: ReadonlyArray<AdvertisedEndpoint>;
   defaultEndpointKey: string | null;
   presentation?: AccessSectionPresentation;
   isLoading: boolean;
@@ -1350,6 +1375,7 @@ type PairingClientsListProps = {
 const PairingClientsList = memo(function PairingClientsList({
   endpointUrl,
   endpoints,
+  qrEndpoints,
   defaultEndpointKey,
   presentation = "current",
   isLoading,
@@ -1368,6 +1394,7 @@ const PairingClientsList = memo(function PairingClientsList({
           pairingLink={pairingLink}
           endpointUrl={endpointUrl}
           endpoints={endpoints}
+          qrEndpoints={qrEndpoints}
           defaultEndpointKey={defaultEndpointKey}
           presentation={presentation}
           revokingPairingLinkId={revokingPairingLinkId}
@@ -2217,8 +2244,7 @@ export function ConnectionsSettings() {
       setDesktopServerExposureState(nextState);
       setPendingTailscaleServeEndpoint(null);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to configure Tailscale HTTPS.";
+      const message = formatDesktopTailscaleServeError(error);
       setDesktopServerExposureError(message);
       toastManager.add(
         stackedThreadToast({
@@ -2797,6 +2823,20 @@ export function ConnectionsSettings() {
         : visibleDesktopNetworkAdvertisedEndpoints,
     [tailscaleHttpsEndpoint, visibleDesktopNetworkAdvertisedEndpoints],
   );
+  const desktopPairingQrEndpoints = useMemo(() => {
+    const endpoints = [...visibleDesktopAdvertisedEndpoints];
+    const seenEndpointIds = new Set(endpoints.map((endpoint) => endpoint.id));
+
+    for (const endpoint of desktopAdvertisedEndpoints) {
+      if (!isTailscaleEndpoint(endpoint) || seenEndpointIds.has(endpoint.id)) {
+        continue;
+      }
+      endpoints.push(endpoint);
+      seenEndpointIds.add(endpoint.id);
+    }
+
+    return endpoints;
+  }, [desktopAdvertisedEndpoints, visibleDesktopAdvertisedEndpoints]);
   const isLocalBackendRemotelyReachable =
     isLocalBackendNetworkAccessible || tailscaleHttpsEndpoint?.status === "available";
   const defaultDesktopNetworkAdvertisedEndpoint = useMemo(
@@ -3044,20 +3084,28 @@ export function ConnectionsSettings() {
           );
         })
       : null;
+  const describeTailscaleRow = () => {
+    if (!tailscaleHttpsEndpoint) {
+      return "Start Tailscale to set up HTTPS access through MagicDNS.";
+    }
+    if (desktopServerExposureState?.tailscaleServeEnabled) {
+      return tailscaleHttpsEndpoint.status === "available"
+        ? tailscaleHttpsEndpoint.httpBaseUrl
+        : "Tailscale Serve is enabled, but the MagicDNS HTTPS endpoint is not reachable yet.";
+    }
+    return tailscaleHttpsEndpoint.status === "available"
+      ? tailscaleHttpsEndpoint.httpBaseUrl
+      : "Use Tailscale Serve to expose this backend through a MagicDNS HTTPS URL.";
+  };
+
   const renderTailscaleRow = () => (
     <SettingsRow
       title="Tailscale HTTPS"
-      description={
-        tailscaleHttpsEndpoint
-          ? tailscaleHttpsEndpoint.status === "available"
-            ? tailscaleHttpsEndpoint.httpBaseUrl
-            : "Use Tailscale Serve to expose this backend through a MagicDNS HTTPS URL."
-          : "Start Tailscale to set up HTTPS access through MagicDNS."
-      }
+      description={describeTailscaleRow()}
       control={
         tailscaleHttpsEndpoint ? (
           <Switch
-            checked={tailscaleHttpsEndpoint.status === "available"}
+            checked={desktopServerExposureState?.tailscaleServeEnabled === true}
             disabled={isUpdatingTailscaleServe}
             onCheckedChange={(checked) => {
               if (checked) {
@@ -3082,6 +3130,7 @@ export function ConnectionsSettings() {
       <PairingClientsList
         endpointUrl={desktopServerExposureState?.endpointUrl}
         endpoints={visibleDesktopAdvertisedEndpoints}
+        qrEndpoints={desktopPairingQrEndpoints}
         defaultEndpointKey={defaultDesktopAdvertisedEndpointKey}
         presentation={presentation}
         isLoading={isLoadingDesktopAccessManagement}

@@ -355,6 +355,7 @@ const createDesktopBridgeStub = (overrides?: {
   readonly serverExposureState?: Awaited<ReturnType<DesktopBridge["getServerExposureState"]>>;
   readonly advertisedEndpoints?: Awaited<ReturnType<DesktopBridge["getAdvertisedEndpoints"]>>;
   readonly setServerExposureMode?: DesktopBridge["setServerExposureMode"];
+  readonly setTailscaleServeEnabled?: DesktopBridge["setTailscaleServeEnabled"];
   readonly setUpdateChannel?: DesktopBridge["setUpdateChannel"];
 }): DesktopBridge => {
   const idleUpdateState: DesktopUpdateState = {
@@ -453,13 +454,15 @@ const createDesktopBridgeStub = (overrides?: {
         tailscaleServeEnabled: false,
         tailscaleServePort: 443,
       })),
-    setTailscaleServeEnabled: vi.fn().mockImplementation(async (input) => ({
-      mode: overrides?.serverExposureState?.mode ?? "network-accessible",
-      endpointUrl: overrides?.serverExposureState?.endpointUrl ?? "http://192.168.1.44:3773",
-      advertisedHost: overrides?.serverExposureState?.advertisedHost ?? "192.168.1.44",
-      tailscaleServeEnabled: input.enabled,
-      tailscaleServePort: input.port ?? 443,
-    })),
+    setTailscaleServeEnabled:
+      overrides?.setTailscaleServeEnabled ??
+      vi.fn().mockImplementation(async (input) => ({
+        mode: overrides?.serverExposureState?.mode ?? "network-accessible",
+        endpointUrl: overrides?.serverExposureState?.endpointUrl ?? "http://192.168.1.44:3773",
+        advertisedHost: overrides?.serverExposureState?.advertisedHost ?? "192.168.1.44",
+        tailscaleServeEnabled: input.enabled,
+        tailscaleServePort: input.port ?? 443,
+      })),
     getAdvertisedEndpoints: vi.fn().mockResolvedValue(overrides?.advertisedEndpoints ?? []),
     pickFolder: vi.fn().mockResolvedValue(null),
     confirm: vi.fn().mockResolvedValue(false),
@@ -672,6 +675,122 @@ describe("GeneralSettingsPanel observability", () => {
       .not.toBeInTheDocument();
   });
 
+  it("shows Tailscale HTTPS as enabled while the MagicDNS endpoint is unreachable", async () => {
+    window.desktopBridge = createDesktopBridgeStub({
+      serverExposureState: {
+        mode: "network-accessible",
+        endpointUrl: "http://192.168.1.44:3773",
+        advertisedHost: "192.168.1.44",
+        tailscaleServeEnabled: true,
+        tailscaleServePort: 443,
+      },
+      advertisedEndpoints: [
+        {
+          id: "tailscale-magicdns:https://desktop.tail.ts.net/",
+          label: "Tailscale HTTPS",
+          provider: {
+            id: "tailscale",
+            label: "Tailscale",
+            kind: "private-network",
+            isAddon: true,
+          },
+          httpBaseUrl: "https://desktop.tail.ts.net/",
+          wsBaseUrl: "wss://desktop.tail.ts.net/",
+          reachability: "private-network",
+          compatibility: {
+            hostedHttpsApp: "requires-configuration",
+            desktopApp: "compatible",
+          },
+          source: "desktop-addon",
+          status: "unavailable",
+        },
+      ],
+    });
+    authAccessHarness.setSnapshot({
+      pairingLinks: [],
+      clientSessions: [],
+    });
+    setServerConfigSnapshot(createBaseServerConfig());
+
+    mounted = await render(
+      <AppAtomRegistryProvider>
+        <ConnectionsSettings />
+      </AppAtomRegistryProvider>,
+    );
+
+    await expect.element(page.getByLabelText("Enable Tailscale HTTPS")).toBeChecked();
+    await expect
+      .element(
+        page.getByText(
+          "Tailscale Serve is enabled, but the MagicDNS HTTPS endpoint is not reachable yet.",
+        ),
+      )
+      .toBeInTheDocument();
+  });
+
+  it("shows a friendly Tailscale Serve enablement error", async () => {
+    const friendlyMessage =
+      "Tailscale Serve is not enabled for this tailnet. Enable it at https://login.tailscale.com/f/serve?node=news52dmUq11CNTRL, then try again.";
+    const setTailscaleServeEnabled = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(
+          `Error invoking remote method 'desktop:set-tailscale-serve-enabled': DesktopServerExposureTailscaleServeError: ${friendlyMessage}`,
+        ),
+      );
+    window.desktopBridge = createDesktopBridgeStub({
+      serverExposureState: {
+        mode: "network-accessible",
+        endpointUrl: "http://192.168.1.44:3773",
+        advertisedHost: "192.168.1.44",
+        tailscaleServeEnabled: false,
+        tailscaleServePort: 443,
+      },
+      advertisedEndpoints: [
+        {
+          id: "tailscale-magicdns:https://desktop.tail.ts.net/",
+          label: "Tailscale HTTPS",
+          provider: {
+            id: "tailscale",
+            label: "Tailscale",
+            kind: "private-network",
+            isAddon: true,
+          },
+          httpBaseUrl: "https://desktop.tail.ts.net/",
+          wsBaseUrl: "wss://desktop.tail.ts.net/",
+          reachability: "private-network",
+          compatibility: {
+            hostedHttpsApp: "requires-configuration",
+            desktopApp: "compatible",
+          },
+          source: "desktop-addon",
+          status: "unavailable",
+        },
+      ],
+      setTailscaleServeEnabled,
+    });
+    authAccessHarness.setSnapshot({
+      pairingLinks: [],
+      clientSessions: [],
+    });
+    setServerConfigSnapshot(createBaseServerConfig());
+
+    mounted = await render(
+      <AppAtomRegistryProvider>
+        <ConnectionsSettings />
+      </AppAtomRegistryProvider>,
+    );
+
+    await page.getByLabelText("Enable Tailscale HTTPS").click();
+    await expect
+      .element(page.getByRole("dialog", { name: "Set up Tailscale HTTPS?" }))
+      .toBeInTheDocument();
+    await page.getByRole("button", { name: "Enable", exact: true }).click();
+
+    await expect.element(page.getByText(friendlyMessage)).toBeInTheDocument();
+    await expect.element(page.getByText(/^Error invoking remote method/u)).not.toBeInTheDocument();
+  });
+
   it("collapses advertised endpoints behind the network access summary", async () => {
     window.desktopBridge = createDesktopBridgeStub({
       serverExposureState: {
@@ -802,6 +921,47 @@ describe("GeneralSettingsPanel observability", () => {
         tailscaleServeEnabled: false,
         tailscaleServePort: 443,
       },
+      advertisedEndpoints: [
+        {
+          id: "desktop-lan:http://192.168.1.44:3773",
+          label: "Local network",
+          provider: {
+            id: "desktop-core",
+            label: "Desktop",
+            kind: "manual",
+            isAddon: false,
+          },
+          httpBaseUrl: "http://192.168.1.44:3773/",
+          wsBaseUrl: "ws://192.168.1.44:3773/",
+          reachability: "lan",
+          compatibility: {
+            hostedHttpsApp: "mixed-content-blocked",
+            desktopApp: "compatible",
+          },
+          source: "desktop-core",
+          status: "available",
+          isDefault: true,
+        },
+        {
+          id: "tailscale-ip:http://100.105.39.17:3773",
+          label: "Tailscale IP",
+          provider: {
+            id: "tailscale",
+            label: "Tailscale",
+            kind: "private-network",
+            isAddon: true,
+          },
+          httpBaseUrl: "http://100.105.39.17:3773/",
+          wsBaseUrl: "ws://100.105.39.17:3773/",
+          reachability: "private-network",
+          compatibility: {
+            hostedHttpsApp: "mixed-content-blocked",
+            desktopApp: "compatible",
+          },
+          source: "desktop-addon",
+          status: "available",
+        },
+      ],
     });
     let pairingLinks: Array<AuthAccessSnapshot["pairingLinks"][number]> = [];
     let clientSessions: Array<AuthAccessSnapshot["clientSessions"][number]> = [
@@ -917,6 +1077,12 @@ describe("GeneralSettingsPanel observability", () => {
     await expect.element(page.getByText("orchestration:read", { exact: true })).toBeInTheDocument();
     await expect
       .element(page.getByRole("button", { name: /^Copy pairing URL for:/ }))
+      .toBeInTheDocument();
+    await expect
+      .element(page.getByRole("button", { name: "Show local network QR code" }))
+      .toBeInTheDocument();
+    await expect
+      .element(page.getByRole("button", { name: "Show Tailscale QR code" }))
       .toBeInTheDocument();
     await expect.element(page.getByText("Revoke others")).toBeInTheDocument();
   });
