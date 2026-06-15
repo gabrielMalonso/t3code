@@ -19,11 +19,14 @@ const encoder = new TextEncoder();
 const tailscaleStatusJson = `{"Self":{"DNSName":"desktop.tail.ts.net.","TailscaleIPs":["100.100.100.100","fd7a:115c:a1e0::1","192.168.1.20"]}}`;
 const tailscaleStatusWithSingleIpJson = `{"Self":{"DNSName":"desktop.tail.ts.net.","TailscaleIPs":["100.90.1.2"]}}`;
 
-function mockHandle(result: { stdout?: string; stderr?: string; code?: number }) {
+function mockHandle(result: { stdout?: string; stderr?: string; code?: number | "never" }) {
   return ChildProcessSpawner.makeHandle({
     pid: ChildProcessSpawner.ProcessId(1),
-    exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(result.code ?? 0)),
-    isRunning: Effect.succeed(false),
+    exitCode:
+      result.code === "never"
+        ? Effect.never
+        : Effect.succeed(ChildProcessSpawner.ExitCode(result.code ?? 0)),
+    isRunning: Effect.succeed(result.code === "never"),
     kill: () => Effect.void,
     unref: Effect.succeed(Effect.void),
     stdin: Sink.drain,
@@ -39,7 +42,7 @@ function mockSpawnerLayer(
   handler: (
     command: string,
     args: ReadonlyArray<string>,
-  ) => { stdout?: string; stderr?: string; code?: number },
+  ) => { stdout?: string; stderr?: string; code?: number | "never" },
 ) {
   return Layer.succeed(
     ChildProcessSpawner.ChildProcessSpawner,
@@ -120,6 +123,33 @@ describe("tailscale", () => {
     });
 
     return ensureTailscaleServe({ localPort: 13773, servePort: 8443 }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("fails fast when Tailscale Serve needs tailnet enablement", () => {
+    const layer = mockSpawnerLayer((command, args) => {
+      assert.equal(command, "tailscale");
+      assert.deepEqual(args, ["serve", "--bg", "--https=8443", "http://127.0.0.1:13773"]);
+      return {
+        code: "never",
+        stdout: `
+Serve is not enabled on your tailnet.
+To enable, visit:
+
+         https://login.tailscale.com/f/serve?node=node123
+`,
+      };
+    });
+
+    return Effect.gen(function* () {
+      const error = yield* ensureTailscaleServe({ localPort: 13773, servePort: 8443 }).pipe(
+        Effect.provide(layer),
+        Effect.flip,
+      );
+
+      assert.match(error.message, /Tailscale Serve is not enabled/u);
+      assert.match(error.message, /https:\/\/login\.tailscale\.com\/f\/serve/u);
+      assert.match(error.stdout, /Serve is not enabled/u);
+    });
   });
 
   it.effect("disables tailscale serve through the process spawner service", () => {

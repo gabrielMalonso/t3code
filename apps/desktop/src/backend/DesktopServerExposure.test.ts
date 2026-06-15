@@ -71,6 +71,39 @@ function dieOnSpawnLayer() {
   );
 }
 
+function tailscaleServeNotEnabledLayer() {
+  return Layer.succeed(
+    ChildProcessSpawner.ChildProcessSpawner,
+    ChildProcessSpawner.make((command) => {
+      const childProcess = command as unknown as {
+        readonly args: ReadonlyArray<string>;
+      };
+      const isServeCommand = childProcess.args[0] === "serve";
+      return Effect.succeed(
+        ChildProcessSpawner.makeHandle({
+          pid: ChildProcessSpawner.ProcessId(1),
+          exitCode: isServeCommand ? Effect.never : Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+          isRunning: Effect.succeed(isServeCommand),
+          kill: () => Effect.void,
+          unref: Effect.succeed(Effect.void),
+          stdin: Sink.drain,
+          stdout: Stream.make(
+            encoder.encode(
+              isServeCommand
+                ? "Serve is not enabled on your tailnet.\nTo enable, visit:\n\nhttps://login.tailscale.com/f/serve?node=node123\n"
+                : "{}",
+            ),
+          ),
+          stderr: Stream.empty,
+          all: Stream.empty,
+          getInputFd: () => Sink.drain,
+          getOutputFd: () => Stream.empty,
+        }),
+      );
+    }),
+  );
+}
+
 function makeEnvironmentLayer(baseDir: string, env: Record<string, string | undefined> = {}) {
   return makeDesktopEnvironmentLayer({
     dirname: "/repo/apps/desktop/src",
@@ -238,6 +271,37 @@ describe("DesktopServerExposure", () => {
         assert.equal(persisted.tailscaleServePort, 8443);
       }),
     ),
+  );
+
+  it.effect(
+    "does not persist tailscale serve preferences when tailnet enablement is required",
+    () =>
+      withHarness(
+        emptyNetworkInterfaces,
+        Effect.gen(function* () {
+          const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+          const settings = yield* DesktopAppSettings.DesktopAppSettings;
+
+          yield* settings.load;
+          yield* serverExposure.configureFromSettings({ port: 4173 });
+
+          const error = yield* serverExposure
+            .setTailscaleServeEnabled({
+              enabled: true,
+              port: 8443,
+            })
+            .pipe(Effect.flip);
+
+          assert.match(error.message, /Tailscale Serve is not enabled/u);
+          assert.match(error.message, /https:\/\/login\.tailscale\.com\/f\/serve/u);
+
+          const persisted = yield* settings.get;
+          assert.equal(persisted.tailscaleServeEnabled, false);
+          assert.equal(persisted.tailscaleServePort, 443);
+        }),
+        {},
+        tailscaleServeNotEnabledLayer(),
+      ),
   );
 
   it.effect("resolves advertised endpoints from the scoped runtime state", () =>

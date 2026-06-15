@@ -23,7 +23,11 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import { DEFAULT_DESKTOP_SETTINGS, type DesktopSettings } from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import { resolveTailscaleAdvertisedEndpoints } from "./tailscaleEndpointProvider.ts";
-import { readTailscaleStatus } from "@t3tools/tailscale";
+import {
+  ensureTailscaleServe,
+  readTailscaleStatus,
+  type TailscaleCommandError,
+} from "@t3tools/tailscale";
 import * as DesktopAppSettingsService from "../settings/DesktopAppSettings.ts";
 
 const TAILSCALE_STATUS_CACHE_TTL = Duration.seconds(60);
@@ -241,11 +245,27 @@ export class DesktopServerExposurePersistenceError extends Data.TaggedError(
   }
 }
 
+export class DesktopServerExposureTailscaleServeError extends Data.TaggedError(
+  "DesktopServerExposureTailscaleServeError",
+)<{
+  readonly cause: TailscaleCommandError;
+}> {
+  override get message() {
+    return this.cause.message;
+  }
+}
+
 export type DesktopServerExposureSetModeError =
   | DesktopServerExposureNoNetworkAddressError
   | DesktopServerExposurePersistenceError;
 
-export type DesktopServerExposureError = DesktopServerExposureSetModeError;
+export type DesktopServerExposureSetTailscaleServeError =
+  | DesktopServerExposurePersistenceError
+  | DesktopServerExposureTailscaleServeError;
+
+export type DesktopServerExposureError =
+  | DesktopServerExposureSetModeError
+  | DesktopServerExposureSetTailscaleServeError;
 
 export interface DesktopServerExposureBackendConfig {
   readonly port: number;
@@ -272,7 +292,7 @@ export interface DesktopServerExposureShape {
   readonly setTailscaleServeEnabled: (input: {
     readonly enabled: boolean;
     readonly port?: number;
-  }) => Effect.Effect<DesktopServerExposureChange, DesktopServerExposurePersistenceError>;
+  }) => Effect.Effect<DesktopServerExposureChange, DesktopServerExposureSetTailscaleServeError>;
   readonly getAdvertisedEndpoints: Effect.Effect<readonly AdvertisedEndpoint[]>;
 }
 
@@ -496,10 +516,23 @@ const make = Effect.gen(function* () {
         enabled: input.enabled,
         ...(input.port === undefined ? {} : { port: input.port }),
       });
+      const current = yield* Ref.get(stateRef);
+      const servePort = input.port ?? current.tailscaleServePort;
+      if (input.enabled) {
+        yield* ensureTailscaleServe({
+          localPort: current.port,
+          servePort,
+          localHost: "127.0.0.1",
+        }).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
+          Effect.mapError((cause) => new DesktopServerExposureTailscaleServeError({ cause })),
+        );
+      }
+
       const result = yield* desktopSettings
         .setTailscaleServe({
           enabled: input.enabled,
-          port: Option.fromNullishOr(input.port),
+          port: Option.some(servePort),
         })
         .pipe(
           Effect.mapError(
