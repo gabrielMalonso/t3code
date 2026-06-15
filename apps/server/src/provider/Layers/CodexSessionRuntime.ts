@@ -68,6 +68,13 @@ export function hasConfiguredMcpServer(appServerArgs: ReadonlyArray<string> | un
   return appServerArgs?.some((argument) => argument.includes("mcp_servers.")) === true;
 }
 
+export function shouldRefreshMcpToolCatalogBeforeTurn(input: {
+  readonly appServerArgs: ReadonlyArray<string> | undefined;
+  readonly hasAttemptedRefresh: boolean;
+}): boolean {
+  return !input.hasAttemptedRefresh && hasConfiguredMcpServer(input.appServerArgs);
+}
+
 export const CodexResumeCursorSchema = Schema.Struct({
   threadId: Schema.String,
 });
@@ -739,6 +746,7 @@ export const makeCodexSessionRuntime = (
     const approvalCorrelationsRef = yield* Ref.make(new Map<string, ApprovalCorrelation>());
     const pendingUserInputsRef = yield* Ref.make(new Map<ApprovalRequestId, PendingUserInput>());
     const collabReceiverTurnsRef = yield* Ref.make(new Map<string, TurnId>());
+    const mcpToolCatalogRefreshAttemptedRef = yield* Ref.make(false);
     const closedRef = yield* Ref.make(false);
 
     const env = buildCodexProcessEnvironment({
@@ -1331,7 +1339,17 @@ export const makeCodexSessionRuntime = (
               activeTurnId: session.activeTurnId,
             });
           }
-          if (hasConfiguredMcpServer(options.appServerArgs)) {
+          const shouldRefreshMcpToolCatalog = yield* Ref.modify(
+            mcpToolCatalogRefreshAttemptedRef,
+            (hasAttemptedRefresh) => {
+              const shouldRefresh = shouldRefreshMcpToolCatalogBeforeTurn({
+                appServerArgs: options.appServerArgs,
+                hasAttemptedRefresh,
+              });
+              return [shouldRefresh, hasAttemptedRefresh || shouldRefresh] as const;
+            },
+          );
+          if (shouldRefreshMcpToolCatalog) {
             yield* client.request("config/mcpServer/reload", undefined).pipe(
               Effect.catch((cause) =>
                 Effect.logWarning("Failed to refresh Codex MCP tool catalog before turn.", {

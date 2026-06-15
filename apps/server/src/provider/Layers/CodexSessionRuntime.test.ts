@@ -16,6 +16,7 @@ import {
   hasConfiguredMcpServer,
   isRecoverableThreadResumeError,
   openCodexThread,
+  shouldRefreshMcpToolCatalogBeforeTurn,
 } from "./CodexSessionRuntime.ts";
 import {
   CODEX_MCP_ELICITATION_APPROVAL_QUESTION_ID,
@@ -175,6 +176,34 @@ describe("hasConfiguredMcpServer", () => {
     assert.equal(
       hasConfiguredMcpServer(["-c", 'mcp_servers.t3-code.url="http://127.0.0.1/mcp"']),
       true,
+    );
+  });
+});
+
+describe("shouldRefreshMcpToolCatalogBeforeTurn", () => {
+  it("refreshes only once per configured Codex MCP session", () => {
+    const appServerArgs = ["-c", 'mcp_servers.t3-code.url="http://127.0.0.1/mcp"'];
+
+    assert.equal(
+      shouldRefreshMcpToolCatalogBeforeTurn({
+        appServerArgs,
+        hasAttemptedRefresh: false,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldRefreshMcpToolCatalogBeforeTurn({
+        appServerArgs,
+        hasAttemptedRefresh: true,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldRefreshMcpToolCatalogBeforeTurn({
+        appServerArgs: undefined,
+        hasAttemptedRefresh: false,
+      }),
+      false,
     );
   });
 });
