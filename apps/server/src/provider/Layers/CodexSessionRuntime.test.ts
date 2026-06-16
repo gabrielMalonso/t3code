@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
+import { it as effectIt } from "@effect/vitest";
 import { describe, it } from "vite-plus/test";
 import { ThreadId } from "@t3tools/contracts";
 import * as CodexErrors from "effect-codex-app-server/errors";
@@ -10,6 +13,8 @@ import * as CodexRpc from "effect-codex-app-server/rpc";
 import {
   CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS,
   CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS,
+  makeCodexDefaultModeDeveloperInstructions,
+  makeCodexPlanModeDeveloperInstructions,
 } from "../CodexDeveloperInstructions.ts";
 import {
   buildTurnStartParams,
@@ -153,13 +158,37 @@ describe("buildTurnStartParams", () => {
       ],
     });
   });
+
+  it("adds preview MCP instructions only when enabled", () => {
+    const params = Effect.runSync(
+      buildTurnStartParams({
+        threadId: "provider-thread-1",
+        runtimeMode: "full-access",
+        prompt: "Inspect the app",
+        interactionMode: "default",
+        previewMcpEnabled: true,
+      }),
+    );
+
+    assert.match(params.collaborationMode?.settings.developer_instructions ?? "", /preview_status/);
+  });
 });
 
 describe("T3 browser developer instructions", () => {
-  it("prefers the product-native preview tools in both collaboration modes", () => {
+  it("omits product-native preview tools by default", () => {
     for (const instructions of [
       CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS,
       CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS,
+    ]) {
+      assert.doesNotMatch(instructions, /preview_status/);
+      assert.doesNotMatch(instructions, /Do not switch to global browser skills/);
+    }
+  });
+
+  it("prefers the product-native preview tools when preview MCP is enabled", () => {
+    for (const instructions of [
+      makeCodexDefaultModeDeveloperInstructions({ previewMcpEnabled: true }),
+      makeCodexPlanModeDeveloperInstructions({ previewMcpEnabled: true }),
     ]) {
       assert.match(instructions, /t3-code/);
       assert.match(instructions, /preview_status/);
@@ -324,41 +353,44 @@ describe("openCodexThread", () => {
     );
   });
 
-  it("propagates non-recoverable resume failures", async () => {
-    const client = {
-      request: <M extends "thread/start" | "thread/resume">(
-        method: M,
-        _payload: CodexRpc.ClientRequestParamsByMethod[M],
-      ) => {
-        if (method === "thread/resume") {
-          return Effect.fail(
-            new CodexErrors.CodexAppServerRequestError({
-              code: -32603,
-              errorMessage: "timed out waiting for server",
-            }),
+  effectIt.effect("propagates non-recoverable resume failures", () =>
+    Effect.gen(function* () {
+      const client = {
+        request: <M extends "thread/start" | "thread/resume">(
+          method: M,
+          _payload: CodexRpc.ClientRequestParamsByMethod[M],
+        ) => {
+          if (method === "thread/resume") {
+            return Effect.fail(
+              new CodexErrors.CodexAppServerRequestError({
+                code: -32603,
+                errorMessage: "timed out waiting for server",
+              }),
+            );
+          }
+          return Effect.succeed(
+            makeThreadOpenResponse("fresh-thread") as CodexRpc.ClientRequestResponsesByMethod[M],
           );
-        }
-        return Effect.succeed(
-          makeThreadOpenResponse("fresh-thread") as CodexRpc.ClientRequestResponsesByMethod[M],
-        );
-      },
-    };
+        },
+      };
 
-    await assert.rejects(
-      Effect.runPromise(
-        openCodexThread({
-          client,
-          threadId: ThreadId.make("thread-1"),
-          runtimeMode: "full-access",
-          cwd: "/tmp/project",
-          requestedModel: "gpt-5.3-codex",
-          serviceTier: undefined,
-          resumeThreadId: "stale-thread",
-        }),
-      ),
-      (error: unknown) =>
+      const exit = yield* openCodexThread({
+        client,
+        threadId: ThreadId.make("thread-1"),
+        runtimeMode: "full-access",
+        cwd: "/tmp/project",
+        requestedModel: "gpt-5.3-codex",
+        serviceTier: undefined,
+        resumeThreadId: "stale-thread",
+      }).pipe(Effect.exit);
+
+      assert.equal(Exit.isFailure(exit), true);
+      const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined;
+      assert.equal(
         isCodexAppServerRequestError(error) &&
-        error.errorMessage === "timed out waiting for server",
-    );
-  });
+          error.errorMessage === "timed out waiting for server",
+        true,
+      );
+    }),
+  );
 });
