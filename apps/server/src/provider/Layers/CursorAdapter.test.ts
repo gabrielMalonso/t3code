@@ -1150,6 +1150,58 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     }),
   );
 
+  it.effect("sends ACP cancel before stopping an in-flight session", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const serverSettings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-stop-in-flight-cancel");
+      const tempDir = yield* Effect.promise(() => mkdtemp(path.join(os.tmpdir(), "cursor-acp-")));
+      const requestLogPath = path.join(tempDir, "requests.ndjson");
+      const argvLogPath = path.join(tempDir, "argv.txt");
+      yield* Effect.promise(() => writeFile(requestLogPath, "", "utf8"));
+
+      const wrapperPath = yield* Effect.promise(() =>
+        makeProbeWrapper(requestLogPath, argvLogPath, { T3_ACP_PROMPT_DELAY_MS: "1500" }),
+      );
+      yield* serverSettings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("cursor"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: { instanceId: ProviderInstanceId.make("cursor"), model: "default" },
+      });
+
+      const sendTurnFiber = yield* adapter
+        .sendTurn({
+          threadId,
+          input: "stop this delayed prompt",
+          attachments: [],
+        })
+        .pipe(Effect.forkChild);
+
+      yield* Effect.gen(function* () {
+        for (let attempt = 0; attempt < 200; attempt += 1) {
+          const sessions = yield* adapter.listSessions();
+          const session = sessions.find((entry) => String(entry.threadId) === String(threadId));
+          if (session?.activeTurnId !== undefined) {
+            return;
+          }
+          yield* TestClock.adjust("10 millis");
+        }
+        throw new Error("Timed out waiting for the delayed prompt to be in flight.");
+      });
+
+      yield* adapter.stopSession(threadId);
+      yield* Fiber.await(sendTurnFiber);
+
+      const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
+      assert.isTrue(requests.some((entry) => entry.method === "session/cancel"));
+      assert.equal(yield* adapter.hasSession(threadId), false);
+    }),
+  );
+
   it.effect("stopping a session settles pending user-input waits", () =>
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;

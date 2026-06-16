@@ -92,6 +92,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
                   T3CODE_NO_BROWSER: "true",
                   T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "false",
                   T3CODE_LOG_WS_EVENTS: "true",
+                  T3CODE_PREVIEW_MCP_ENABLED: "true",
                 },
               }),
             ),
@@ -116,6 +117,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         desktopBootstrapToken: undefined,
         autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: true,
+        previewMcpEnabled: true,
         tailscaleServeEnabled: false,
         tailscaleServePort: 443,
       });
@@ -182,6 +184,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         desktopBootstrapToken: undefined,
         autoBootstrapProjectFromCwd: true,
         logWebSocketEvents: true,
+        previewMcpEnabled: false,
         tailscaleServeEnabled: true,
         tailscaleServePort: 8443,
       });
@@ -251,6 +254,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         desktopBootstrapToken: "desktop-bootstrap-token",
         autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: false,
+        previewMcpEnabled: false,
         tailscaleServeEnabled: false,
         tailscaleServePort: 443,
       });
@@ -325,6 +329,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         desktopBootstrapToken: "desktop-token",
         autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: false,
+        previewMcpEnabled: false,
         tailscaleServeEnabled: false,
         tailscaleServePort: 443,
       });
@@ -450,6 +455,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         desktopBootstrapToken: "desktop-token",
         autoBootstrapProjectFromCwd: true,
         logWebSocketEvents: true,
+        previewMcpEnabled: false,
         tailscaleServeEnabled: false,
         tailscaleServePort: 443,
       });
@@ -519,6 +525,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         desktopBootstrapToken: undefined,
         autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: false,
+        previewMcpEnabled: false,
         tailscaleServeEnabled: false,
         tailscaleServePort: 443,
       });
@@ -582,6 +589,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         desktopBootstrapToken: undefined,
         autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: false,
+        previewMcpEnabled: false,
         tailscaleServeEnabled: false,
         tailscaleServePort: 443,
       });

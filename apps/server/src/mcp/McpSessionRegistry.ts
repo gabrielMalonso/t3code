@@ -7,6 +7,7 @@ import * as Layer from "effect/Layer";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 import { HttpServer } from "effect/unstable/http";
 
+import { ServerConfig } from "../config.ts";
 import { ServerEnvironment } from "../environment/Services/ServerEnvironment.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpProviderSession from "./McpProviderSession.ts";
@@ -49,6 +50,7 @@ interface RegistryState {
 export interface McpSessionRegistryOptions {
   readonly idleTimeoutMs?: number;
   readonly maximumLifetimeMs?: number;
+  readonly previewMcpEnabled?: boolean;
   readonly now?: () => number;
 }
 
@@ -71,6 +73,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
   const currentTimeMillis = options.now ? Effect.sync(options.now) : Clock.currentTimeMillis;
   const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
   const maximumLifetimeMs = options.maximumLifetimeMs ?? DEFAULT_MAXIMUM_LIFETIME_MS;
+  const previewMcpEnabled = options.previewMcpEnabled ?? true;
   const endpoint =
     httpServer.address._tag === "TcpAddress"
       ? `http://127.0.0.1:${httpServer.address.port}/mcp`
@@ -93,6 +96,11 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
 
   const issue: McpSessionRegistryShape["issue"] = Effect.fn("McpSessionRegistry.issue")(
     function* (request) {
+      if (!previewMcpEnabled) {
+        return yield* Effect.die(
+          "McpSessionRegistry.issue was called while preview MCP credentials are disabled.",
+        );
+      }
       const issuedAt = yield* currentTimeMillis;
       const providerSessionId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
       const rawToken = yield* crypto.randomBytes(32).pipe(Effect.map(tokenFromBytes), Effect.orDie);
@@ -163,19 +171,30 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
 });
 
 let activeMcpSessionRegistry: McpSessionRegistryShape | undefined;
+let activePreviewMcpEnabled = false;
 
 const make = Effect.acquireRelease(
-  makeWithOptions().pipe(
-    Effect.tap((registry) =>
+  Effect.gen(function* () {
+    const config = yield* ServerConfig;
+    const previewMcpEnabled = config.previewMcpEnabled === true;
+    return {
+      previewMcpEnabled,
+      registry: yield* makeWithOptions({ previewMcpEnabled }),
+    };
+  }).pipe(
+    Effect.tap(({ previewMcpEnabled, registry }) =>
       Effect.sync(() => {
         activeMcpSessionRegistry = registry;
+        activePreviewMcpEnabled = previewMcpEnabled;
       }),
     ),
+    Effect.map(({ registry }) => registry),
   ),
   (registry) =>
     Effect.sync(() => {
       if (activeMcpSessionRegistry === registry) {
         activeMcpSessionRegistry = undefined;
+        activePreviewMcpEnabled = false;
       }
     }),
 );
@@ -183,13 +202,13 @@ const make = Effect.acquireRelease(
 export const layer: Layer.Layer<
   McpSessionRegistry,
   never,
-  Crypto.Crypto | ServerEnvironment | HttpServer.HttpServer
+  Crypto.Crypto | ServerConfig | ServerEnvironment | HttpServer.HttpServer
 > = Layer.effect(McpSessionRegistry, make);
 
 export const issueActiveMcpCredential = (
   request: McpCredentialRequest,
 ): Effect.Effect<McpIssuedCredential | undefined> =>
-  activeMcpSessionRegistry
+  activeMcpSessionRegistry && activePreviewMcpEnabled
     ? activeMcpSessionRegistry
         .revokeThread(request.threadId)
         .pipe(Effect.andThen(activeMcpSessionRegistry.issue(request)))

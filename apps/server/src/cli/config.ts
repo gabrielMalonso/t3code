@@ -128,6 +128,7 @@ const EnvServerConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
+  previewMcpEnabled: Config.boolean("T3CODE_PREVIEW_MCP_ENABLED").pipe(Config.withDefault(false)),
   tailscaleServeEnabled: Config.boolean("T3CODE_TAILSCALE_SERVE").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
@@ -372,6 +373,7 @@ export const resolveServerConfig = (
       desktopBootstrapToken,
       autoBootstrapProjectFromCwd,
       logWebSocketEvents,
+      previewMcpEnabled: env.previewMcpEnabled,
       tailscaleServeEnabled,
       tailscaleServePort,
     };

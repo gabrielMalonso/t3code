@@ -71,6 +71,7 @@ export interface ServerConfigShape extends ServerDerivedPaths {
   readonly desktopBootstrapToken: string | undefined;
   readonly autoBootstrapProjectFromCwd: boolean;
   readonly logWebSocketEvents: boolean;
+  readonly previewMcpEnabled?: boolean;
   readonly tailscaleServeEnabled: boolean;
   readonly tailscaleServePort: number;
 }
@@ -166,6 +167,7 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
           mode: "web",
           autoBootstrapProjectFromCwd: false,
           logWebSocketEvents: false,
+          previewMcpEnabled: false,
           tailscaleServeEnabled: false,
           tailscaleServePort: 443,
           port: 0,

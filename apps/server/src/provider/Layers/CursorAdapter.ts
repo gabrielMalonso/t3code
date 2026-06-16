@@ -456,10 +456,29 @@ export function makeCursorAdapter(
       return Effect.succeed(ctx);
     };
 
+    const cancelActiveTurn = (ctx: CursorSessionContext) =>
+      Effect.ignore(
+        ctx.acp.cancel.pipe(
+          Effect.andThen(Effect.yieldNow),
+          Effect.andThen(Effect.yieldNow),
+          Effect.mapError((error) =>
+            mapAcpToAdapterError(PROVIDER, ctx.threadId, "session/cancel", error),
+          ),
+        ),
+      );
+
     const stopSessionInternal = (ctx: CursorSessionContext) =>
       Effect.gen(function* () {
         if (ctx.stopped) return;
         ctx.stopped = true;
+        if (
+          ctx.promptsInFlight > 0 ||
+          ctx.activeTurnId !== undefined ||
+          ctx.pendingApprovals.size > 0 ||
+          ctx.pendingUserInputs.size > 0
+        ) {
+          yield* cancelActiveTurn(ctx);
+        }
         yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
         yield* settlePendingUserInputsAsEmptyAnswers(ctx.pendingUserInputs);
         if (ctx.notificationFiber) {
@@ -906,6 +925,13 @@ export function makeCursorAdapter(
     const sendTurn: CursorAdapterShape["sendTurn"] = (input) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(input.threadId);
+        if (ctx.promptsInFlight > 0 && ctx.session.runtimeMode === "approval-required") {
+          return yield* new ProviderAdapterRequestError({
+            provider: PROVIDER,
+            method: "session/prompt",
+            detail: "A Cursor turn is already waiting for approval.",
+          });
+        }
         // A sendTurn while a prompt is in flight is a steer: the agent folds
         // the new prompt into the ongoing work, so the active turn id is
         // reused instead of opening a new turn.
@@ -1008,6 +1034,32 @@ export function makeCursorAdapter(
               Effect.mapError((error) =>
                 mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
               ),
+              Effect.catch((error) =>
+                Effect.gen(function* () {
+                  if (ctx.promptsInFlight === 1) {
+                    yield* offerRuntimeEvent({
+                      type: "turn.completed",
+                      ...(yield* makeEventStamp()),
+                      provider: PROVIDER,
+                      threadId: input.threadId,
+                      turnId,
+                      payload: {
+                        state: "failed",
+                        stopReason: null,
+                        errorMessage: error.message,
+                      },
+                    });
+                    ctx.activeTurnId = undefined;
+                    ctx.session = {
+                      ...ctx.session,
+                      activeTurnId: undefined,
+                      lastError: error.message,
+                      updatedAt: yield* nowIso,
+                    };
+                  }
+                  return yield* error;
+                }),
+              ),
             );
 
           const turnRecord = ctx.turns.find((turn) => turn.id === turnId);
@@ -1038,6 +1090,13 @@ export function makeCursorAdapter(
                 stopReason: result.stopReason ?? null,
               },
             });
+            ctx.activeTurnId = undefined;
+            ctx.session = {
+              ...ctx.session,
+              activeTurnId: undefined,
+              updatedAt: yield* nowIso,
+              model: resolvedModel,
+            };
           }
 
           return {
@@ -1059,13 +1118,7 @@ export function makeCursorAdapter(
         const ctx = yield* requireSession(threadId);
         yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
         yield* settlePendingUserInputsAsEmptyAnswers(ctx.pendingUserInputs);
-        yield* Effect.ignore(
-          ctx.acp.cancel.pipe(
-            Effect.mapError((error) =>
-              mapAcpToAdapterError(PROVIDER, threadId, "session/cancel", error),
-            ),
-          ),
-        );
+        yield* cancelActiveTurn(ctx);
       });
 
     const compactThread = (_threadId: ThreadId) =>
