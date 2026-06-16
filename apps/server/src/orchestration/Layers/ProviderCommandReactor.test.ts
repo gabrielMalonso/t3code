@@ -1694,7 +1694,7 @@ describe("ProviderCommandReactor", () => {
     ).toBe(true);
   });
 
-  it("does not start another provider turn while an active provider turn is running", async () => {
+  it("sends another provider turn request while an active provider turn is running so the provider can steer", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
     harness.runtimeSessions.push({
@@ -1718,7 +1718,7 @@ describe("ProviderCommandReactor", () => {
         message: {
           messageId: asMessageId("user-message-active"),
           role: "user",
-          text: "do not overlap",
+          text: "actually, do this instead",
           attachments: [],
         },
         modelSelection: {
@@ -1731,17 +1731,17 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    await waitFor(async () => {
-      const readModel = await harness.readModel();
-      const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-      return (
-        thread?.activities.some((activity) => activity.kind === "provider.turn.start.failed") ??
-        false
-      );
-    });
-
     expect(harness.startSession.mock.calls.length).toBe(0);
-    expect(harness.sendTurn.mock.calls.length).toBe(0);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      threadId: ThreadId.make("thread-1"),
+      input: "actually, do this instead",
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5-codex",
+      },
+      interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+    });
   });
 
   it("starts a fresh session when only projected session state exists", async () => {
