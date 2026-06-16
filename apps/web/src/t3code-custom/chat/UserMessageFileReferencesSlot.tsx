@@ -1,13 +1,15 @@
-import { FileTextIcon } from "lucide-react";
-
+import { VscodeEntryIcon } from "~/components/chat/VscodeEntryIcon";
+import { useTheme } from "~/hooks/useTheme";
 import type { DisplayedFileReference } from "../file-references";
-import { fileReferenceCopy } from "../file-references";
+import { fileReferenceCopy, fileReferenceKindLabel } from "../file-references";
 
 interface UserMessageFileReferencesSlotProps {
   references: ReadonlyArray<DisplayedFileReference>;
 }
 
 export function UserMessageFileReferencesSlot({ references }: UserMessageFileReferencesSlotProps) {
+  const { resolvedTheme } = useTheme();
+
   if (references.length === 0) {
     return null;
   }
@@ -17,13 +19,23 @@ export function UserMessageFileReferencesSlot({ references }: UserMessageFileRef
       {references.map((reference) => (
         <div
           key={`${reference.scope}:${reference.path}`}
-          className="flex max-w-[420px] min-w-0 items-center gap-2 rounded-lg border border-border/80 bg-background/70 px-2.5 py-2"
+          className="flex max-w-[420px] min-w-0 items-start gap-2 rounded-lg border border-border/80 bg-background/70 px-2.5 py-2"
         >
-          <FileTextIcon className="size-4 shrink-0 text-muted-foreground" />
+          <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-muted/40 text-muted-foreground">
+            <VscodeEntryIcon
+              pathValue={reference.path}
+              kind="file"
+              theme={resolvedTheme}
+              className="size-4"
+            />
+          </span>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <span className="truncate text-xs font-medium text-foreground">
                 {reference.label}
+              </span>
+              <span className="rounded bg-background px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                {fileReferenceKindLabel(reference.kind)}
               </span>
               <span className="rounded bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                 {reference.scope === "workspace"

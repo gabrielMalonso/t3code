@@ -1,4 +1,5 @@
 import type { DisplayedFileReference } from "./types";
+import { classifyFileReferenceKind, dedupeDisplayedFileReferences } from "./paths";
 
 export const FILE_REFERENCES_OPEN_TAG = "<t3code-file-references>";
 export const FILE_REFERENCES_CLOSE_TAG = "</t3code-file-references>";
@@ -17,13 +18,14 @@ function unescapeFileReferencePath(pathValue: string): string {
 export function buildFileReferencesBlock(
   references: ReadonlyArray<DisplayedFileReference>,
 ): string {
-  if (references.length === 0) {
+  const dedupedReferences = dedupeDisplayedFileReferences(references);
+  if (dedupedReferences.length === 0) {
     return "";
   }
   return [
     FILE_REFERENCES_OPEN_TAG,
     "Referenced files:",
-    ...references.map(
+    ...dedupedReferences.map(
       (reference) => `- ${reference.scope}: ${escapeFileReferencePath(reference.path)}`,
     ),
     FILE_REFERENCES_CLOSE_TAG,
@@ -78,20 +80,21 @@ export function extractTrailingFileReferences(prompt: string): {
       path,
       scope: scopeValue,
       label: slashIndex === -1 ? path : path.slice(slashIndex + 1),
-      kind: path.toLowerCase().endsWith(".pdf") ? "pdf" : "other",
+      kind: classifyFileReferenceKind({ path, mimeType: null }),
     });
   }
+  const dedupedFileReferences = dedupeDisplayedFileReferences(fileReferences);
 
   const replacement =
-    fileReferences.length === 0
+    dedupedFileReferences.length === 0
       ? ""
-      : `\n\nReferenced files:\n${fileReferences
+      : `\n\nReferenced files:\n${dedupedFileReferences
           .map((reference) => `- ${reference.scope}: ${reference.path}`)
           .join("\n")}`;
 
   return {
     promptText,
-    fileReferences,
+    fileReferences: dedupedFileReferences,
     copyText: prompt.replace(FILE_REFERENCES_BLOCK_PATTERN, replacement).trimEnd(),
   };
 }
