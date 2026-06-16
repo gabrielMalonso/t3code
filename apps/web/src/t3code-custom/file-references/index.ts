@@ -6,6 +6,8 @@ export {
 } from "./serialization";
 export {
   classifyFileReferenceScope,
+  dedupeDisplayedFileReferences,
+  fileReferenceKindLabel,
   relativeFileReferencePath,
   toDisplayedFileReference,
 } from "./paths";

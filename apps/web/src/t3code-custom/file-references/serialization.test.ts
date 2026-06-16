@@ -27,7 +27,7 @@ describe("file reference serialization", () => {
         path: "docs/plan.md",
         scope: "workspace",
         label: "plan.md",
-        kind: "other",
+        kind: "text",
       },
       {
         path: "/Users/demo/Desktop/file.pdf",
@@ -38,5 +38,43 @@ describe("file reference serialization", () => {
     ]);
     expect(extracted.copyText).toContain("Referenced files:");
     expect(extracted.copyText).not.toContain("<t3code-file-references>");
+  });
+
+  it("deduplicates referenced files when serializing and extracting", () => {
+    const prompt = appendFileReferencesToPrompt("Read these", [
+      {
+        path: "/Users/demo/Desktop/file.pdf",
+        scope: "external",
+        label: "file.pdf",
+        kind: "pdf",
+      },
+      {
+        path: "/Users/demo/Desktop/file.pdf",
+        scope: "external",
+        label: "file.pdf",
+        kind: "pdf",
+      },
+    ]);
+
+    expect(prompt.match(/- external: \/Users\/demo\/Desktop\/file\.pdf/g)).toHaveLength(1);
+
+    const extracted = extractTrailingFileReferences(
+      `${prompt.replace(
+        "</t3code-file-references>",
+        "- external: /Users/demo/Desktop/file.pdf\n</t3code-file-references>",
+      )}`,
+    );
+
+    expect(extracted.fileReferences).toEqual([
+      {
+        path: "/Users/demo/Desktop/file.pdf",
+        scope: "external",
+        label: "file.pdf",
+        kind: "pdf",
+      },
+    ]);
+    expect(extracted.copyText.match(/- external: \/Users\/demo\/Desktop\/file\.pdf/g)).toHaveLength(
+      1,
+    );
   });
 });

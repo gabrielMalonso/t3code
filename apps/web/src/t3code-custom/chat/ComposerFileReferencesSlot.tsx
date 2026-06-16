@@ -6,33 +6,16 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../../components/ui/toolt
 import { VscodeEntryIcon } from "../../components/chat/VscodeEntryIcon";
 import { type DraftId, useComposerDraftStore, useComposerThreadDraft } from "~/composerDraftStore";
 import { useTheme } from "~/hooks/useTheme";
-import { fileReferenceCopy, toDisplayedFileReference } from "../file-references";
+import {
+  fileReferenceCopy,
+  fileReferenceKindLabel,
+  toDisplayedFileReference,
+} from "../file-references";
 
 interface ComposerFileReferencesSlotProps {
   composerDraftTarget: ScopedThreadRef | DraftId;
   workspaceRoot: string | null | undefined;
   visible: boolean;
-}
-
-function fileReferenceKindLabel(pathValue: string): string {
-  const lower = pathValue.toLowerCase();
-  if (lower.endsWith(".pdf")) return "PDF";
-  if (
-    lower.endsWith(".ts") ||
-    lower.endsWith(".tsx") ||
-    lower.endsWith(".js") ||
-    lower.endsWith(".jsx") ||
-    lower.endsWith(".py") ||
-    lower.endsWith(".rb") ||
-    lower.endsWith(".go") ||
-    lower.endsWith(".rs") ||
-    lower.endsWith(".java") ||
-    lower.endsWith(".kt") ||
-    lower.endsWith(".swift")
-  ) {
-    return "CODE";
-  }
-  return "FILE";
 }
 
 export function ComposerFileReferencesSlot({
@@ -80,7 +63,7 @@ export function ComposerFileReferencesSlot({
                   {displayedReference.label}
                 </span>
                 <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  {fileReferenceKindLabel(displayedReference.path)}
+                  {fileReferenceKindLabel(displayedReference.kind)}
                 </span>
                 <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                   {scopeBadge}

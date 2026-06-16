@@ -60,6 +60,41 @@ export function fileReferenceDedupKey(pathValue: string): string {
   return normalizePathValue(pathValue);
 }
 
+export function displayedFileReferenceDedupKey(reference: DisplayedFileReference): string {
+  return `${reference.scope}\u0000${fileReferenceDedupKey(reference.path)}`;
+}
+
+export function dedupeDisplayedFileReferences(
+  references: ReadonlyArray<DisplayedFileReference>,
+): DisplayedFileReference[] {
+  const dedupKeys = new Set<string>();
+  const dedupedReferences: DisplayedFileReference[] = [];
+  for (const reference of references) {
+    const dedupKey = displayedFileReferenceDedupKey(reference);
+    if (dedupKeys.has(dedupKey)) {
+      continue;
+    }
+    dedupKeys.add(dedupKey);
+    dedupedReferences.push(reference);
+  }
+  return dedupedReferences;
+}
+
+export function fileReferenceKindLabel(kind: ComposerFileReferenceKind): string {
+  switch (kind) {
+    case "pdf":
+      return "PDF";
+    case "code":
+      return "CODE";
+    case "data":
+      return "DATA";
+    case "text":
+      return "TEXT";
+    case "other":
+      return "FILE";
+  }
+}
+
 export function classifyFileReferenceScope(
   pathValue: string,
   workspaceRoot: string | null | undefined,
