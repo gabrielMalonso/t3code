@@ -6,7 +6,7 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { it as effectIt } from "@effect/vitest";
 import { describe, it } from "vite-plus/test";
-import { ThreadId } from "@t3tools/contracts";
+import { ThreadId, TurnId } from "@t3tools/contracts";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexRpc from "effect-codex-app-server/rpc";
 
@@ -17,6 +17,7 @@ import {
   makeCodexPlanModeDeveloperInstructions,
 } from "../CodexDeveloperInstructions.ts";
 import {
+  buildTurnSteerParams,
   buildTurnStartParams,
   hasConfiguredMcpServer,
   isRecoverableThreadResumeError,
@@ -174,6 +175,45 @@ describe("buildTurnStartParams", () => {
   });
 });
 
+describe("buildTurnSteerParams", () => {
+  it("targets the active turn with user input", () => {
+    const params = Effect.runSync(
+      buildTurnSteerParams({
+        threadId: "provider-thread-1",
+        expectedTurnId: TurnId.make("turn-active"),
+        prompt: "Use the simpler approach",
+        attachments: [
+          {
+            type: "image",
+            url: "data:image/png;base64,abc",
+          },
+        ],
+        skills: [{ name: "frontend-design", path: "/tmp/skills/frontend-design" }],
+      }),
+    );
+
+    assert.deepStrictEqual(params, {
+      threadId: "provider-thread-1",
+      expectedTurnId: "turn-active",
+      input: [
+        {
+          type: "text",
+          text: "Use the simpler approach",
+        },
+        {
+          type: "image",
+          url: "data:image/png;base64,abc",
+        },
+        {
+          type: "skill",
+          name: "frontend-design",
+          path: "/tmp/skills/frontend-design",
+        },
+      ],
+    });
+  });
+});
+
 describe("T3 browser developer instructions", () => {
   it("omits product-native preview tools by default", () => {
     for (const instructions of [
@@ -313,29 +353,29 @@ describe("toT3codeMcpElicitationResponse", () => {
 });
 
 describe("openCodexThread", () => {
-  it("falls back to thread/start when resume fails recoverably", async () => {
-    const calls: Array<{ method: "thread/start" | "thread/resume"; payload: unknown }> = [];
-    const started = makeThreadOpenResponse("fresh-thread");
-    const client = {
-      request: <M extends "thread/start" | "thread/resume">(
-        method: M,
-        payload: CodexRpc.ClientRequestParamsByMethod[M],
-      ) => {
-        calls.push({ method, payload });
-        if (method === "thread/resume") {
-          return Effect.fail(
-            new CodexErrors.CodexAppServerRequestError({
-              code: -32603,
-              errorMessage: "thread not found",
-            }),
-          );
-        }
-        return Effect.succeed(started as CodexRpc.ClientRequestResponsesByMethod[M]);
-      },
-    };
+  effectIt.effect("falls back to thread/start when resume fails recoverably", () =>
+    Effect.gen(function* () {
+      const calls: Array<{ method: "thread/start" | "thread/resume"; payload: unknown }> = [];
+      const started = makeThreadOpenResponse("fresh-thread");
+      const client = {
+        request: <M extends "thread/start" | "thread/resume">(
+          method: M,
+          payload: CodexRpc.ClientRequestParamsByMethod[M],
+        ) => {
+          calls.push({ method, payload });
+          if (method === "thread/resume") {
+            return Effect.fail(
+              new CodexErrors.CodexAppServerRequestError({
+                code: -32603,
+                errorMessage: "thread not found",
+              }),
+            );
+          }
+          return Effect.succeed(started as CodexRpc.ClientRequestResponsesByMethod[M]);
+        },
+      };
 
-    const opened = await Effect.runPromise(
-      openCodexThread({
+      const opened = yield* openCodexThread({
         client,
         threadId: ThreadId.make("thread-1"),
         runtimeMode: "full-access",
@@ -343,15 +383,15 @@ describe("openCodexThread", () => {
         requestedModel: "gpt-5.3-codex",
         serviceTier: undefined,
         resumeThreadId: "stale-thread",
-      }),
-    );
+      });
 
-    assert.equal(opened.thread.id, "fresh-thread");
-    assert.deepStrictEqual(
-      calls.map((call) => call.method),
-      ["thread/resume", "thread/start"],
-    );
-  });
+      assert.equal(opened.thread.id, "fresh-thread");
+      assert.deepStrictEqual(
+        calls.map((call) => call.method),
+        ["thread/resume", "thread/start"],
+      );
+    }),
+  );
 
   effectIt.effect("propagates non-recoverable resume failures", () =>
     Effect.gen(function* () {

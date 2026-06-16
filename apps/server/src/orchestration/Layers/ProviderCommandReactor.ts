@@ -614,21 +614,6 @@ const make = Effect.gen(function* () {
         new Error(`Thread '${input.threadId}' was not found in read model.`),
       );
     }
-    const existingActiveSession = yield* providerService
-      .listSessions()
-      .pipe(
-        Effect.map((sessions) => sessions.find((session) => session.threadId === input.threadId)),
-      );
-    if (
-      existingActiveSession?.status === "running" &&
-      existingActiveSession.activeTurnId !== undefined
-    ) {
-      return yield* new ProviderAdapterRequestError({
-        provider: providerErrorLabel(existingActiveSession.provider),
-        method: "thread.turn.start",
-        detail: `Thread '${input.threadId}' already has active provider turn '${existingActiveSession.activeTurnId}'. Wait for it to finish or stop it before starting another turn.`,
-      });
-    }
     yield* ensureSessionForThread(
       input.threadId,
       input.createdAt,

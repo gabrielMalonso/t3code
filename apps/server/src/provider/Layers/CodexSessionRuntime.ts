@@ -44,6 +44,8 @@ import {
 } from "../CodexDeveloperInstructions.ts";
 import { toT3codeMcpElicitationResponse } from "../../t3code-custom/provider/mcpElicitationPolicy.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
+const decodeV2TurnSteerParams = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnSteerParams);
+const decodeV2TurnSteerResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnSteerResponse);
 
 const PROVIDER = ProviderDriverKind.make("codex");
 
@@ -437,6 +439,46 @@ export function buildTurnStartParams(input: {
     ...(collaborationMode ? { collaborationMode } : {}),
   }).pipe(
     Effect.mapError((error) => toProtocolParseError("Invalid turn/start request payload", error)),
+  );
+}
+
+export function buildTurnSteerParams(input: {
+  readonly threadId: string;
+  readonly expectedTurnId: TurnId;
+  readonly prompt?: string;
+  readonly attachments?: ReadonlyArray<{
+    readonly type: "image";
+    readonly url: string;
+  }>;
+  readonly skills?: ReadonlyArray<ProviderSkillReference>;
+}): Effect.Effect<
+  EffectCodexSchema.V2TurnSteerParams,
+  CodexErrors.CodexAppServerProtocolParseError
+> {
+  const turnInput: Array<EffectCodexSchema.V2TurnSteerParams__UserInput> = [];
+  if (input.prompt) {
+    turnInput.push({
+      type: "text",
+      text: input.prompt,
+    });
+  }
+  for (const attachment of input.attachments ?? []) {
+    turnInput.push(attachment);
+  }
+  for (const skill of input.skills ?? []) {
+    turnInput.push({
+      type: "skill",
+      name: skill.name,
+      path: skill.path,
+    });
+  }
+
+  return decodeV2TurnSteerParams({
+    threadId: input.threadId,
+    expectedTurnId: input.expectedTurnId,
+    input: turnInput,
+  }).pipe(
+    Effect.mapError((error) => toProtocolParseError("Invalid turn/steer request payload", error)),
   );
 }
 
@@ -1348,10 +1390,32 @@ export const makeCodexSessionRuntime = (
           const providerThreadId = yield* readProviderThreadId;
           const session = yield* Ref.get(sessionRef);
           if (session.activeTurnId !== undefined) {
-            return yield* new CodexSessionRuntimeActiveTurnError({
-              threadId: options.threadId,
-              activeTurnId: session.activeTurnId,
+            const params = yield* buildTurnSteerParams({
+              threadId: providerThreadId,
+              expectedTurnId: session.activeTurnId,
+              ...(input.input ? { prompt: input.input } : {}),
+              ...(input.attachments ? { attachments: input.attachments } : {}),
+              ...(input.skills ? { skills: input.skills } : {}),
             });
+            const rawResponse = yield* client.raw.request("turn/steer", params);
+            const response = yield* decodeV2TurnSteerResponse(rawResponse).pipe(
+              Effect.mapError((error) =>
+                toProtocolParseError("Invalid turn/steer response payload", error),
+              ),
+            );
+            const turnId = TurnId.make(response.turnId);
+            yield* updateSession(sessionRef, {
+              status: "running",
+              activeTurnId: turnId,
+            });
+            const resumedProviderThreadId = currentProviderThreadId(yield* Ref.get(sessionRef));
+            return {
+              threadId: options.threadId,
+              turnId,
+              ...(resumedProviderThreadId
+                ? { resumeCursor: { threadId: resumedProviderThreadId } }
+                : {}),
+            } satisfies ProviderTurnStartResult;
           }
           const shouldRefreshMcpToolCatalog = yield* Ref.modify(
             mcpToolCatalogRefreshAttemptedRef,
