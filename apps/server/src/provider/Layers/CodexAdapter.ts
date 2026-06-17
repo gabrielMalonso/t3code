@@ -1756,6 +1756,23 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       );
     });
 
+  const reconnectMcp = (threadId: ThreadId) =>
+    Effect.gen(function* () {
+      const session = yield* requireSession(threadId);
+      if (!session.runtime.refreshMcpToolCatalog) {
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "reconnectMcp",
+          issue: "Codex runtime does not expose config/mcpServer/reload.",
+        });
+      }
+      return yield* session.runtime.refreshMcpToolCatalog.pipe(
+        Effect.mapError((cause) =>
+          mapCodexRuntimeError(threadId, "config/mcpServer/reload", cause),
+        ),
+      );
+    });
+
   const readThread: CodexAdapterShape["readThread"] = (threadId) =>
     requireSession(threadId).pipe(
       Effect.flatMap((session) => session.runtime.readThread),
@@ -1881,6 +1898,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     sendTurn,
     interruptTurn,
     compactThread,
+    reconnectMcp,
     readThread,
     rollbackThread,
     respondToRequest,

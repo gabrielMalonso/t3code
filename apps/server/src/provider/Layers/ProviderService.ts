@@ -15,6 +15,7 @@ import {
   ThreadId,
   ProviderInterruptTurnInput,
   ProviderCompactThreadInput,
+  ProviderReconnectMcpInput,
   ProviderRespondToRequestInput,
   ProviderRespondToUserInputInput,
   ProviderSendTurnInput,
@@ -929,6 +930,36 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     },
   );
 
+  const reconnectMcp: ProviderServiceShape["reconnectMcp"] = Effect.fn("reconnectMcp")(
+    function* (rawInput) {
+      const input = yield* decodeInputOrValidationError({
+        operation: "ProviderService.reconnectMcp",
+        schema: ProviderReconnectMcpInput,
+        payload: rawInput,
+      });
+      const routed = yield* resolveRoutableSession({
+        threadId: input.threadId,
+        operation: "ProviderService.reconnectMcp",
+        allowRecovery: true,
+      });
+      yield* Effect.annotateCurrentSpan({
+        "provider.operation": "reconnect-mcp",
+        "provider.kind": routed.adapter.provider,
+        "provider.thread_id": input.threadId,
+      });
+      if (!routed.adapter.reconnectMcp) {
+        return yield* toValidationError(
+          "ProviderService.reconnectMcp",
+          `Provider '${routed.adapter.provider}' does not support manual MCP reconnection`,
+        );
+      }
+      yield* routed.adapter.reconnectMcp(routed.threadId);
+      yield* analytics.record("provider.mcp.reconnected", {
+        provider: routed.adapter.provider,
+      });
+    },
+  );
+
   const interruptTurn: ProviderServiceShape["interruptTurn"] = Effect.fn("interruptTurn")(
     function* (rawInput) {
       const input = yield* decodeInputOrValidationError({
@@ -1274,6 +1305,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     sendTurn,
     interruptTurn,
     compactThread,
+    reconnectMcp,
     respondToRequest,
     respondToUserInput,
     stopSession,

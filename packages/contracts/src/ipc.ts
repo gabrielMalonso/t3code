@@ -42,6 +42,7 @@ import type {
   ServerProcessResourceHistoryResult,
   ServerProviderUpdateInput,
   ServerProviderUpdatedPayload,
+  ServerReconnectMcpInput,
   ServerRemoveKeybindingResult,
   ServerSignalProcessInput,
   ServerSignalProcessResult,
@@ -1080,6 +1081,7 @@ export interface LocalApi {
     refreshProviders: (input?: {
       readonly instanceId?: ProviderInstanceId;
     }) => Promise<ServerProviderUpdatedPayload>;
+    reconnectMcp: (input: ServerReconnectMcpInput) => Promise<void>;
     updateProvider: (input: ServerProviderUpdateInput) => Promise<ServerProviderUpdatedPayload>;
     upsertKeybinding: (input: ServerUpsertKeybindingInput) => Promise<ServerUpsertKeybindingResult>;
     removeKeybinding: (input: ServerRemoveKeybindingInput) => Promise<ServerRemoveKeybindingResult>;
@@ -1109,6 +1111,7 @@ export interface EnvironmentApi {
     listProviderSkills: (
       input: ServerListProviderSkillsInput,
     ) => Promise<ServerListProviderSkillsResult>;
+    reconnectMcp: (input: ServerReconnectMcpInput) => Promise<void>;
     updateExternalComposerIntakeSubscription: (
       subscription: ExternalComposerIntakeSubscription,
     ) => Promise<void>;

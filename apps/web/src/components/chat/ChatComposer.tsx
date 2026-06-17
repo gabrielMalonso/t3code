@@ -893,6 +893,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
   const [isComposerFocused, setIsComposerFocused] = useState(false);
   const [isCompactingContext, setIsCompactingContext] = useState(false);
+  const [isReconnectingMcp, setIsReconnectingMcp] = useState(false);
   const isMobileViewport = useMediaQuery("max-sm");
   const isComposerCollapsedMobile = isMobileViewport && !isComposerFocused;
 
@@ -1865,6 +1866,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     !isSendBusy &&
     !isPreparingWorktree &&
     !isCompactingContext;
+  const canReconnectMcp =
+    activeThreadId !== null &&
+    isServerThread &&
+    !isSendBusy &&
+    !isPreparingWorktree &&
+    !isCompactingContext &&
+    !isReconnectingMcp;
 
   const handleCompactContext = useCallback(() => {
     if (!activeThreadId || !canCompactContext) {
@@ -1893,6 +1901,33 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         setIsCompactingContext(false);
       });
   }, [activeThreadId, canCompactContext, environmentId]);
+  const handleReconnectMcp = useCallback(() => {
+    if (!activeThreadId || !canReconnectMcp) {
+      return;
+    }
+
+    setIsReconnectingMcp(true);
+    void ensureEnvironmentApi(environmentId)
+      .server.reconnectMcp({ threadId: activeThreadId })
+      .then(() => {
+        toastManager.add({
+          title: "MCP reconnected",
+          description: "Codex refreshed this thread's MCP tool catalog.",
+          type: "success",
+        });
+      })
+      .catch((error: unknown) => {
+        toastManager.add({
+          title: "Could not reconnect MCP",
+          description:
+            error instanceof Error ? error.message : "The provider rejected the request.",
+          type: "error",
+        });
+      })
+      .finally(() => {
+        setIsReconnectingMcp(false);
+      });
+  }, [activeThreadId, canReconnectMcp, environmentId]);
   const scheduleComposerCollapseCheck = useCallback(() => {
     if (!isMobileViewport) {
       return;
@@ -2535,6 +2570,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       traitsMenuContent={providerTraitsMenuContent}
                       compactContextDisabled={!canCompactContext}
                       onCompactContext={handleCompactContext}
+                      reconnectMcpDisabled={!canReconnectMcp}
+                      reconnectingMcp={isReconnectingMcp}
+                      onReconnectMcp={handleReconnectMcp}
                       annotationsBridgeEnabled={annotationsBridgeEnabled}
                       onAnnotationsBridgeEnabledChange={onAnnotationsBridgeEnabledChange}
                       onToggleInteractionMode={toggleInteractionMode}

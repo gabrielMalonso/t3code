@@ -97,6 +97,11 @@ export const ProviderCompactThreadInput = Schema.Struct({
 });
 export type ProviderCompactThreadInput = typeof ProviderCompactThreadInput.Type;
 
+export const ProviderReconnectMcpInput = Schema.Struct({
+  threadId: ThreadId,
+});
+export type ProviderReconnectMcpInput = typeof ProviderReconnectMcpInput.Type;
+
 export const ProviderStopSessionInput = Schema.Struct({
   threadId: ThreadId,
 });

@@ -154,6 +154,7 @@ export interface WsRpcClient {
     readonly refreshProviders: (
       input?: RpcInput<typeof WS_METHODS.serverRefreshProviders>,
     ) => ReturnType<RpcUnaryMethod<typeof WS_METHODS.serverRefreshProviders>>;
+    readonly reconnectMcp: RpcUnaryMethod<typeof WS_METHODS.serverReconnectMcp>;
     readonly discoverSourceControl: RpcUnaryNoArgMethod<
       typeof WS_METHODS.serverDiscoverSourceControl
     >;
@@ -363,6 +364,8 @@ export function createWsRpcClient(
         transport.request((client) => client[WS_METHODS.serverListProviderSkills](input)),
       refreshProviders: (input) =>
         transport.request((client) => client[WS_METHODS.serverRefreshProviders](input ?? {})),
+      reconnectMcp: (input) =>
+        transport.request((client) => client[WS_METHODS.serverReconnectMcp](input)),
       discoverSourceControl: () =>
         transport.request((client) => client[WS_METHODS.serverDiscoverSourceControl]({})),
       updateProvider: (input) =>

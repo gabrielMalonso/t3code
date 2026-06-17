@@ -9,6 +9,7 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
   return {
     server: {
       listProviderSkills: rpcClient.server.listProviderSkills,
+      reconnectMcp: (input) => rpcClient.server.reconnectMcp(input).then(() => undefined),
       updateExternalComposerIntakeSubscription: (subscription) =>
         rpcClient.server
           .updateExternalComposerIntakeSubscription(subscription)

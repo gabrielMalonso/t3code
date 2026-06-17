@@ -74,6 +74,11 @@ export interface ProviderAdapterShape<TError> {
   readonly compactThread?: (threadId: ThreadId) => Effect.Effect<void, TError>;
 
   /**
+   * Refresh/reconnect MCP tool catalogs for an active provider session.
+   */
+  readonly reconnectMcp?: (threadId: ThreadId) => Effect.Effect<void, TError>;
+
+  /**
    * Respond to an interactive approval request.
    */
   readonly respondToRequest: (

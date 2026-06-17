@@ -102,6 +102,19 @@ export const ServerListProviderSkillsResult = Schema.Struct({
 });
 export type ServerListProviderSkillsResult = typeof ServerListProviderSkillsResult.Type;
 
+export const ServerReconnectMcpInput = Schema.Struct({
+  threadId: ThreadId,
+});
+export type ServerReconnectMcpInput = typeof ServerReconnectMcpInput.Type;
+
+export class ServerReconnectMcpError extends Schema.TaggedErrorClass<ServerReconnectMcpError>()(
+  "ServerReconnectMcpError",
+  {
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {}
+
 /**
  * Availability of a configured provider instance from the runtime's POV.
  *

@@ -1,6 +1,6 @@
 import { ProviderInteractionMode, RuntimeMode } from "@t3tools/contracts";
 import { memo, type ReactNode } from "react";
-import { EllipsisIcon, ListTodoIcon, Minimize2Icon } from "lucide-react";
+import { EllipsisIcon, ListTodoIcon, Minimize2Icon, RefreshCwIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import {
   Menu,
@@ -23,8 +23,11 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   showInteractionModeToggle: boolean;
   traitsMenuContent?: ReactNode;
   compactContextDisabled?: boolean;
+  reconnectMcpDisabled?: boolean;
+  reconnectingMcp?: boolean;
   annotationsBridgeEnabled?: boolean;
   onCompactContext?: () => void;
+  onReconnectMcp?: () => void;
   onAnnotationsBridgeEnabledChange?: (enabled: boolean) => void;
   onToggleInteractionMode: () => void;
   onTogglePlanSidebar: () => void;
@@ -79,7 +82,9 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
           <MenuRadioItem value="auto-accept-edits">Auto-accept edits</MenuRadioItem>
           <MenuRadioItem value="full-access">Full access</MenuRadioItem>
         </MenuRadioGroup>
-        {props.onCompactContext || props.onAnnotationsBridgeEnabledChange ? (
+        {props.onCompactContext ||
+        props.onReconnectMcp ||
+        props.onAnnotationsBridgeEnabledChange ? (
           <>
             <MenuDivider />
             {props.onCompactContext ? (
@@ -89,6 +94,19 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
               >
                 <Minimize2Icon className="size-4 shrink-0" />
                 Compact context
+              </MenuItem>
+            ) : null}
+            {props.onReconnectMcp ? (
+              <MenuItem
+                disabled={props.reconnectMcpDisabled}
+                onClick={() => props.onReconnectMcp?.()}
+              >
+                <RefreshCwIcon
+                  className={
+                    props.reconnectingMcp ? "size-4 shrink-0 animate-spin" : "size-4 shrink-0"
+                  }
+                />
+                Reconnect MCP
               </MenuItem>
             ) : null}
             {props.onAnnotationsBridgeEnabledChange ? (
