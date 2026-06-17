@@ -107,8 +107,8 @@ jobs:
             src/components/settings/SettingsPanels.browser.tsx
 
   mobile_native_static_analysis:
-    name: Mobile Native Static Analysis
-    runs-on: blacksmith-12vcpu-macos-26
+    name: Mobile Capacitor Static Analysis
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -121,11 +121,8 @@ jobs:
           cache: true
           run-install: true
 
-      - name: Install mobile native static analysis tools
-        run: brew bundle install --file apps/mobile/Brewfile
-
-      - name: Lint mobile native sources
-        run: vp run lint:mobile
+      - name: Lint Capacitor mobile wrapper
+        run: vp run --filter @t3tools/mobile-capacitor lint:mobile
 
   release_smoke:
     name: Release Smoke

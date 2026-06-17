@@ -19,6 +19,7 @@
     "typecheck": "vp run -r --concurrency-limit 2 typecheck",
     "tc": "vp run -r --concurrency-limit 2 typecheck",
     "lint": "vp lint --report-unused-disable-directives",
+    "lint:mobile": "vp run --filter @t3tools/mobile-capacitor lint:mobile",
     "test": "vp run -r test",
     "test:desktop-smoke": "vp run --filter @t3tools/desktop smoke-test",
     "fmt": "vp fmt",

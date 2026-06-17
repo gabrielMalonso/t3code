@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/mobile",
+  "name": "@t3tools/mobile-capacitor",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,6 +9,7 @@
     "sync:ios": "cap sync ios",
     "sync:android": "cap sync android",
     "typecheck": "tsc --noEmit",
+    "lint:mobile": "tsc --noEmit",
     "open:ios": "cap open ios",
     "open:android": "cap open android"
   },
