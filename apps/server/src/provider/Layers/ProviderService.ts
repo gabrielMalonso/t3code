@@ -817,12 +817,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
               lastRuntimeEventAt: yield* nowIso,
             },
           });
-        } else {
-          const blockedTurnId = liveActiveTurnId ?? activeTurnId;
-          return yield* toValidationError(
-            "ProviderService.sendTurn",
-            `Thread '${input.threadId}' already has active provider turn '${blockedTurnId}'. Wait for it to finish or stop it before starting another turn.`,
-          );
         }
       }
       metricProvider = routed.adapter.provider;
