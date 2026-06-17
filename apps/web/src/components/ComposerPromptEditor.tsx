@@ -65,7 +65,7 @@ import {
 } from "~/lib/terminalContext";
 import { cn } from "~/lib/utils";
 import { isMobileCapacitorRuntime } from "~/mobile/platform";
-import { basenameOfPath } from "~/vscode-icons";
+import { basenameOfPath } from "~/pierre-icons";
 import {
   COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
   COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME,

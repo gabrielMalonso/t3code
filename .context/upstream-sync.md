@@ -4,8 +4,8 @@
 
 - Data: 2026-06-17
 - Branch de trabalho: `main`
-- Upstream integrado nesta wave: `a23b83314` (`upstream/main`)
-- Estado: preparacao pre-sync; Capacitor movido para `apps/mobile-capacitor` para liberar `apps/mobile` para o React Native upstream
+- Upstream integrado nesta wave: `b489ea52a` (`upstream/main`)
+- Estado: sync aplicado; `apps/mobile` restaurado como React Native upstream-puro e Capacitor preservado em `apps/mobile-capacitor`
 - Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
 ## Features locais vivas
@@ -22,6 +22,58 @@
 - `apps/annotations/*` + Annotations bridge/external composer intake: point-and-shoot composer via extensao/ponte local
 - `scripts/build-desktop-artifact.ts`: builds desktop do fork so criam feed de auto-update quando `T3CODE_DESKTOP_UPDATE_REPOSITORY` estiver definido explicitamente
 - `apps/server/src/process/externalLauncher.ts`: fallbacks locais de editor no macOS/Ghostty em cima do `ExternalLauncher` upstream
+
+## 2026-06-17 — Sync ate `b489ea52a` com mobile upstream restaurado
+
+- Branch de sync: `main`
+- Donor local usado para replay seletivo: `7f58e5e4b` (`Move Capacitor app out of apps/mobile`)
+- Upstream absorvido:
+  - `b489ea52a` — inline panel, file preview e MCP session handling
+  - right panel/inline panel, file browser/preview, comentarios locais em arquivos, task toggles, bulk close e tab menu
+  - DELETE de sessoes MCP, melhorias de session handling e refactors de runtime/processo
+  - busca nativa com `fff`, Pierre icons/file preview e update de `@pierre/diffs`
+  - mobile React Native upstream completo em `apps/mobile/*`, incluindo composer/editor nativo, markdown, review diff e terminal
+- O que foi reaplicado do custom vivo:
+  - file references, skills de workspace, thread loop e review comments combinados em composer, draft store e envio
+  - gate local `showPlanSidebar` para impedir auto-open da Plan sidebar quando desligada
+  - `buildCodexProcessEnvironment` com `CODEX_HOME`/`SKY_CUA_SERVICE_PATH` para Computer Use em cima do spawn upstream
+  - handler local de `mcpServer/elicitation/request` via policy de Allow/Deny
+  - helper `.t3code/.gitignore` sobre o `WorkspaceEntries.refresh` upstream
+  - fallback macOS/Ghostty no `ExternalLauncher`
+  - updater desktop opt-in apenas por `T3CODE_DESKTOP_UPDATE_REPOSITORY`
+  - Tailscale Serve prompt detection junto com `tailscale.exe` no Windows
+  - Capacitor deps e release smoke cobrindo `apps/mobile-capacitor` e o mobile upstream
+  - file-reference chips migrados para `PierreEntryIcon`/`~/pierre-icons`
+- O que foi deliberadamente deixado de fora do replay:
+  - congelamento antigo de `apps/mobile/*`; esse diretorio agora e upstream-puro
+  - patch antigo `@pierre/diffs@1.1.20` e dependencias `vscode-icons`
+  - fallback automatico para `GITHUB_REPOSITORY` no feed de updater desktop
+  - retorno de OpenPets
+- Classificacao:
+  - `apps/mobile/*` — `upstream-puro absorvido`
+  - `apps/mobile-capacitor/*` — `perimetro-custom`
+  - `apps/web/src/mobile/*` — `perimetro-custom`
+  - `apps/web/src/components/ChatView.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/components/chat/ChatComposer.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/components/ComposerPromptEditor.tsx` — `hotspot-compartilhado`
+  - `apps/web/src/composerDraftStore.ts` — `hotspot-compartilhado`
+  - `apps/web/src/t3code-custom/*` — `perimetro-custom`
+  - `apps/server/src/provider/Layers/{CodexProvider,CodexSessionRuntime}.ts`, `apps/server/src/textGeneration/CodexTextGeneration.ts` — `adaptador-core`
+  - `apps/server/src/workspace/Layers/WorkspaceFileSystem.ts` — `adaptador-core`
+  - `apps/server/src/process/externalLauncher.ts` — `adaptador-core`
+  - `packages/tailscale/src/tailscale.ts` — `adaptador-core`
+  - `scripts/build-desktop-artifact.ts` — `adaptador-core`
+  - `pnpm-lock.yaml`, `pnpm-workspace.yaml` — `tooling-hotspot`
+- Decisoes importantes:
+  - aceitar `apps/mobile/*` integralmente do upstream para reduzir drift futuro; o app Capacitor vivo fica so em `apps/mobile-capacitor/*`
+  - aceitar Pierre icons como fonte de verdade dos icones de arquivo e adaptar os slots custom a essa infraestrutura
+  - preservar o modelo upstream de right panel/file preview e manter apenas adaptadores locais pequenos para composer/file references
+  - manter o updater desktop do fork com opt-in explicito para evitar apontar builds locais para releases upstream por acidente
+- Validacao final:
+  - `pnpm install`
+  - `pnpm exec vp check`
+  - `pnpm exec vp run typecheck` (passou com sugestoes TSGo nao bloqueantes de `Effect.orElseSucceed`)
+  - `pnpm exec vp run lint:mobile`
 
 ## 2026-06-17 — Preparacao para coexistencia mobile upstream + Capacitor
 

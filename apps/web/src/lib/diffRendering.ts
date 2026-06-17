@@ -1,4 +1,4 @@
-import { RegisteredCustomThemes, registerCustomTheme } from "@pierre/diffs";
+import { registerCustomTheme } from "@pierre/diffs";
 import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
 import type { FileDiffMetadata } from "@pierre/diffs/types";
 
@@ -26,37 +26,29 @@ export const DIFF_THEME_NAMES = {
 
 export type DiffThemeName = (typeof DIFF_THEME_NAMES)[keyof typeof DIFF_THEME_NAMES];
 
-if (!RegisteredCustomThemes.has(DIFF_THEME_NAMES.abyss)) {
-  registerCustomTheme(DIFF_THEME_NAMES.abyss, async () => ({
-    ...abyssTheme,
-    name: DIFF_THEME_NAMES.abyss,
-    type: "dark",
-  }));
-}
+registerCustomTheme(DIFF_THEME_NAMES.abyss, async () => ({
+  ...abyssTheme,
+  name: DIFF_THEME_NAMES.abyss,
+  type: "dark",
+}));
 
-if (!RegisteredCustomThemes.has(DIFF_THEME_NAMES.darkHighContrast)) {
-  registerCustomTheme(DIFF_THEME_NAMES.darkHighContrast, async () => ({
-    ...darkHighContrastTheme,
-    name: DIFF_THEME_NAMES.darkHighContrast,
-    type: "dark",
-  }));
-}
+registerCustomTheme(DIFF_THEME_NAMES.darkHighContrast, async () => ({
+  ...darkHighContrastTheme,
+  name: DIFF_THEME_NAMES.darkHighContrast,
+  type: "dark",
+}));
 
-if (!RegisteredCustomThemes.has(DIFF_THEME_NAMES.dracula)) {
-  registerCustomTheme(DIFF_THEME_NAMES.dracula, async () => ({
-    ...draculaTheme,
-    name: DIFF_THEME_NAMES.dracula,
-    type: "dark",
-  }));
-}
+registerCustomTheme(DIFF_THEME_NAMES.dracula, async () => ({
+  ...draculaTheme,
+  name: DIFF_THEME_NAMES.dracula,
+  type: "dark",
+}));
 
-if (!RegisteredCustomThemes.has(DIFF_THEME_NAMES.ayuBlack)) {
-  registerCustomTheme(DIFF_THEME_NAMES.ayuBlack, async () => ({
-    ...ayuBlackTheme,
-    name: DIFF_THEME_NAMES.ayuBlack,
-    type: "dark",
-  }));
-}
+registerCustomTheme(DIFF_THEME_NAMES.ayuBlack, async () => ({
+  ...ayuBlackTheme,
+  name: DIFF_THEME_NAMES.ayuBlack,
+  type: "dark",
+}));
 
 export function resolveDiffThemeName(theme: AppSyntaxTheme): DiffThemeName {
   return DIFF_THEME_NAMES[theme];
