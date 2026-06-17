@@ -1,11 +1,14 @@
-# T3 Code Mobile
+# T3 Code Mobile Capacitor
 
 Wrapper Capacitor para o bundle de `apps/web`.
+
+Este app vive em `apps/mobile-capacitor` para deixar `apps/mobile` livre para
+o app React Native do upstream. Nao misture os dois perimetros.
 
 Fluxo esperado:
 
 1. `bun --filter @t3tools/web build`
-2. `bun --filter @t3tools/mobile sync`
+2. `bun --filter @t3tools/mobile-capacitor sync`
 3. Abrir iOS/Android pelo Capacitor.
 
 O app mobile inicia neutro. Ele so conecta depois que um profile LAN ou Tailscale e pareado dentro da UI.

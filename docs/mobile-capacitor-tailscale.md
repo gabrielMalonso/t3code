@@ -26,22 +26,26 @@ App limpa runtime e volta ao neutro
 
 ## Decisao de Repositorio e Sync
 
-Manter o app mobile dentro deste fork/monorepo. Nao extrair para projeto paralelo enquanto ele for um cliente nativo do mesmo `apps/web`, usando o mesmo server, auth, contratos, runtime remoto e WebSocket.
+Manter o app mobile Capacitor dentro deste fork/monorepo em `apps/mobile-capacitor`. Nao extrair para projeto paralelo enquanto ele for um cliente nativo do mesmo `apps/web`, usando o mesmo server, auth, contratos, runtime remoto e WebSocket.
 
 Separar agora parece limpo, mas cobra juros: duplicaria contratos, faria o bundle web atravessar fronteira artificial e tornaria cada sync com `upstream/main` mais manual. Monorepo e o lugar certo enquanto o app mobile for uma casca nativa do T3 Code, nao um produto autonomo.
+
+O caminho `apps/mobile` fica reservado para o app React Native do upstream. Quando o upstream mobile for absorvido, ele deve entrar nesse caminho sem disputar arquivos com o Capacitor.
 
 ```text
 upstream/main
   -> sua main sincronizada
   -> apps/web + apps/server + contracts
-  -> apps/mobile como wrapper nativo
+  -> apps/mobile como app mobile upstream React Native
+  -> apps/mobile-capacitor como wrapper nativo Capacitor do fork
 ```
 
 Classificacao para sync:
 
 | Area                              | Classificacao           | Regra de conflito                                                     |
 | --------------------------------- | ----------------------- | --------------------------------------------------------------------- |
-| `apps/mobile/*`                   | `perimetro-custom`      | preservar como wrapper nativo local                                   |
+| `apps/mobile/*`                   | `upstream-puro`         | aceitar app React Native upstream nesse caminho                       |
+| `apps/mobile-capacitor/*`         | `perimetro-custom`      | preservar como wrapper nativo local                                   |
 | `apps/web/src/mobile/*`           | `perimetro-custom`      | preservar runtime/UI mobile e ajustar para o core atual               |
 | root/runtime/chat/header          | `hotspot-compartilhado` | aceitar upstream primeiro e reaplicar so o gate/adaptador mobile real |
 | dependencias Capacitor no web     | `hotspot-compartilhado` | manter apenas dependencias usadas pelo bundle web em runtime mobile   |
@@ -296,7 +300,7 @@ Alternativa futura: endpoint/token temporario para assets.
 
 ## Capacitor
 
-Criar `apps/mobile` como wrapper Capacitor do build web.
+Criar `apps/mobile-capacitor` como wrapper Capacitor do build web.
 
 Plugins previstos:
 
@@ -400,7 +404,7 @@ Verificacao:
 
 ### Wave 7: Capacitor Nativo
 
-- Criar `apps/mobile`.
+- Criar `apps/mobile-capacitor`.
 - Adicionar plugins.
 - Config iOS e Android.
 - Rodar `cap sync`.

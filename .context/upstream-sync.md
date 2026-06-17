@@ -2,10 +2,10 @@
 
 ## Status atual
 
-- Data: 2026-06-14
-- Branch de trabalho: `feature/annotation-composer-redesign`
+- Data: 2026-06-17
+- Branch de trabalho: `main`
 - Upstream integrado nesta wave: `a23b83314` (`upstream/main`)
-- Estado: merge `--no-commit` resolvido e validado; upstream browser preview/MCP/provider/runtime/UI absorvido; upstream mobile ignorado nesta wave
+- Estado: preparacao pre-sync; Capacitor movido para `apps/mobile-capacitor` para liberar `apps/mobile` para o React Native upstream
 - Inventario vivo do fork: consultar `.context/customizations.md` antes de classificar conflito ou reaplicar custom
 
 ## Features locais vivas
@@ -18,10 +18,28 @@
 - `t3code-custom/hooks/useComposerFileReferenceSend.ts`: serializacao custom no envio
 - `apps/server/src/t3code-custom/workspace/internalArtifacts.ts`: artefatos internos de workspace, como `.t3code/.gitignore`
 - `apps/web/src/t3code-custom/terminal/fontFamily.ts`: policy local da fonte monoespacada no terminal e blocos de codigo
-- `apps/mobile` + `apps/web/src/mobile`: app mobile Capacitor Android-first/iOS-compatible como cliente nativo do `apps/web`, com pareamento LAN/Tailscale e runtime mobile de um environment ativo por vez
+- `apps/mobile-capacitor` + `apps/web/src/mobile`: app mobile Capacitor Android-first/iOS-compatible como cliente nativo do `apps/web`, com pareamento LAN/Tailscale e runtime mobile de um environment ativo por vez
 - `apps/annotations/*` + Annotations bridge/external composer intake: point-and-shoot composer via extensao/ponte local
 - `scripts/build-desktop-artifact.ts`: builds desktop do fork so criam feed de auto-update quando `T3CODE_DESKTOP_UPDATE_REPOSITORY` estiver definido explicitamente
 - `apps/server/src/process/externalLauncher.ts`: fallbacks locais de editor no macOS/Ghostty em cima do `ExternalLauncher` upstream
+
+## 2026-06-17 — Preparacao para coexistencia mobile upstream + Capacitor
+
+- Branch de sync: `main`
+- Donor local usado para replay seletivo futuro: `af6c97dbe` (`Add manual MCP reconnect support`)
+- Mudanca feita:
+  - `apps/mobile/*` foi movido para `apps/mobile-capacitor/*`
+  - pacote renomeado de `@t3tools/mobile` para `@t3tools/mobile-capacitor`
+  - CI/release smoke/documentacao passaram a mirar o pacote Capacitor novo
+- Regra nova:
+  - `apps/mobile/*` pertence ao upstream React Native e deve ser aceito como upstream-puro em syncs futuros
+  - `apps/mobile-capacitor/*` e `apps/web/src/mobile/*` continuam custom vivo do fork
+  - nao resolver conflitos futuros congelando `apps/mobile/*` so para proteger o Capacitor
+- Classificacao:
+  - `apps/mobile-capacitor/*` — `perimetro-custom`
+  - `apps/mobile/*` — `upstream-puro reservado`
+  - `apps/web/src/mobile/*` — `perimetro-custom`
+  - `.github/workflows/ci.yml`, `scripts/release-smoke.ts`, `pnpm-lock.yaml` — `adaptador-core`
 
 ## 2026-06-14 — Sync ate `a23b83314` ignorando upstream mobile
 
@@ -96,7 +114,7 @@
   - `apps/server/src/http.ts` — `adaptador-core`
   - `apps/server/src/httpCors.ts` — `adaptador-core`
   - `apps/server/src/server.test.ts` — `hotspot-compartilhado` de auth/CORS
-- Regra futura: se o upstream mexer em CORS/auth HTTP, aceitar a estrutura upstream primeiro, mas manter `http://localhost` e `capacitor://localhost` como diferencial real do mobile Capacitor enquanto `apps/mobile` continuar vivo.
+- Regra futura: se o upstream mexer em CORS/auth HTTP, aceitar a estrutura upstream primeiro, mas manter `http://localhost` e `capacitor://localhost` como diferencial real do mobile Capacitor enquanto `apps/mobile-capacitor` continuar vivo.
 
 ## Refatoracoes feitas para sair da frente do upstream
 
@@ -149,8 +167,8 @@
 - Se a mudanca for Multi-Provider/provider instances, aceitar o roteamento por `instanceId` e reaplicar skills do workspace apenas como overlay de Codex
 - Se a mudanca for Git/source-control/VCS, aceitar o modelo novo de VCS e reaplicar custom so nos pontos de UX/RPC ainda vivos
 - Se a mudanca for regra de negocio local, empurrar para `t3code-custom/*`
-- Se a mudanca for mobile/root/runtime/header/composer, preservar o fluxo upstream e reaplicar o app mobile como `apps/mobile/*`, `apps/web/src/mobile/*` e guards pequenos atras de `isMobileCapacitorRuntime()`
-- Se o usuario pedir sync ignorando mobile, congelar `apps/mobile/*`, `apps/web/src/mobile/*`, docs/workflows/patches/scripts explicitamente mobile e nao puxar Expo/React Native/Nitro do upstream
+- Se a mudanca for mobile/root/runtime/header/composer, preservar o fluxo upstream e reaplicar o diferencial Capacitor em `apps/mobile-capacitor/*`, `apps/web/src/mobile/*` e guards pequenos atras de `isMobileCapacitorRuntime()`
+- Se o upstream mexer em `apps/mobile/*`, tratar como React Native upstream-puro; nao congelar esse diretorio para proteger o Capacitor
 - Se a mudanca for launch de browser/editor/processo, aceitar `ExternalLauncher` upstream e reaplicar so fallback macOS/Ghostty que continuar diferencial real
 - Se precisar tocar `ChatComposer` ou `ComposerPromptEditor`, fazer o minimo e deixar a adaptacao visivel
 - Se a mudanca for release/build desktop, nao permitir fallback automatico para `GITHUB_REPOSITORY` no feed de updater; o fork precisa de opt-in explicito para nao reinstalar upstream por acidente
