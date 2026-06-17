@@ -103,6 +103,7 @@ import { deriveDisplayedUserMessageStateWithCustomContent } from "../../t3code-c
 import { UserMessageFileReferencesSlot } from "../../t3code-custom/chat";
 import {
   buildReviewCommentRenderablePatch,
+  formatReviewCommentFence,
   parseReviewCommentMessageSegments,
   type ReviewCommentContext,
 } from "../../reviewCommentContext";
@@ -1317,6 +1318,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
 
 function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentContext }) {
   const ctx = use(TimelineRowCtx);
+  const fenceLanguage = comment.fenceLanguage ?? "diff";
   const renderablePatch = getRenderablePatch(
     buildReviewCommentRenderablePatch(comment),
     `review-comment:${comment.id}`,
@@ -1336,6 +1338,15 @@ function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentConte
         <div className="whitespace-pre-wrap wrap-break-word text-sm">
           <SkillInlineText text={comment.text} skills={ctx.skills} />
         </div>
+      )}
+      {fenceLanguage !== "diff" && comment.diff.trim().length > 0 && (
+        <ChatMarkdown
+          text={formatReviewCommentFence(fenceLanguage, comment.diff)}
+          cwd={ctx.markdownCwd}
+          threadRef={ctx.threadRef ?? undefined}
+          skills={ctx.skills}
+          className="text-foreground"
+        />
       )}
       {renderablePatch?.kind === "files" &&
         renderablePatch.files.map((fileDiff) => (

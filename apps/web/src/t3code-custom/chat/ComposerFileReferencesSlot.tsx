@@ -3,7 +3,7 @@ import { XIcon } from "lucide-react";
 
 import { Button } from "../../components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../../components/ui/tooltip";
-import { VscodeEntryIcon } from "../../components/chat/VscodeEntryIcon";
+import { PierreEntryIcon } from "../../components/chat/PierreEntryIcon";
 import { type DraftId, useComposerDraftStore, useComposerThreadDraft } from "~/composerDraftStore";
 import { useTheme } from "~/hooks/useTheme";
 import {
@@ -50,7 +50,7 @@ export function ComposerFileReferencesSlot({
             className="group flex min-h-16 min-w-0 max-w-64 items-start gap-2 rounded-lg border border-border/80 bg-background px-3 py-2"
           >
             <span className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/50 text-muted-foreground">
-              <VscodeEntryIcon
+              <PierreEntryIcon
                 pathValue={displayedReference.path}
                 kind="file"
                 theme={resolvedTheme}

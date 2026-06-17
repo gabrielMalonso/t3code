@@ -1,4 +1,4 @@
-import { VscodeEntryIcon } from "~/components/chat/VscodeEntryIcon";
+import { PierreEntryIcon } from "~/components/chat/PierreEntryIcon";
 import { useTheme } from "~/hooks/useTheme";
 import type { DisplayedFileReference } from "../file-references";
 import { fileReferenceCopy, fileReferenceKindLabel } from "../file-references";
@@ -22,7 +22,7 @@ export function UserMessageFileReferencesSlot({ references }: UserMessageFileRef
           className="flex max-w-[420px] min-w-0 items-start gap-2 rounded-lg border border-border/80 bg-background/70 px-2.5 py-2"
         >
           <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-muted/40 text-muted-foreground">
-            <VscodeEntryIcon
+            <PierreEntryIcon
               pathValue={reference.path}
               kind="file"
               theme={resolvedTheme}

@@ -168,6 +168,7 @@ import {
   resolveAdjacentThreadId,
   resolveSidebarChromeHeaderClassName,
   isContextMenuPointerDown,
+  isTrailingDoubleClick,
   resolveProjectStatusIndicator,
   resolveSidebarNewThreadSeedContext,
   resolveSidebarNewThreadEnvMode,
@@ -182,6 +183,7 @@ import {
 import { sortThreads } from "../lib/threadSort";
 import { SidebarUpdatePill } from "./sidebar/SidebarUpdatePill";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { useIsMobile } from "~/hooks/useMediaQuery";
 import { CommandDialogTrigger } from "./ui/command";
 import { readEnvironmentApi } from "../environmentApi";
 import { useSettings, useUpdateSettings } from "~/hooks/useSettings";
@@ -317,6 +319,7 @@ interface SidebarThreadRowProps {
   renamingThreadKey: string | null;
   renamingTitle: string;
   setRenamingTitle: (title: string) => void;
+  startThreadRename: (threadKey: string, title: string) => void;
   renamingInputRef: React.RefObject<HTMLInputElement | null>;
   renamingCommittedRef: React.RefObject<boolean>;
   confirmingArchiveThreadKey: string | null;
@@ -344,7 +347,7 @@ interface SidebarThreadRowProps {
   openPrLink: (event: React.MouseEvent<HTMLElement>, prUrl: string) => void;
 }
 
-const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowProps) {
+export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowProps) {
   const {
     orderedProjectThreadKeys,
     isActive,
@@ -353,6 +356,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     renamingThreadKey,
     renamingTitle,
     setRenamingTitle,
+    startThreadRename,
     renamingInputRef,
     renamingCommittedRef,
     confirmingArchiveThreadKey,
@@ -377,6 +381,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     environmentId: thread.environmentId,
     threadId: thread.id,
   });
+  const isMobile = useIsMobile();
   const discoveredPorts = useThreadDiscoveredPorts({
     environmentId: thread.environmentId,
     threadId: thread.id,
@@ -462,6 +467,24 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     },
     [discoveredPorts, navigateToThread, threadRef],
   );
+  const handleRowDoubleClick = useCallback(
+    (event: React.MouseEvent) => {
+      // Already renaming this row: a double-click on the row chrome (outside the
+      // input) must not restart and discard the in-progress edit.
+      if (renamingThreadKey === threadKey) return;
+      // On mobile the first tap navigates and closes the sidebar sheet, so the
+      // inline rename can't be shown. Renaming there stays on the context menu.
+      if (isMobile) return;
+      // cmd/ctrl/shift double-clicks are multi-select intent, not rename.
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      // Ignore double-clicks bubbling from nested controls (PR status, port,
+      // archive buttons) — only the row body should enter inline rename.
+      if ((event.target as HTMLElement).closest("button, a")) return;
+      event.preventDefault();
+      startThreadRename(threadKey, thread.title);
+    },
+    [isMobile, renamingThreadKey, startThreadRename, threadKey, thread.title],
+  );
   const handleRowKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
       if (event.key !== "Enter" && event.key !== " ") return;
@@ -535,6 +558,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       void commitRename(threadRef, renamingTitle, thread.title);
     }
   }, [commitRename, renamingCommittedRef, renamingTitle, thread.title, threadRef]);
+  // Keep clicks/double-clicks inside the rename input from bubbling to the row.
+  // Without stopping `dblclick`, double-clicking to select a word would re-fire
+  // the row's rename handler and reset the in-progress edit back to the title.
   const handleRenameInputClick = useCallback((event: React.MouseEvent<HTMLInputElement>) => {
     event.stopPropagation();
   }, []);
@@ -601,6 +627,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           isSelected,
         })} relative isolate`}
         onClick={handleRowClick}
+        onDoubleClick={handleRowDoubleClick}
         onKeyDown={handleRowKeyDown}
         onContextMenu={handleRowContextMenu}
       >
@@ -632,6 +659,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               onKeyDown={handleRenameInputKeyDown}
               onBlur={handleRenameInputBlur}
               onClick={handleRenameInputClick}
+              onDoubleClick={handleRenameInputClick}
             />
           ) : (
             <Tooltip>
@@ -814,6 +842,7 @@ interface SidebarProjectThreadListProps {
   renamingThreadKey: string | null;
   renamingTitle: string;
   setRenamingTitle: (title: string) => void;
+  startThreadRename: (threadKey: string, title: string) => void;
   renamingInputRef: React.RefObject<HTMLInputElement | null>;
   renamingCommittedRef: React.RefObject<boolean>;
   confirmingArchiveThreadKey: string | null;
@@ -864,6 +893,7 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
     renamingThreadKey,
     renamingTitle,
     setRenamingTitle,
+    startThreadRename,
     renamingInputRef,
     renamingCommittedRef,
     confirmingArchiveThreadKey,
@@ -915,6 +945,7 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
               renamingThreadKey={renamingThreadKey}
               renamingTitle={renamingTitle}
               setRenamingTitle={setRenamingTitle}
+              startThreadRename={startThreadRename}
               renamingInputRef={renamingInputRef}
               renamingCommittedRef={renamingCommittedRef}
               confirmingArchiveThreadKey={confirmingArchiveThreadKey}
@@ -1651,6 +1682,13 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         return;
       }
 
+      // Ignore the trailing click of a plain double-click so it doesn't navigate
+      // while a double-click is starting an inline rename. Placed after the
+      // modifier branches so cmd/shift selection still processes every click.
+      if (isTrailingDoubleClick(event.detail)) {
+        return;
+      }
+
       if (currentSelectionCount > 0) {
         clearSelection();
       }
@@ -1845,6 +1883,12 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     renamingInputRef.current = null;
   }, []);
 
+  const startThreadRename = useCallback((threadKey: string, title: string) => {
+    setRenamingThreadKey(threadKey);
+    setRenamingTitle(title);
+    renamingCommittedRef.current = false;
+  }, []);
+
   const commitRename = useCallback(
     async (threadRef: ScopedThreadRef, newTitle: string, originalTitle: string) => {
       const threadKey = scopedThreadKey(threadRef);
@@ -2004,9 +2048,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       );
 
       if (clicked === "rename") {
-        setRenamingThreadKey(threadKey);
-        setRenamingTitle(thread.title);
-        renamingCommittedRef.current = false;
+        startThreadRename(threadKey, thread.title);
         return;
       }
 
@@ -2054,6 +2096,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       markThreadUnread,
       memberProjectByScopedKey,
       project.cwd,
+      startThreadRename,
     ],
   );
 
@@ -2178,6 +2221,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         renamingThreadKey={renamingThreadKey}
         renamingTitle={renamingTitle}
         setRenamingTitle={setRenamingTitle}
+        startThreadRename={startThreadRename}
         renamingInputRef={renamingInputRef}
         renamingCommittedRef={renamingCommittedRef}
         confirmingArchiveThreadKey={confirmingArchiveThreadKey}

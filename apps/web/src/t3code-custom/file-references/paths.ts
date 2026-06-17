@@ -1,4 +1,4 @@
-import { basenameOfPath } from "~/vscode-icons";
+import { basenameOfPath } from "~/pierre-icons";
 
 import type {
   ComposerFileReference,
