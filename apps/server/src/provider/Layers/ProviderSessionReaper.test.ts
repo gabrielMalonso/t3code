@@ -154,6 +154,7 @@ describe("ProviderSessionReaper", () => {
       startSession: () => unsupported(),
       sendTurn: () => unsupported(),
       interruptTurn: () => unsupported(),
+      reconnectMcp: () => unsupported(),
       respondToRequest: () => unsupported(),
       respondToUserInput: () => unsupported(),
       stopSession,

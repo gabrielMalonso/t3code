@@ -14,6 +14,7 @@
 import type {
   ProviderInterruptTurnInput,
   ProviderCompactThreadInput,
+  ProviderReconnectMcpInput,
   ProviderInstanceId,
   ProviderRespondToRequestInput,
   ProviderRespondToUserInputInput,
@@ -64,6 +65,13 @@ export interface ProviderServiceShape {
    */
   readonly compactThread?: (
     input: ProviderCompactThreadInput,
+  ) => Effect.Effect<void, ProviderServiceError>;
+
+  /**
+   * Manually refresh/reconnect MCP tool catalogs for a provider session.
+   */
+  readonly reconnectMcp: (
+    input: ProviderReconnectMcpInput,
   ) => Effect.Effect<void, ProviderServiceError>;
 
   /**

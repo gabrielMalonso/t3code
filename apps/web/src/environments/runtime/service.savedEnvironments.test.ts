@@ -173,6 +173,7 @@ function createClient() {
       subscribeLifecycle: vi.fn(() => () => undefined),
       subscribeAuthAccess: vi.fn(() => () => undefined),
       refreshProviders: vi.fn(async () => undefined),
+      reconnectMcp: vi.fn(async () => undefined),
       upsertKeybinding: vi.fn(async () => undefined),
       getSettings: vi.fn(async () => undefined),
       updateSettings: vi.fn(async () => undefined),

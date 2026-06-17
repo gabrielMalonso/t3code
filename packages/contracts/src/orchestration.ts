@@ -719,6 +719,13 @@ const ThreadCompactStartCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadMcpReconnectCommand = Schema.Struct({
+  type: Schema.Literal("thread.mcp.reconnect"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  createdAt: IsoDateTime,
+});
+
 const ThreadApprovalRespondCommand = Schema.Struct({
   type: Schema.Literal("thread.approval.respond"),
   commandId: CommandId,
@@ -768,6 +775,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
   ThreadCompactStartCommand,
+  ThreadMcpReconnectCommand,
   ThreadApprovalRespondCommand,
   ThreadUserInputRespondCommand,
   ThreadCheckpointRevertCommand,
@@ -792,6 +800,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ClientThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
   ThreadCompactStartCommand,
+  ThreadMcpReconnectCommand,
   ThreadApprovalRespondCommand,
   ThreadUserInputRespondCommand,
   ThreadCheckpointRevertCommand,
@@ -915,6 +924,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.turn-start-requested",
   "thread.turn-interrupt-requested",
   "thread.compact-start-requested",
+  "thread.mcp-reconnect-requested",
   "thread.approval-response-requested",
   "thread.user-input-response-requested",
   "thread.checkpoint-revert-requested",
@@ -1060,6 +1070,11 @@ export const ThreadTurnInterruptRequestedPayload = Schema.Struct({
 });
 
 export const ThreadCompactStartRequestedPayload = Schema.Struct({
+  threadId: ThreadId,
+  createdAt: IsoDateTime,
+});
+
+export const ThreadMcpReconnectRequestedPayload = Schema.Struct({
   threadId: ThreadId,
   createdAt: IsoDateTime,
 });
@@ -1221,6 +1236,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.compact-start-requested"),
     payload: ThreadCompactStartRequestedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.mcp-reconnect-requested"),
+    payload: ThreadMcpReconnectRequestedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

@@ -52,6 +52,7 @@ import {
   type TerminalEvent,
   type ThreadBootstrapPhase,
   type TerminalMetadataStreamEvent,
+  ServerReconnectMcpError,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -207,6 +208,7 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [WS_METHODS.serverGetConfig, AuthOrchestrationReadScope],
   [WS_METHODS.serverListProviderSkills, AuthOrchestrationReadScope],
   [WS_METHODS.serverRefreshProviders, AuthOrchestrationOperateScope],
+  [WS_METHODS.serverReconnectMcp, AuthOrchestrationOperateScope],
   [WS_METHODS.serverUpdateProvider, AuthOrchestrationOperateScope],
   [WS_METHODS.serverUpsertKeybinding, AuthOrchestrationOperateScope],
   [WS_METHODS.serverRemoveKeybinding, AuthOrchestrationOperateScope],
@@ -490,6 +492,12 @@ const makeWsRpcLayer = (currentSession: AuthenticatedSession) =>
       const toCompactThreadError = (error: unknown) =>
         new OrchestrationCompactThreadError({
           message: error instanceof Error ? error.message : "Failed to compact thread context.",
+          cause: error,
+        });
+
+      const toReconnectMcpError = (error: unknown) =>
+        new ServerReconnectMcpError({
+          message: error instanceof Error ? error.message : "Failed to reconnect MCP.",
           cause: error,
         });
 
@@ -1385,6 +1393,22 @@ const makeWsRpcLayer = (currentSession: AuthenticatedSession) =>
               : providerRegistry.refresh()
             ).pipe(Effect.map((providers) => ({ providers }))),
             { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverReconnectMcp]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverReconnectMcp,
+            Effect.gen(function* () {
+              const command = yield* normalizeDispatchCommand({
+                type: "thread.mcp.reconnect",
+                commandId: yield* serverCommandId("reconnect-mcp"),
+                threadId: input.threadId,
+                createdAt: yield* nowIso,
+              });
+              yield* dispatchNormalizedCommand(command);
+            }).pipe(Effect.mapError(toReconnectMcpError)),
+            {
+              "rpc.aggregate": "server",
+            },
           ),
         [WS_METHODS.serverUpdateProvider]: (input) =>
           observeRpcEffect(

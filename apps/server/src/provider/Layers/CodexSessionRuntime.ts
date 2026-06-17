@@ -153,6 +153,7 @@ export interface CodexSessionRuntimeShape {
   ) => Effect.Effect<ProviderTurnStartResult, CodexSessionRuntimeError>;
   readonly interruptTurn: (turnId?: TurnId) => Effect.Effect<void, CodexSessionRuntimeError>;
   readonly compactThread?: Effect.Effect<void, CodexSessionRuntimeError>;
+  readonly refreshMcpToolCatalog?: Effect.Effect<void, CodexSessionRuntimeError>;
   readonly readThread: Effect.Effect<CodexThreadSnapshot, CodexSessionRuntimeError>;
   readonly rollbackThread: (
     numTurns: number,
@@ -175,6 +176,7 @@ export type CodexSessionRuntimeError =
   | CodexSessionRuntimePendingUserInputNotFoundError
   | CodexSessionRuntimeInvalidUserInputAnswersError
   | CodexSessionRuntimeThreadIdMissingError
+  | CodexSessionRuntimeMcpUnavailableError
   | CodexSessionRuntimeActiveTurnError;
 
 export class CodexSessionRuntimePendingApprovalNotFoundError extends Schema.TaggedErrorClass<CodexSessionRuntimePendingApprovalNotFoundError>()(
@@ -230,6 +232,17 @@ export class CodexSessionRuntimeActiveTurnError extends Schema.TaggedErrorClass<
 ) {
   override get message(): string {
     return `Thread '${this.threadId}' already has active provider turn '${this.activeTurnId}'. Wait for it to finish or stop it before starting another turn.`;
+  }
+}
+
+export class CodexSessionRuntimeMcpUnavailableError extends Schema.TaggedErrorClass<CodexSessionRuntimeMcpUnavailableError>()(
+  "CodexSessionRuntimeMcpUnavailableError",
+  {
+    threadId: ThreadId,
+  },
+) {
+  override get message(): string {
+    return `Codex session '${this.threadId}' does not have a configured MCP server.`;
   }
 }
 
@@ -1488,6 +1501,15 @@ export const makeCodexSessionRuntime = (
         yield* client.request("thread/compact/start", {
           threadId: providerThreadId,
         });
+      }),
+      refreshMcpToolCatalog: Effect.gen(function* () {
+        if (!hasConfiguredMcpServer(options.appServerArgs)) {
+          return yield* new CodexSessionRuntimeMcpUnavailableError({
+            threadId: options.threadId,
+          });
+        }
+        yield* client.request("config/mcpServer/reload", undefined);
+        yield* Ref.set(mcpToolCatalogRefreshAttemptedRef, true);
       }),
       readThread: Effect.gen(function* () {
         const providerThreadId = yield* readProviderThreadId;
