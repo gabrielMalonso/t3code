@@ -1332,6 +1332,46 @@ routing.layer("ProviderServiceLive routing", (it) => {
     }),
   );
 
+  it.effect("allows sendTurn while the provider reports an active turn so adapters can steer", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService;
+
+      const threadId = asThreadId("thread-active-turn-steer");
+      const session = yield* provider.startSession(threadId, {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const activeTurnId = asTurnId(`turn-${String(threadId)}`);
+      yield* provider.sendTurn({
+        threadId,
+        input: "first",
+        attachments: [],
+      });
+
+      routing.codex.sendTurn.mockClear();
+      routing.codex.listSessions.mockImplementationOnce(() =>
+        Effect.succeed([
+          {
+            ...session,
+            status: "running",
+            activeTurnId,
+          },
+        ]),
+      );
+
+      const steeredTurn = yield* provider.sendTurn({
+        threadId,
+        input: "actually, steer this running turn",
+        attachments: [],
+      });
+
+      assert.equal(routing.codex.sendTurn.mock.calls.length, 1);
+      assert.equal(String(steeredTurn.turnId), String(activeTurnId));
+    }),
+  );
+
   it.effect("reuses persisted resume cursor when startSession is called after a restart", () =>
     Effect.gen(function* () {
       const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "t3-provider-service-start-"));
